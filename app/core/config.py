@@ -1,0 +1,99 @@
+from functools import lru_cache
+from typing import List
+
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # App
+    app_name: str = "ePoint CRM API"
+    app_env: str = "development"
+    debug: bool = True
+    api_prefix: str = "/api/v1"
+    cors_origins: str = "http://localhost:3000"
+
+    # Database
+    database_url: str
+
+    # JWT
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 7
+
+    # Encryption
+    encryption_key: str = ""
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # S3 / Bucketeer (Heroku inyecta BUCKETEER_* automáticamente)
+    aws_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("AWS_ACCESS_KEY_ID", "BUCKETEER_AWS_ACCESS_KEY_ID"),
+    )
+    aws_secret_access_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("AWS_SECRET_ACCESS_KEY", "BUCKETEER_AWS_SECRET_ACCESS_KEY"),
+    )
+    aws_region: str = Field(
+        default="us-east-1",
+        validation_alias=AliasChoices("AWS_REGION", "BUCKETEER_AWS_REGION"),
+    )
+    s3_bucket_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("S3_BUCKET_NAME", "BUCKETEER_BUCKET_NAME"),
+    )
+    s3_endpoint_url: str = ""
+    s3_use_ssl: bool = True
+    s3_storage_prefix: str = ""
+
+    # Gemini / LangChain
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+
+    # Notifications
+    notifications_dry_run: bool = True
+    sendgrid_api_key: str = ""
+    email_from: str = "notificaciones@epoint.com"
+    email_from_name: str = "ePoint CRM"
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""
+    whatsapp_default_country_code: str = "54"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        # Heroku Postgres usa postgres://; SQLAlchemy/psycopg2 requiere postgresql://
+        if isinstance(value, str) and value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql://", 1)
+        return value
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors(cls, value: str | List[str]) -> str:
+        if isinstance(value, list):
+            return ",".join(value)
+        return value
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def is_development(self) -> bool:
+        return self.app_env == "development"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

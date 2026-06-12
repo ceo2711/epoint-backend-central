@@ -1,0 +1,45 @@
+from app.models.address import Address
+from app.models.area import Area
+from app.models.audit_log import AuditLog
+from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
+from app.models.board_card import BoardCard
+from app.models.board_list import BoardList
+from app.models.card_attachment import CardAttachment
+from app.models.card_comment import CardComment
+from app.models.client import Client
+from app.models.client_assignment import ClientAssignment
+from app.models.credential_submission import CredentialSubmission
+from app.models.document import Document
+from app.models.document_verification import DocumentVerification
+from app.models.notification import Notification
+from app.models.permission import Permission, RolePermission
+from app.models.role import Role
+from app.models.session import UserSession
+from app.models.user import User
+from app.models.vehicle import Vehicle
+
+__all__ = [
+    "Address",
+    "Area",
+    "AuditLog",
+    "Board",
+    "BoardCard",
+    "BoardList",
+    "BoardTemplate",
+    "BoardTemplateCard",
+    "BoardTemplateList",
+    "CardAttachment",
+    "CardComment",
+    "Client",
+    "ClientAssignment",
+    "CredentialSubmission",
+    "Document",
+    "DocumentVerification",
+    "Notification",
+    "Permission",
+    "Role",
+    "RolePermission",
+    "User",
+    "UserSession",
+    "Vehicle",
+]

@@ -1,0 +1,39 @@
+# API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Auth & security
+python-jose[cryptography]==3.3.0
+argon2-cffi==23.1.0
+cryptography==44.0.0
+
+# Validation & settings
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# Storage (Bucketeer / S3)
+boto3==1.35.86
+
+# Background tasks
+celery==5.4.0
+redis==5.2.1
+
+# LLM (LangChain + Gemini)
+langchain==0.3.14
+langchain-google-genai==2.0.8
+langchain-core==0.3.29
+
+# Email & WhatsApp
+sendgrid==6.11.0
+twilio==9.4.3
+
+# Utils
+python-dotenv==1.0.1
+httpx==0.28.1
