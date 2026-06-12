@@ -27,6 +27,25 @@ class ClientApprove(BaseModel):
     advisor_user_id: int
 
 
+class ClientConflict(BaseModel):
+    client_id: int
+    client_name: str
+    client_email: str
+
+
+class ClientAvailabilityResponse(BaseModel):
+    available: bool
+    email: ClientConflict | None = None
+    phone: ClientConflict | None = None
+
+
+class AdvisorBrief(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+
+
 class ClientResponse(ORMBase):
     id: int
     status: str

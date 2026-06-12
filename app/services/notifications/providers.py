@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from app.core.config import get_settings
-from app.core.phone import format_twilio_whatsapp_from, normalize_whatsapp_number
+from app.core.phone import format_twilio_whatsapp_from, normalize_whatsapp_number, phones_match
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,10 @@ class EmailProvider(NotificationChannelProvider):
     def send(self, recipient: str, title: str, body: str, payload: dict[str, Any] | None = None) -> bool:
         settings = get_settings()
         if not settings.sendgrid_api_key:
-            logger.warning("SendGrid no configurado — email no enviado a %s", recipient)
+            logger.warning(
+                "Email no enviado a %s: configurá SENDGRID_API_KEY en el backend",
+                recipient,
+            )
             return False
         try:
             from sendgrid import SendGridAPIClient
@@ -54,7 +57,20 @@ class WhatsAppProvider(NotificationChannelProvider):
     def send(self, recipient: str, title: str, body: str, payload: dict[str, Any] | None = None) -> bool:
         settings = get_settings()
         if not settings.twilio_account_sid or not settings.twilio_auth_token:
-            logger.warning("Twilio no configurado — WhatsApp no enviado a %s", recipient)
+            logger.warning(
+                "WhatsApp no enviado a %s: configurá TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN",
+                recipient,
+            )
+            return False
+        if not settings.twilio_whatsapp_from:
+            logger.warning("WhatsApp no enviado a %s: configurá TWILIO_WHATSAPP_FROM", recipient)
+            return False
+        if phones_match(recipient, settings.twilio_whatsapp_from, settings.whatsapp_default_country_code):
+            logger.warning(
+                "WhatsApp no enviado a %s (normalizado %s): coincide con TWILIO_WHATSAPP_FROM",
+                recipient,
+                normalize_whatsapp_number(recipient, settings.whatsapp_default_country_code),
+            )
             return False
         try:
             from twilio.rest import Client

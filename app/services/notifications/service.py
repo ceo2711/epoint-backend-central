@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -43,18 +44,27 @@ class NotificationService:
         body: str,
         payload: dict[str, Any] | None = None,
         channels: list[str] | None = None,
+        channel_bodies: dict[str, str] | None = None,
     ) -> list[Notification]:
         active_channels = channels or EVENT_CHANNELS.get(event_type, ["IN_APP"])
         created: list[Notification] = []
 
         for user in users:
+            if user.id is None:
+                logger.error(
+                    "No se puede notificar a usuario sin id (evento %s, email %s)",
+                    event_type,
+                    user.email,
+                )
+                continue
             for channel in active_channels:
+                channel_body = (channel_bodies or {}).get(channel, body)
                 notification = self._dispatch(
                     user=user,
                     event_type=event_type,
                     channel=channel,
                     title=title,
-                    body=body,
+                    body=channel_body,
                     payload=payload,
                 )
                 if notification:
@@ -62,6 +72,32 @@ class NotificationService:
 
         self.db.commit()
         return created
+
+    def mark_client_events_read(
+        self,
+        *,
+        client_id: int,
+        event_types: list[str],
+        user_ids: list[int] | None = None,
+    ) -> int:
+        """Marca como leídas las notificaciones in-app pendientes de un cliente."""
+        query = select(Notification).where(
+            Notification.channel == "IN_APP",
+            Notification.read_at.is_(None),
+            Notification.event_type.in_(event_types),
+        )
+        if user_ids is not None:
+            query = query.where(Notification.user_id.in_(user_ids))
+
+        notifications = self.db.execute(query).scalars().all()
+        now = datetime.now(timezone.utc)
+        marked = 0
+        for notification in notifications:
+            payload = notification.payload or {}
+            if payload.get("client_id") == client_id:
+                notification.read_at = now
+                marked += 1
+        return marked
 
     def _dispatch(
         self,
@@ -95,6 +131,8 @@ class NotificationService:
             return notification
 
         recipient = user.email if channel == "EMAIL" else (user.phone or "")
+        if channel == "WHATSAPP" and payload and payload.get("client_phone"):
+            recipient = str(payload["client_phone"])
         if not recipient:
             logger.warning("Usuario %s sin destino para canal %s", user.id, channel)
             return None
@@ -105,7 +143,7 @@ class NotificationService:
                 channel,
                 recipient,
                 title,
-                body[:80],
+                body if channel in ("EMAIL", "WHATSAPP") else body[:120],
             )
         else:
             success = provider.send(recipient, title, body, payload)

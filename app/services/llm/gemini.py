@@ -3,8 +3,6 @@ import logging
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import get_settings
 
@@ -12,36 +10,46 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiLLMService:
-    """Servicio LangChain para Gemini Flash 2.5 — texto y visión de documentos."""
+    """Servicio LangChain para Gemini Flash 2.5 — texto y visión de documentos.
+
+    LangChain se importa solo al primer uso (análisis de documento), no al arrancar la API.
+    """
 
     def __init__(self) -> None:
         settings = get_settings()
         self.model_name = settings.gemini_model
-        if not settings.gemini_api_key:
-            logger.warning("GEMINI_API_KEY no configurada — el servicio LLM estará deshabilitado")
-            self._llm = None
-            return
+        self._api_key = settings.gemini_api_key or ""
+        self._llm: Any = None
 
-        self._llm = ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            google_api_key=settings.gemini_api_key,
-            temperature=0.1,
-        )
+        if not self._api_key:
+            logger.warning("GEMINI_API_KEY no configurada — el servicio LLM estará deshabilitado")
 
     @property
     def is_available(self) -> bool:
-        return self._llm is not None
+        return bool(self._api_key)
+
+    def _get_llm(self) -> Any:
+        if not self._api_key:
+            raise RuntimeError("Servicio Gemini no disponible: configure GEMINI_API_KEY")
+        if self._llm is None:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            self._llm = ChatGoogleGenerativeAI(
+                model=self.model_name,
+                google_api_key=self._api_key,
+                temperature=0.1,
+            )
+        return self._llm
 
     async def analyze_text(self, prompt: str) -> str:
-        if self._llm is None:
-            raise RuntimeError("Servicio Gemini no disponible: configure GEMINI_API_KEY")
-        response = await self._llm.ainvoke([HumanMessage(content=prompt)])
+        from langchain_core.messages import HumanMessage
+
+        response = await self._get_llm().ainvoke([HumanMessage(content=prompt)])
         return self._extract_content(response.content)
 
     def analyze_document_sync(self, *, image_url: str, prompt: str) -> str:
         """Analiza documento desde URL (presigned S3) con visión multimodal."""
-        if self._llm is None:
-            raise RuntimeError("Servicio Gemini no disponible")
+        from langchain_core.messages import HumanMessage
 
         with httpx.Client(timeout=60.0) as client:
             resp = client.get(image_url)
@@ -55,7 +63,7 @@ class GeminiLLMService:
                 {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
             ]
         )
-        response = self._llm.invoke([message])
+        response = self._get_llm().invoke([message])
         return self._extract_content(response.content)
 
     def _extract_content(self, content: Any) -> str:

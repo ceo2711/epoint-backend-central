@@ -43,11 +43,20 @@ class Client(Base):
 
     registered_by: Mapped["User"] = relationship(foreign_keys=[registered_by_user_id])
     approved_by: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])
-    assignments: Mapped[List["ClientAssignment"]] = relationship(back_populates="client")
+    assignments: Mapped[List["ClientAssignment"]] = relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     addresses: Mapped[List["Address"]] = relationship(back_populates="client", cascade="all, delete-orphan")
     vehicles: Mapped[List["Vehicle"]] = relationship(back_populates="client", cascade="all, delete-orphan")
     documents: Mapped[List["Document"]] = relationship(back_populates="client", cascade="all, delete-orphan")
-    board: Mapped["Board | None"] = relationship(back_populates="client", uselist=False)
+    board: Mapped["Board | None"] = relationship(
+        back_populates="client",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     @property
     def full_name(self) -> str:

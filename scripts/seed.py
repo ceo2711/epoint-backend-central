@@ -34,6 +34,7 @@ PERMISSIONS = [
     ("clients:create", "Registrar clientes"),
     ("clients:update", "Editar clientes"),
     ("clients:approve", "Aprobar/rechazar clientes"),
+    ("clients:delete", "Eliminar clientes"),
     ("documents:read", "Ver documentos"),
     ("documents:upload", "Subir documentos"),
     ("boards:read", "Ver tableros"),

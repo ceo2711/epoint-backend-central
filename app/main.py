@@ -1,10 +1,14 @@
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes import api_router
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -32,6 +36,12 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Error no controlado en la API")
+        detail = str(exc) if settings.debug else "Error interno del servidor"
+        return JSONResponse(status_code=500, content={"detail": detail})
 
     return app
 

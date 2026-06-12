@@ -15,7 +15,14 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.audit import AuditService
 from app.services.boards.service import BoardService
+from app.core.config import get_settings
+from app.core.phone import phones_match
 from app.services.notifications import NotificationService
+from app.services.notifications.templates import (
+    client_approved_email_body,
+    client_approved_in_app_body,
+    client_approved_whatsapp_body,
+)
 
 
 def _generate_temp_password(length: int = 12) -> str:
@@ -30,6 +37,67 @@ class ClientService:
         self.audit = AuditService(db)
         self.boards = BoardService(db)
 
+    def find_client_with_email(self, email: str, exclude_client_id: int | None = None) -> Client | None:
+        normalized = email.lower().strip()
+        query = select(Client).where(Client.email == normalized)
+        if exclude_client_id is not None:
+            query = query.where(Client.id != exclude_client_id)
+        return self.db.execute(query).scalar_one_or_none()
+
+    def find_client_with_phone(self, phone: str, exclude_client_id: int | None = None) -> Client | None:
+        settings = get_settings()
+        country_code = settings.whatsapp_default_country_code
+        query = select(Client)
+        if exclude_client_id is not None:
+            query = query.where(Client.id != exclude_client_id)
+        for client in self.db.execute(query).scalars().all():
+            if phones_match(client.phone, phone, country_code):
+                return client
+        return None
+
+    def _conflict_payload(self, client: Client) -> dict:
+        return {
+            "client_id": client.id,
+            "client_name": client.full_name,
+            "client_email": client.email,
+        }
+
+    def assert_email_available(self, email: str, *, exclude_client_id: int | None = None) -> None:
+        duplicate = self.find_client_with_email(email, exclude_client_id)
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"El email ya está registrado por {duplicate.full_name} (cliente #{duplicate.id})",
+            )
+
+    def assert_phone_available(self, phone: str, *, exclude_client_id: int | None = None) -> None:
+        duplicate = self.find_client_with_phone(phone, exclude_client_id)
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"El teléfono ya está registrado por {duplicate.full_name} (cliente #{duplicate.id})",
+            )
+
+    def check_contact_availability(
+        self,
+        *,
+        email: str | None = None,
+        phone: str | None = None,
+        exclude_client_id: int | None = None,
+    ) -> dict:
+        result: dict = {"available": True, "email": None, "phone": None}
+        if email and "@" in email:
+            duplicate = self.find_client_with_email(email, exclude_client_id)
+            if duplicate:
+                result["available"] = False
+                result["email"] = self._conflict_payload(duplicate)
+        if phone and len(phone.strip()) >= 5:
+            duplicate = self.find_client_with_phone(phone, exclude_client_id)
+            if duplicate:
+                result["available"] = False
+                result["phone"] = self._conflict_payload(duplicate)
+        return result
+
     def create_client(
         self,
         *,
@@ -39,11 +107,15 @@ class ClientService:
         email: str,
         phone: str,
     ) -> Client:
+        normalized_email = email.lower().strip()
+        normalized_phone = phone.strip()
+        self.assert_email_available(normalized_email)
+        self.assert_phone_available(normalized_phone)
         client = Client(
             first_name=first_name.strip(),
             last_name=last_name.strip(),
-            email=email.lower().strip(),
-            phone=phone.strip(),
+            email=normalized_email,
+            phone=normalized_phone,
             registered_by_user_id=actor.id,
             status=ClientStatus.PENDIENTE_DE_REVISION.value,
         )
@@ -75,6 +147,10 @@ class ClientService:
         client: Client,
         **fields,
     ) -> Client:
+        if "email" in fields and fields["email"] is not None:
+            self.assert_email_available(fields["email"], exclude_client_id=client.id)
+        if "phone" in fields and fields["phone"] is not None:
+            self.assert_phone_available(fields["phone"], exclude_client_id=client.id)
         for key, value in fields.items():
             if value is not None and hasattr(client, key):
                 if key == "email" and value:
@@ -94,6 +170,11 @@ class ClientService:
         client.status = ClientStatus.PENDIENTE_DE_REVISION.value
         client.rejection_reason = None
         client.rejected_at = None
+        self.notifications.mark_client_events_read(
+            client_id=client.id,
+            event_types=[NotificationEventType.CLIENT_REJECTED.value],
+            user_ids=[actor.id],
+        )
         onboarding_users = self._get_onboarding_team()
         self.notifications.notify(
             event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
@@ -116,6 +197,10 @@ class ClientService:
         client.rejection_reason = reason.strip()
         client.rejected_at = datetime.now(timezone.utc)
 
+        self.notifications.mark_client_events_read(
+            client_id=client.id,
+            event_types=[NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value],
+        )
         vendor = self.db.get(User, client.registered_by_user_id)
         if vendor:
             self.notifications.notify(
@@ -176,6 +261,10 @@ class ClientService:
             existing_user.must_change_password = True
             existing_user.client_id = client.id
             existing_user.is_active = True
+            existing_user.first_name = client.first_name
+            existing_user.last_name = client.last_name
+            existing_user.phone = client.phone
+            existing_user.role_id = client_role.id
             portal_user = existing_user
         else:
             portal_user = User(
@@ -191,18 +280,40 @@ class ClientService:
             )
             self.db.add(portal_user)
 
+        self.db.flush()
+
         client.status = ClientStatus.EN_CARGA_DATOS.value
 
+        self.notifications.mark_client_events_read(
+            client_id=client.id,
+            event_types=[NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value],
+        )
+
+        settings = get_settings()
+        portal_login_url = settings.portal_login_url
+        welcome_title = "¡Bienvenido a ePoint!"
+        credential_kwargs = {
+            "first_name": client.first_name,
+            "email": client.email,
+            "temp_password": temp_password,
+            "portal_login_url": portal_login_url,
+        }
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_APPROVED.value,
             users=[portal_user],
-            title="¡Bienvenido a ePoint!",
-            body=(
-                f"Hola {client.first_name}, tu cuenta fue aprobada. "
-                f"Accedé al portal con tu email y la contraseña temporal enviada. "
-                f"Deberás cambiarla en el primer ingreso."
-            ),
-            payload={"client_id": client.id, "email": client.email},
+            title=welcome_title,
+            body=client_approved_in_app_body(first_name=client.first_name),
+            payload={
+                "client_id": client.id,
+                "email": client.email,
+                "client_phone": client.phone,
+                "portal_url": portal_login_url,
+            },
+            channel_bodies={
+                "IN_APP": client_approved_in_app_body(first_name=client.first_name),
+                "EMAIL": client_approved_email_body(**credential_kwargs),
+                "WHATSAPP": client_approved_whatsapp_body(**credential_kwargs),
+            },
         )
 
         self.audit.log(
@@ -293,6 +404,25 @@ class ClientService:
             return
         self.boards.create_from_template(client)
         client.status = ClientStatus.ONBOARDING_EN_PROGRESO.value
+        self.db.commit()
+
+    def delete_client(self, *, actor: User, client: Client) -> None:
+        portal_users = (
+            self.db.execute(select(User).where(User.client_id == client.id)).scalars().all()
+        )
+        for portal_user in portal_users:
+            portal_user.client_id = None
+            portal_user.is_active = False
+
+        self.audit.log(
+            actor=actor,
+            action="CLIENT_DELETED",
+            entity_type="client",
+            entity_id=client.id,
+            metadata={"email": client.email},
+        )
+        self.db.flush()
+        self.db.delete(client)
         self.db.commit()
 
     def _get_onboarding_team(self) -> list[User]:

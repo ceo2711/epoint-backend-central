@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.client import (
     ClientApprove,
     ClientApproveResponse,
+    ClientAvailabilityResponse,
     ClientCreate,
     ClientDetailResponse,
     ClientReject,
@@ -74,6 +75,23 @@ def list_clients(
         page_size=page_size,
         pages=max(1, math.ceil(total / page_size)),
     )
+
+
+@router.get("/check-availability", response_model=ClientAvailabilityResponse)
+def check_client_availability(
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:create"))],
+    email: str | None = Query(default=None),
+    phone: str | None = Query(default=None),
+    exclude_client_id: int | None = Query(default=None),
+) -> ClientAvailabilityResponse:
+    service = ClientService(db)
+    result = service.check_contact_availability(
+        email=email,
+        phone=phone,
+        exclude_client_id=exclude_client_id,
+    )
+    return ClientAvailabilityResponse(**result)
 
 
 @router.post("", response_model=ClientResponse, status_code=status.HTTP_201_CREATED)
@@ -163,6 +181,33 @@ def reject_client(
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.reject_client(actor=current_user, client=client, reason=payload.reason)
     return _to_response(client)
+
+
+@router.delete("/{client_id}", response_model=MessageResponse)
+def delete_client(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:delete"))],
+) -> MessageResponse:
+    return _delete_client(db, current_user, client_id)
+
+
+@router.post("/{client_id}/delete", response_model=MessageResponse)
+def delete_client_action(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:delete"))],
+) -> MessageResponse:
+    return _delete_client(db, current_user, client_id)
+
+
+def _delete_client(db: DbSession, current_user: User, client_id: int) -> MessageResponse:
+    service = ClientService(db)
+    client = db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    service.delete_client(actor=current_user, client=client)
+    return MessageResponse(message="Cliente eliminado")
 
 
 @router.post("/{client_id}/approve", response_model=ClientApproveResponse)

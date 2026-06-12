@@ -155,7 +155,7 @@ class BoardService:
                 users=team,
                 title="Nuevo comentario en tarea",
                 body=f"Comentario en '{card.title}': {body[:100]}",
-                payload={"card_id": card.id},
+                payload={"card_id": card.id, "client_id": client.id},
             )
         elif portal_user:
             self.notifications.notify(

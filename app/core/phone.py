@@ -24,6 +24,13 @@ def normalize_whatsapp_number(phone: str, default_country_code: str = "54") -> s
     return f"+{default_country_code}{digits}"
 
 
+def phones_match(a: str, b: str, default_country_code: str = "54") -> bool:
+    """Compara dos teléfonos normalizados (sin prefijo whatsapp:)."""
+    na = normalize_whatsapp_number(a.replace("whatsapp:", ""), default_country_code)
+    nb = normalize_whatsapp_number(b.replace("whatsapp:", ""), default_country_code)
+    return na == nb
+
+
 def format_twilio_whatsapp_from(phone: str, default_country_code: str = "54") -> str:
     """Formato remitente Twilio: whatsapp:+541131432490"""
     normalized = normalize_whatsapp_number(phone, default_country_code)

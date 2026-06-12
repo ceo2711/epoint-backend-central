@@ -118,7 +118,7 @@ class DocumentService:
             users=portal_users,
             title="Documento próximo a vencer",
             body=f"Tu documento {document.type} vence pronto. Subí una versión actualizada.",
-            payload={"document_id": document.id},
+            payload={"document_id": document.id, "client_id": client.id},
         )
         self.db.commit()
 

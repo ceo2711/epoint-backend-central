@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     debug: bool = True
     api_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"
+    frontend_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("FRONTEND_URL", "PORTAL_URL"),
+    )
 
     # Database
     database_url: str
@@ -92,6 +96,19 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env == "development"
+
+    @property
+    def portal_base_url(self) -> str:
+        if self.frontend_url.strip():
+            return self.frontend_url.strip().rstrip("/")
+        origins = self.cors_origins_list
+        if origins:
+            return origins[0].rstrip("/")
+        return "http://localhost:3000"
+
+    @property
+    def portal_login_url(self) -> str:
+        return f"{self.portal_base_url}/login"
 
 
 @lru_cache
