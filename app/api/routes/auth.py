@@ -14,7 +14,7 @@ from app.core.security import (
 )
 from app.models.session import UserSession
 from app.models.user import User
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshTokenRequest, TokenResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, TokenResponse
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserMeResponse, UserResponse
 from app.api.deps import get_user_permissions
@@ -22,12 +22,12 @@ from app.api.deps import get_user_permissions
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
+@router.post("/login", response_model=LoginResponse)
+def login(payload: LoginRequest, db: DbSession) -> LoginResponse:
     user = (
         db.execute(
             select(User)
-            .options(joinedload(User.role))
+            .options(joinedload(User.role), joinedload(User.area))
             .where(User.email == payload.email.lower())
         )
         .unique()
@@ -56,9 +56,14 @@ def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     db.add(session)
     db.commit()
 
-    return TokenResponse(
+    permissions = get_user_permissions(db, user)
+    base = UserResponse.model_validate(user)
+    user_me = UserMeResponse(**base.model_dump(), permissions=permissions)
+
+    return LoginResponse(
         access_token=access_token,
         must_change_password=user.must_change_password,
+        user=user_me,
     )
 
 

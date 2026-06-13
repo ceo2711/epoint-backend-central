@@ -29,12 +29,33 @@ ALLOWED_MIME_TYPES = {
     "image/webp",
 }
 
+MIME_BY_EXTENSION = {
+    "pdf": "application/pdf",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+}
+
 
 class DocumentService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.storage = get_storage_provider()
         self.notifications = NotificationService(db)
+
+    def resolve_content_type(self, content_type: str, filename: str) -> str:
+        normalized = content_type.split(";")[0].strip().lower()
+        if normalized in ALLOWED_MIME_TYPES:
+            return "image/jpeg" if normalized == "image/jpg" else normalized
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        return MIME_BY_EXTENSION.get(ext, normalized)
+
+    def build_storage_key(self, *, client: Client, document_type: str, filename: str) -> str:
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
+        return self.storage.build_key(
+            "clients", str(client.id), "documents", document_type, f"{uuid.uuid4()}.{ext}"
+        )
 
     def request_upload_url(
         self,
@@ -44,14 +65,36 @@ class DocumentService:
         filename: str,
         content_type: str,
     ) -> dict:
-        if content_type not in ALLOWED_MIME_TYPES:
+        mime_type = self.resolve_content_type(content_type, filename)
+        if mime_type not in ALLOWED_MIME_TYPES:
             raise HTTPException(status_code=400, detail="Tipo de archivo no permitido")
-        ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
-        key = self.storage.build_key(
-            "clients", str(client.id), "documents", document_type, f"{uuid.uuid4()}.{ext}"
+        key = self.build_storage_key(client=client, document_type=document_type, filename=filename)
+        upload_url = self.storage.generate_upload_url(key, mime_type)
+        return {"upload_url": upload_url, "storage_key": key, "content_type": mime_type}
+
+    def upload_file(
+        self,
+        *,
+        client: Client,
+        document_type: str,
+        filename: str,
+        content_type: str,
+        file_bytes: bytes,
+    ) -> Document:
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="El archivo está vacío")
+        mime_type = self.resolve_content_type(content_type, filename)
+        if mime_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Tipo de archivo no permitido")
+        key = self.build_storage_key(client=client, document_type=document_type, filename=filename)
+        self.storage.put_object(key, file_bytes, mime_type)
+        return self.confirm_upload(
+            client=client,
+            document_type=document_type,
+            storage_key=key,
+            original_filename=filename,
+            mime_type=mime_type,
         )
-        upload_url = self.storage.generate_upload_url(key, content_type)
-        return {"upload_url": upload_url, "storage_key": key, "content_type": content_type}
 
     def confirm_upload(
         self,
@@ -86,27 +129,50 @@ class DocumentService:
             )
             self.db.add(doc)
 
-        self.db.flush()
-
-        from app.workers.tasks import verify_document_task
-
-        try:
-            verify_document_task.delay(doc.id)
-        except Exception:
-            verify_document_task(doc.id)
-
         if client.status == ClientStatus.EN_CARGA_DATOS.value:
             client_service = ClientService(self.db)
             if client_service.check_data_complete(client):
                 client.status = ClientStatus.DOCUMENTOS_EN_REVISION.value
                 client_service.on_documents_complete(client=client)
 
+        doc.verification_status = DocumentVerificationStatus.EN_PROCESO.value
         self.db.commit()
         self.db.refresh(doc)
+
+        from app.workers.enqueue import enqueue_document_verification
+
+        enqueue_document_verification(doc.id)
+
         return doc
 
     def get_download_url(self, document: Document) -> str:
         return self.storage.generate_download_url(document.storage_key)
+
+    def to_brief(self, document: Document, *, include_download_url: bool = True) -> "DocumentBrief":
+        from app.schemas.client import DocumentBrief
+
+        return DocumentBrief(
+            id=document.id,
+            type=document.type,
+            verification_status=document.verification_status,
+            original_filename=document.original_filename,
+            expires_at=document.expires_at,
+            uploaded_at=document.uploaded_at,
+            mime_type=document.mime_type,
+            download_url=self.get_download_url(document) if include_download_url else None,
+        )
+
+    def to_response(self, document: Document) -> "DocumentResponse":
+        from app.schemas.document import DocumentResponse
+
+        return DocumentResponse(
+            id=document.id,
+            type=document.type,
+            verification_status=document.verification_status,
+            original_filename=document.original_filename,
+            mime_type=document.mime_type,
+            download_url=self.get_download_url(document),
+        )
 
     def mark_expiring_soon(self, document: Document, client: Client) -> None:
         document.verification_status = DocumentVerificationStatus.PROXIMO_A_VENCER.value

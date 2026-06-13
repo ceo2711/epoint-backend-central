@@ -55,8 +55,14 @@ class GeminiLLMService:
             resp = client.get(image_url)
             resp.raise_for_status()
             media_type = resp.headers.get("content-type", "image/jpeg")
-            b64 = base64.b64encode(resp.content).decode("utf-8")
+            content = resp.content
 
+        return self.analyze_document_bytes(content=content, media_type=media_type, prompt=prompt)
+
+    def analyze_document_bytes(self, *, content: bytes, media_type: str, prompt: str) -> str:
+        from langchain_core.messages import HumanMessage
+
+        b64 = base64.b64encode(content).decode("utf-8")
         message = HumanMessage(
             content=[
                 {"type": "text", "text": prompt},

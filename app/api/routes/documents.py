@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, require_permissions
@@ -29,6 +29,10 @@ def _get_client_for_docs(user: User, client_id: int | None, db) -> Client:
     return client
 
 
+def _document_response(service: DocumentService, doc: Document) -> DocumentResponse:
+    return service.to_response(doc)
+
+
 @router.post("/upload-url", response_model=UploadUrlResponse)
 def request_upload_url(
     payload: UploadUrlRequest,
@@ -49,6 +53,29 @@ def request_upload_url(
     return UploadUrlResponse(**result)
 
 
+@router.post("/upload", response_model=DocumentResponse)
+async def upload_document(
+    document_type: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    db: DbSession,
+    current_user: CurrentUser,
+    client_id: int | None = None,
+) -> DocumentResponse:
+    if current_user.role.code != "CLIENT" and not client_id:
+        raise HTTPException(status_code=400, detail="client_id requerido")
+    client = _get_client_for_docs(current_user, client_id, db)
+    service = DocumentService(db)
+    file_bytes = await file.read()
+    doc = service.upload_file(
+        client=client,
+        document_type=document_type,
+        filename=file.filename or "document",
+        content_type=file.content_type or "",
+        file_bytes=file_bytes,
+    )
+    return _document_response(service, doc)
+
+
 @router.post("/confirm", response_model=DocumentResponse)
 def confirm_upload(
     payload: ConfirmUploadRequest,
@@ -65,12 +92,7 @@ def confirm_upload(
         original_filename=payload.original_filename,
         mime_type=payload.mime_type,
     )
-    return DocumentResponse(
-        id=doc.id,
-        type=doc.type,
-        verification_status=doc.verification_status,
-        original_filename=doc.original_filename,
-    )
+    return _document_response(service, doc)
 
 
 @router.get("/client/{client_id}", response_model=list[DocumentResponse])
@@ -85,13 +107,4 @@ def list_client_documents(
         raise HTTPException(status_code=404)
     docs = db.execute(select(Document).where(Document.client_id == client_id)).scalars().all()
     doc_service = DocumentService(db)
-    return [
-        DocumentResponse(
-            id=d.id,
-            type=d.type,
-            verification_status=d.verification_status,
-            original_filename=d.original_filename,
-            download_url=doc_service.get_download_url(d),
-        )
-        for d in docs
-    ]
+    return [doc_service.to_response(d) for d in docs]

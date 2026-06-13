@@ -91,6 +91,14 @@ def get_board(
     board_service = BoardService(db)
     board = board_service.get_board_for_client(client_id)
     if board is None:
+        client = db.get(Client, client_id)
+        if client is None:
+            raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        if client.approved_at:
+            board_service.create_from_template(client)
+            db.commit()
+            board = board_service.get_board_for_client(client_id)
+    if board is None:
         raise HTTPException(status_code=404, detail="Tablero no encontrado")
     return _build_board_response(board, get_storage_provider(), current_user)
 

@@ -8,6 +8,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.models.notification import Notification
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.notification import NotificationMarkRead, NotificationResponse
+from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notificaciones"])
 
@@ -20,10 +21,8 @@ def list_notifications(
     page_size: int = Query(20, ge=1, le=100),
     unread_only: bool = False,
 ) -> PaginatedResponse[NotificationResponse]:
-    query = select(Notification).where(
-        Notification.user_id == current_user.id,
-        Notification.channel == "IN_APP",
-    )
+    service = NotificationService(db)
+    query = service.apply_in_app_scope(select(Notification), current_user)
     if unread_only:
         query = query.where(Notification.read_at.is_(None))
 
@@ -53,16 +52,12 @@ def mark_read(
     current_user: CurrentUser,
     db: DbSession,
 ) -> MessageResponse:
-    notifications = (
-        db.execute(
-            select(Notification).where(
-                Notification.id.in_(payload.notification_ids),
-                Notification.user_id == current_user.id,
-            )
-        )
-        .scalars()
-        .all()
+    service = NotificationService(db)
+    query = service.apply_in_app_scope(
+        select(Notification).where(Notification.id.in_(payload.notification_ids)),
+        current_user,
     )
+    notifications = db.execute(query).scalars().all()
     now = datetime.now(timezone.utc)
     for n in notifications:
         n.read_at = now

@@ -73,19 +73,74 @@ class WhatsAppProvider(NotificationChannelProvider):
             )
             return False
         try:
+            import json
+
+            from twilio.base.exceptions import TwilioRestException
             from twilio.rest import Client
 
             phone = normalize_whatsapp_number(recipient, settings.whatsapp_default_country_code)
             from_number = settings.twilio_whatsapp_from
             if not from_number.startswith("whatsapp:"):
                 from_number = format_twilio_whatsapp_from(from_number, settings.whatsapp_default_country_code)
+            to_number = f"whatsapp:{phone}"
+
+            content_sid = (payload or {}).get("content_sid") or settings.twilio_whatsapp_client_approved_content_sid
+            content_variables = (payload or {}).get("content_variables")
+
+            logger.info(
+                "Enviando WhatsApp: from=%s to=%s template=%s",
+                from_number,
+                to_number,
+                content_sid or "body",
+            )
             client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-            client.messages.create(
-                from_=from_number,
-                to=f"whatsapp:{phone}",
-                body=f"*{title}*\n\n{body}",
+            if content_sid and content_variables:
+                message = client.messages.create(
+                    from_=from_number,
+                    to=to_number,
+                    content_sid=content_sid,
+                    content_variables=json.dumps(content_variables),
+                )
+            else:
+                message = client.messages.create(
+                    from_=from_number,
+                    to=to_number,
+                    body=f"*{title}*\n\n{body}",
+                )
+            logger.info(
+                "WhatsApp aceptado por Twilio: to=%s sid=%s status=%s",
+                to_number,
+                message.sid,
+                message.status,
             )
             return True
+        except TwilioRestException as exc:
+            if exc.code == 63007:
+                logger.error(
+                    "WhatsApp no enviado a %s: TWILIO_WHATSAPP_FROM (%s) no está registrado "
+                    "como remitente WhatsApp en tu cuenta Twilio. "
+                    "Usá el Sandbox (whatsapp:+14155238886) para pruebas o registrá el número en "
+                    "Twilio Console → Messaging → WhatsApp senders.",
+                    recipient,
+                    settings.twilio_whatsapp_from,
+                )
+            elif exc.code in (63015, 63016, 21608):
+                logger.error(
+                    "WhatsApp no entregado a %s: el número del cliente no está unido al Sandbox de Twilio. "
+                    "Desde ese celular enviá el código join (Twilio Console → WhatsApp Sandbox) al +14155238886. "
+                    "Twilio error %s — %s",
+                    recipient,
+                    exc.code,
+                    exc.msg,
+                )
+            else:
+                logger.error(
+                    "WhatsApp no enviado a %s: Twilio error %s — %s",
+                    recipient,
+                    exc.code,
+                    exc.msg,
+                )
+            return False
         except Exception:
             logger.exception("Error enviando WhatsApp a %s", recipient)
             return False

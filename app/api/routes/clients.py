@@ -14,13 +14,14 @@ from app.schemas.client import (
     ClientAvailabilityResponse,
     ClientCreate,
     ClientDetailResponse,
+    ClientPortalPasswordResponse,
     ClientReject,
     ClientResponse,
     ClientUpdate,
-    DocumentBrief,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.services.clients import ClientService
+from app.services.documents import DocumentService
 
 router = APIRouter(prefix="/clients", tags=["Clientes"])
 
@@ -131,11 +132,14 @@ def get_client(
         .scalar_one()
     )
     base = _to_response(client)
+    portal = service.get_portal_access_info(client)
+    doc_service = DocumentService(db)
     return ClientDetailResponse(
         **base.model_dump(),
+        **portal,
         addresses=client.addresses,
         vehicles=client.vehicles,
-        documents=[DocumentBrief.model_validate(d) for d in client.documents],
+        documents=[doc_service.to_brief(d) for d in client.documents],
     )
 
 
@@ -225,3 +229,24 @@ def approve_client(
         actor=current_user, client=client, advisor_user_id=payload.advisor_user_id
     )
     return ClientApproveResponse(client=_to_response(client), temp_password=temp_password)
+
+
+@router.post("/{client_id}/reset-portal-password", response_model=ClientPortalPasswordResponse)
+def reset_portal_password(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+) -> ClientPortalPasswordResponse:
+    service = ClientService(db)
+    client = service.get_client_for_user(current_user, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    email, temp_password, portal_login_url = service.reset_portal_password(
+        actor=current_user,
+        client=client,
+    )
+    return ClientPortalPasswordResponse(
+        email=email,
+        temp_password=temp_password,
+        portal_login_url=portal_login_url,
+    )

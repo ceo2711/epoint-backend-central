@@ -18,6 +18,10 @@ class StorageProvider(Protocol):
 
     def object_exists(self, key: str) -> bool: ...
 
+    def put_object(self, key: str, body: bytes, content_type: str) -> None: ...
+
+    def get_object_bytes(self, key: str) -> tuple[bytes, str]: ...
+
 
 class S3StorageProvider:
     """Almacenamiento S3 compatible con Bucketeer (Heroku) y MinIO (local)."""
@@ -69,6 +73,20 @@ class S3StorageProvider:
             return True
         except ClientError:
             return False
+
+    def put_object(self, key: str, body: bytes, content_type: str) -> None:
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
+        )
+
+    def get_object_bytes(self, key: str) -> tuple[bytes, str]:
+        response = self._client.get_object(Bucket=self._bucket, Key=key)
+        body = response["Body"].read()
+        content_type = response.get("ContentType") or "application/octet-stream"
+        return body, content_type
 
 
 _storage_provider: S3StorageProvider | None = None

@@ -163,7 +163,7 @@ class BoardService:
                 users=[portal_user],
                 title="Nuevo comentario en tu tarea",
                 body=f"El equipo comentó en '{card.title}'",
-                payload={"card_id": card.id},
+                payload={"card_id": card.id, "client_id": client.id},
             )
         self.db.commit()
         self.db.refresh(comment)

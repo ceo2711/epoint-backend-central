@@ -1,11 +1,11 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import CurrentUser, DbSession
 from app.models.address import Address
 from app.models.client import Client
+from app.models.enums import DocumentVerificationStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.schemas.client import (
@@ -13,13 +13,14 @@ from app.schemas.client import (
     AddressResponse,
     ClientDetailResponse,
     ClientResponse,
+    DocumentBrief,
     ProfileUpdate,
     VehicleCreate,
     VehicleResponse,
-    DocumentBrief,
 )
 from app.schemas.common import MessageResponse
 from app.services.clients import ClientService
+from app.services.documents import DocumentService
 
 router = APIRouter(prefix="/portal", tags=["Portal del cliente"])
 
@@ -30,12 +31,29 @@ def _require_client_user(user: User) -> int:
     return user.client_id
 
 
+def _load_client(db, client_id: int) -> Client | None:
+    return (
+        db.execute(
+            select(Client)
+            .options(
+                joinedload(Client.addresses),
+                joinedload(Client.vehicles),
+                joinedload(Client.documents),
+            )
+            .where(Client.id == client_id)
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
+
+
 @router.get("/me", response_model=ClientDetailResponse)
 def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
     client_id = _require_client_user(current_user)
-    client = db.get(Client, client_id)
+    client = _load_client(db, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    doc_service = DocumentService(db)
     return ClientDetailResponse(
         id=client.id,
         status=client.status,
@@ -52,8 +70,25 @@ def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
         created_at=client.created_at,
         addresses=[AddressResponse.model_validate(a) for a in client.addresses],
         vehicles=[VehicleResponse.model_validate(v) for v in client.vehicles],
-        documents=[DocumentBrief.model_validate(d) for d in client.documents],
+        documents=[
+            doc_service.to_brief(d, include_download_url=False) for d in client.documents
+        ],
     )
+
+
+@router.get("/documents", response_model=list[DocumentBrief])
+def portal_documents(current_user: CurrentUser, db: DbSession) -> list[DocumentBrief]:
+    client_id = _require_client_user(current_user)
+    client = _load_client(db, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    doc_service = DocumentService(db)
+    from app.workers.enqueue import enqueue_document_verification
+
+    for doc in client.documents:
+        if doc.verification_status == DocumentVerificationStatus.PENDIENTE.value:
+            enqueue_document_verification(doc.id)
+    return [doc_service.to_brief(d, include_download_url=True) for d in client.documents]
 
 
 @router.patch("/profile", response_model=ClientResponse)

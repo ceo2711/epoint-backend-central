@@ -73,6 +73,16 @@ class NotificationService:
         self.db.commit()
         return created
 
+    def apply_in_app_scope(self, query, user: User):
+        """Restringe notificaciones in-app al usuario autenticado (y a su cliente si es portal)."""
+        query = query.where(
+            Notification.user_id == user.id,
+            Notification.channel == "IN_APP",
+        )
+        if user.role.code == "CLIENT" and user.client_id is not None:
+            query = query.where(Notification.payload["client_id"].as_integer() == user.client_id)
+        return query
+
     def mark_client_events_read(
         self,
         *,
@@ -149,6 +159,14 @@ class NotificationService:
             success = provider.send(recipient, title, body, payload)
             if not success:
                 status = "FAILED"
+                logger.warning(
+                    "Notificación %s fallida para usuario %s → %s",
+                    channel,
+                    user.id,
+                    recipient,
+                )
+            elif channel == "WHATSAPP":
+                logger.info("Notificación WHATSAPP enviada a %s (usuario %s)", recipient, user.id)
 
         notification = Notification(
             user_id=user.id,

@@ -22,6 +22,7 @@ from app.services.notifications.templates import (
     client_approved_email_body,
     client_approved_in_app_body,
     client_approved_whatsapp_body,
+    client_approved_whatsapp_content_variables,
 )
 
 
@@ -221,6 +222,76 @@ class ClientService:
         self.db.refresh(client)
         return client
 
+    def _resolve_portal_user(self, client: Client, client_role: Role, temp_password: str) -> User:
+        """Obtiene o crea el usuario portal vinculado a este cliente (no reutiliza otros clientes)."""
+        portal_user = (
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role))
+                .join(Role, User.role_id == Role.id)
+                .where(User.client_id == client.id, Role.code == "CLIENT")
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+
+        if portal_user is None:
+            email_user = (
+                self.db.execute(
+                    select(User).options(joinedload(User.role)).where(User.email == client.email)
+                )
+                .unique()
+                .scalar_one_or_none()
+            )
+            if email_user:
+                if email_user.role.code != "CLIENT":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="El email del cliente ya está en uso por un usuario interno",
+                    )
+                if email_user.client_id and email_user.client_id != client.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="El email del cliente ya está asociado a otro portal de cliente",
+                    )
+                portal_user = email_user
+            else:
+                portal_user = User(
+                    email=client.email,
+                    password_hash=hash_password(temp_password),
+                    first_name=client.first_name,
+                    last_name=client.last_name,
+                    phone=client.phone,
+                    role_id=client_role.id,
+                    client_id=client.id,
+                    must_change_password=True,
+                    is_active=True,
+                )
+                self.db.add(portal_user)
+                self.db.flush()
+                return portal_user
+
+        portal_user.password_hash = hash_password(temp_password)
+        portal_user.must_change_password = True
+        portal_user.client_id = client.id
+        portal_user.is_active = True
+        portal_user.first_name = client.first_name
+        portal_user.last_name = client.last_name
+        portal_user.phone = client.phone
+        portal_user.role_id = client_role.id
+        if portal_user.email != client.email:
+            conflict = self.db.execute(
+                select(User).where(User.email == client.email, User.id != portal_user.id)
+            ).scalar_one_or_none()
+            if conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El email del cliente ya está en uso por otro usuario",
+                )
+            portal_user.email = client.email
+        self.db.flush()
+        return portal_user
+
     def approve_client(
         self,
         *,
@@ -254,33 +325,7 @@ class ClientService:
 
         temp_password = _generate_temp_password()
         client_role = self.db.execute(select(Role).where(Role.code == "CLIENT")).scalar_one()
-
-        existing_user = self.db.execute(select(User).where(User.email == client.email)).scalar_one_or_none()
-        if existing_user:
-            existing_user.password_hash = hash_password(temp_password)
-            existing_user.must_change_password = True
-            existing_user.client_id = client.id
-            existing_user.is_active = True
-            existing_user.first_name = client.first_name
-            existing_user.last_name = client.last_name
-            existing_user.phone = client.phone
-            existing_user.role_id = client_role.id
-            portal_user = existing_user
-        else:
-            portal_user = User(
-                email=client.email,
-                password_hash=hash_password(temp_password),
-                first_name=client.first_name,
-                last_name=client.last_name,
-                phone=client.phone,
-                role_id=client_role.id,
-                client_id=client.id,
-                must_change_password=True,
-                is_active=True,
-            )
-            self.db.add(portal_user)
-
-        self.db.flush()
+        portal_user = self._resolve_portal_user(client, client_role, temp_password)
 
         client.status = ClientStatus.EN_CARGA_DATOS.value
 
@@ -308,6 +353,8 @@ class ClientService:
                 "email": client.email,
                 "client_phone": client.phone,
                 "portal_url": portal_login_url,
+                "content_sid": settings.twilio_whatsapp_client_approved_content_sid,
+                "content_variables": client_approved_whatsapp_content_variables(**credential_kwargs),
             },
             channel_bodies={
                 "IN_APP": client_approved_in_app_body(first_name=client.first_name),
@@ -323,9 +370,48 @@ class ClientService:
             entity_id=client.id,
             metadata={"advisor_id": advisor_user_id},
         )
+        self.ensure_board(client)
         self.db.commit()
         self.db.refresh(client)
         return client, temp_password
+
+    def get_portal_access_info(self, client: Client) -> dict:
+        settings = get_settings()
+        portal_user = self.db.execute(
+            select(User).where(User.client_id == client.id, User.is_active.is_(True))
+        ).scalar_one_or_none()
+        if portal_user is None:
+            return {
+                "has_portal_access": False,
+                "portal_email": None,
+                "portal_login_url": None,
+            }
+        return {
+            "has_portal_access": True,
+            "portal_email": portal_user.email,
+            "portal_login_url": settings.portal_login_url,
+        }
+
+    def reset_portal_password(self, *, actor: User, client: Client) -> tuple[str, str, str]:
+        portal_user = self.db.execute(
+            select(User).where(User.client_id == client.id, User.is_active.is_(True))
+        ).scalar_one_or_none()
+        if portal_user is None:
+            raise HTTPException(
+                status_code=400,
+                detail="El cliente aún no tiene acceso al portal. Aprobá el cliente primero.",
+            )
+        temp_password = _generate_temp_password()
+        portal_user.password_hash = hash_password(temp_password)
+        portal_user.must_change_password = True
+        self.audit.log(
+            actor=actor,
+            action="CLIENT_PORTAL_PASSWORD_RESET",
+            entity_type="client",
+            entity_id=client.id,
+        )
+        self.db.commit()
+        return portal_user.email, temp_password, get_settings().portal_login_url
 
     def update_profile(
         self,
@@ -394,16 +480,18 @@ class ClientService:
             payload={"client_id": client.id},
         )
 
-    def try_create_board(self, *, client: Client) -> None:
-        from app.models.document import Document
+    def ensure_board(self, client: Client) -> "Board":
+        from app.models.board import Board
 
-        docs = self.db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
-        if not docs or any(d.verification_status != "APROBADO" for d in docs):
-            return
+        if client.board:
+            return client.board
+        return self.boards.create_from_template(client)
+
+    def try_create_board(self, *, client: Client) -> None:
+        """Crea el tablero si aún no existe (idempotente, sin requisito de documentos)."""
         if client.board:
             return
         self.boards.create_from_template(client)
-        client.status = ClientStatus.ONBOARDING_EN_PROGRESO.value
         self.db.commit()
 
     def delete_client(self, *, actor: User, client: Client) -> None:

@@ -25,4 +25,5 @@ class DocumentResponse(BaseModel):
     type: str
     verification_status: str
     original_filename: str
+    mime_type: str | None = None
     download_url: str | None = None

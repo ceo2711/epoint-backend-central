@@ -9,7 +9,10 @@ from jose import JWTError, jwt
 from app.core.config import get_settings
 
 settings = get_settings()
-password_hasher = PasswordHasher()
+password_hasher = PasswordHasher(
+    time_cost=2 if settings.is_development else 3,
+    memory_cost=65536,
+)
 
 
 def hash_password(password: str) -> str:

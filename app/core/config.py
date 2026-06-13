@@ -1,4 +1,3 @@
-from functools import lru_cache
 from typing import List
 
 from pydantic import AliasChoices, Field, field_validator
@@ -72,6 +71,7 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""
+    twilio_whatsapp_client_approved_content_sid: str = ""
     whatsapp_default_country_code: str = "54"
 
     @field_validator("database_url", mode="before")
@@ -111,6 +111,5 @@ class Settings(BaseSettings):
         return f"{self.portal_base_url}/login"
 
 
-@lru_cache
 def get_settings() -> Settings:
     return Settings()

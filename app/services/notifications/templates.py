@@ -52,3 +52,19 @@ def client_approved_whatsapp_body(
         f"Contraseña temporal: {temp_password}\n\n"
         "En el primer ingreso deberás cambiar la contraseña."
     )
+
+
+def client_approved_whatsapp_content_variables(
+    *,
+    first_name: str,
+    email: str,
+    temp_password: str,
+    portal_login_url: str,
+) -> dict[str, str]:
+    """Variables para plantilla Twilio Content ({{1}}..{{4}})."""
+    return {
+        "1": first_name,
+        "2": portal_login_url,
+        "3": email,
+        "4": temp_password,
+    }

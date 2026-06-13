@@ -63,9 +63,18 @@ class ClientResponse(ORMBase):
 
 
 class ClientDetailResponse(ClientResponse):
+    has_portal_access: bool = False
+    portal_email: str | None = None
+    portal_login_url: str | None = None
     addresses: list["AddressResponse"] = []
     vehicles: list["VehicleResponse"] = []
     documents: list["DocumentBrief"] = []
+
+
+class ClientPortalPasswordResponse(BaseModel):
+    email: str
+    temp_password: str
+    portal_login_url: str
 
 
 class AddressCreate(BaseModel):
@@ -116,6 +125,8 @@ class DocumentBrief(ORMBase):
     original_filename: str
     expires_at: date | None
     uploaded_at: datetime
+    mime_type: str | None = None
+    download_url: str | None = None
 
 
 class ClientApproveResponse(BaseModel):
