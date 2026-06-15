@@ -14,7 +14,7 @@ from app.models.enums import ClientStatus, NotificationEventType
 from app.models.role import Role
 from app.models.user import User
 from app.services.audit import AuditService
-from app.services.boards.service import BoardService
+from app.services.boards import BoardService
 from app.core.config import get_settings
 from app.core.phone import phones_match
 from app.services.notifications import NotificationService

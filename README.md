@@ -63,14 +63,24 @@ git push heroku main
 
 El `Procfile` define `web`, `worker` (Celery) y `release` (migraciones).
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Estructura
 
 ```
 app/
-├── api/routes/     # Endpoints REST
-├── core/           # Config, auth, DB, cifrado
-├── models/         # SQLAlchemy
-├── schemas/        # Pydantic
-├── services/       # Storage S3, notificaciones, LLM (LangChain + Gemini)
-└── workers/        # Celery
+├── api/
+│   ├── deps.py         # Dependencias FastAPI (sesión DB, permisos)
+│   └── v1/             # Endpoints REST (versión 1)
+├── core/               # Config, auth, DB, cifrado
+├── models/             # Tablas SQLAlchemy
+├── schemas/            # Validación Pydantic (entrada/salida)
+├── services/           # Lógica de negocio
+└── workers/            # Tareas en background (Celery)
+migrations/             # Cambios a la base de datos (Alembic)
 ```

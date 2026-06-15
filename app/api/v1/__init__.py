@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import advisors, areas, auth, boards, clients, documents, health, notifications, portal, roles, users
+from app.api.v1 import advisors, areas, auth, boards, clients, documents, health, notifications, portal, roles, users
 
 api_router = APIRouter()
 api_router.include_router(health.router)

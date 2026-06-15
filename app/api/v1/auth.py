@@ -1,0 +1,38 @@
+from fastapi import APIRouter
+
+from app.api.deps import CurrentUser, DbSession
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, TokenResponse
+from app.schemas.common import MessageResponse
+from app.schemas.user import UserMeResponse
+from app.services.auth import AuthService
+
+router = APIRouter(prefix="/auth", tags=["Autenticación"])
+
+
+@router.post("/login", response_model=LoginResponse)
+def login(payload: LoginRequest, db: DbSession) -> LoginResponse:
+    return AuthService(db).login(payload)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(payload: RefreshTokenRequest, db: DbSession) -> TokenResponse:
+    return AuthService(db).refresh_token(payload)
+
+
+@router.post("/logout", response_model=MessageResponse)
+def logout(payload: RefreshTokenRequest, db: DbSession) -> MessageResponse:
+    return AuthService(db).logout(payload)
+
+
+@router.get("/me", response_model=UserMeResponse)
+def get_me(current_user: CurrentUser, db: DbSession) -> UserMeResponse:
+    return AuthService(db).get_me(current_user)
+
+
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    return AuthService(db).change_password(current_user, payload)
