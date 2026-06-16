@@ -17,9 +17,9 @@ from app.services.audit import AuditService
 from app.services.boards import BoardService
 from app.core.config import get_settings
 from app.core.phone import phones_match
+from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_email
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import (
-    client_approved_email_body,
     client_approved_in_app_body,
     client_approved_whatsapp_body,
     client_approved_whatsapp_content_variables,
@@ -343,6 +343,17 @@ class ClientService:
             "temp_password": temp_password,
             "portal_login_url": portal_login_url,
         }
+
+        send_client_welcome_email(
+            ClientWelcomeEmailPayload(
+                recipient_email=client.email,
+                first_name=client.first_name,
+                temp_password=temp_password,
+                portal_login_url=portal_login_url,
+                client_id=client.id,
+            )
+        )
+
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_APPROVED.value,
             users=[portal_user],
@@ -358,7 +369,6 @@ class ClientService:
             },
             channel_bodies={
                 "IN_APP": client_approved_in_app_body(first_name=client.first_name),
-                "EMAIL": client_approved_email_body(**credential_kwargs),
                 "WHATSAPP": client_approved_whatsapp_body(**credential_kwargs),
             },
         )

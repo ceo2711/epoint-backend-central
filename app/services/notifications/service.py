@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 EVENT_CHANNELS: dict[str, list[str]] = {
     "NEW_CLIENT_PENDING_REVIEW": ["IN_APP", "EMAIL"],
     "CLIENT_REJECTED": ["IN_APP", "EMAIL"],
-    "CLIENT_APPROVED": ["IN_APP", "EMAIL", "WHATSAPP"],
+    "CLIENT_APPROVED": ["IN_APP", "WHATSAPP"],
     "DOCUMENT_REJECTED": ["IN_APP", "EMAIL", "WHATSAPP"],
     "DOCUMENT_EXPIRING_SOON": ["IN_APP", "EMAIL", "WHATSAPP"],
     "CLIENT_DATA_COMPLETE": ["IN_APP", "EMAIL"],

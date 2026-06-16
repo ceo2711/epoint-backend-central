@@ -1,4 +1,9 @@
-"""Plantillas de mensajes para notificaciones transaccionales."""
+"""Plantillas de mensajes para notificaciones transaccionales.
+
+El email de bienvenida al aprobar un cliente se envía vía
+`app.services.email.send_client_welcome_email` (no por NotificationService).
+`client_approved_email_body` se usará cuando se implemente el envío real.
+"""
 
 
 def client_approved_in_app_body(*, first_name: str) -> str:
