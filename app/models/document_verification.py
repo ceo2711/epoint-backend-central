@@ -20,6 +20,7 @@ class DocumentVerification(Base):
     ai_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     rejection_reasons: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    approval_reasons: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     document: Mapped["Document"] = relationship(back_populates="verifications")

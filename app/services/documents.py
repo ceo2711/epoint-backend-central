@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.models.client import Client
 from app.models.document import Document
+from app.models.document_verification import DocumentVerification
 from app.models.enums import ClientStatus, DocumentVerificationStatus, NotificationEventType
 from app.models.user import User
 from app.services.clients import ClientService
+from app.services.document_verification_messages import normalize_bilingual_messages, to_localized_lists
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
 
@@ -148,8 +150,48 @@ class DocumentService:
     def get_download_url(self, document: Document) -> str:
         return self.storage.generate_download_url(document.storage_key)
 
+    def latest_verification_messages(self, document: Document) -> tuple["LocalizedStringList | None", "LocalizedStringList | None"]:
+        from app.schemas.client import LocalizedStringList
+
+        if document.verification_status not in {
+            DocumentVerificationStatus.RECHAZADO.value,
+            DocumentVerificationStatus.APROBADO.value,
+            DocumentVerificationStatus.PROXIMO_A_VENCER.value,
+        }:
+            return None, None
+
+        verifications = document.verifications
+        if not verifications:
+            latest = self.db.execute(
+                select(DocumentVerification)
+                .where(DocumentVerification.document_id == document.id)
+                .order_by(DocumentVerification.verified_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        else:
+            latest = max(verifications, key=lambda item: item.verified_at)
+
+        if latest is None:
+            return None, None
+
+        rejection = None
+        approval = None
+
+        if document.verification_status == DocumentVerificationStatus.RECHAZADO.value:
+            rejection_items = normalize_bilingual_messages(latest.rejection_reasons)
+            if rejection_items:
+                rejection = LocalizedStringList(**to_localized_lists(rejection_items))
+        else:
+            approval_items = normalize_bilingual_messages(latest.approval_reasons)
+            if approval_items:
+                approval = LocalizedStringList(**to_localized_lists(approval_items))
+
+        return rejection, approval
+
     def to_brief(self, document: Document, *, include_download_url: bool = True) -> "DocumentBrief":
         from app.schemas.client import DocumentBrief
+
+        rejection_reasons, approval_reasons = self.latest_verification_messages(document)
 
         return DocumentBrief(
             id=document.id,
@@ -160,6 +202,8 @@ class DocumentService:
             uploaded_at=document.uploaded_at,
             mime_type=document.mime_type,
             download_url=self.get_download_url(document) if include_download_url else None,
+            rejection_reasons=rejection_reasons,
+            approval_reasons=approval_reasons,
         )
 
     def to_response(self, document: Document) -> "DocumentResponse":

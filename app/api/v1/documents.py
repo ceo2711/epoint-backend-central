@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, require_permissions
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.schemas.document import ConfirmUploadRequest, DocumentResponse, UploadUrlRequest, UploadUrlResponse
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
+from app.services.storage import get_storage_provider
 
 router = APIRouter(prefix="/documents", tags=["Documentos"])
 
@@ -93,6 +95,36 @@ def confirm_upload(
         mime_type=payload.mime_type,
     )
     return _document_response(service, doc)
+
+
+def _get_document_for_user(db, user: User, document_id: int) -> Document:
+    doc = db.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if user.role.code == "CLIENT":
+        if user.client_id != doc.client_id:
+            raise HTTPException(status_code=403, detail="Sin acceso al documento")
+    else:
+        service = ClientService(db)
+        if service.get_client_for_user(user, doc.client_id) is None:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return doc
+
+
+@router.get("/{document_id}/content")
+def get_document_content(
+    document_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    doc = _get_document_for_user(db, current_user, document_id)
+    storage = get_storage_provider()
+    file_bytes, media_type = storage.get_object_bytes(doc.storage_key)
+    return StreamingResponse(
+        iter([file_bytes]),
+        media_type=doc.mime_type or media_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
+    )
 
 
 @router.get("/client/{client_id}", response_model=list[DocumentResponse])

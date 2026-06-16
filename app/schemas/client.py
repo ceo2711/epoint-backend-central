@@ -1,6 +1,7 @@
 from datetime import date, datetime
+import re
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.common import ORMBase
 
@@ -114,8 +115,37 @@ class VehicleResponse(ORMBase):
 
 
 class ProfileUpdate(BaseModel):
-    ssn: str | None = Field(default=None, min_length=9, max_length=11)
+    ssn: str | None = Field(default=None, max_length=11)
     date_of_birth: date | None = None
+
+    @field_validator("ssn", mode="before")
+    @classmethod
+    def normalize_ssn(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return None if not stripped else stripped
+        return value
+
+    @field_validator("ssn")
+    @classmethod
+    def validate_ssn(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        digits = re.sub(r"\D", "", value)
+        if len(digits) != 9:
+            raise ValueError("El número de Seguro Social debe tener 9 dígitos (formato XXX-XX-XXXX).")
+        return digits
+
+
+class ClientSsnResponse(BaseModel):
+    ssn: str
+
+
+class LocalizedStringList(BaseModel):
+    en: list[str] = Field(default_factory=list)
+    es: list[str] = Field(default_factory=list)
 
 
 class DocumentBrief(ORMBase):
@@ -127,8 +157,19 @@ class DocumentBrief(ORMBase):
     uploaded_at: datetime
     mime_type: str | None = None
     download_url: str | None = None
+    rejection_reasons: LocalizedStringList | None = None
+    approval_reasons: LocalizedStringList | None = None
 
 
 class ClientApproveResponse(BaseModel):
     client: ClientResponse
     temp_password: str
+
+
+class ClientStatsResponse(BaseModel):
+    pending_review: int
+    approved_in_onboarding: int
+    rejected: int
+    onboarding_in_progress: int
+    completed: int
+    total: int

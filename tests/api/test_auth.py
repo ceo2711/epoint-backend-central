@@ -37,6 +37,7 @@ class TestAuthRoutes:
     def test_login_endpoint(self, client):
         mock_response = LoginResponse(
             access_token="fake-token",
+            refresh_token="fake-refresh",
             must_change_password=False,
             user=_sample_user_me(),
         )

@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import CurrentUser, DbSession
 from app.models.address import Address
 from app.models.client import Client
+from app.models.document import Document
 from app.models.enums import DocumentVerificationStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
@@ -13,6 +14,7 @@ from app.schemas.client import (
     AddressResponse,
     ClientDetailResponse,
     ClientResponse,
+    ClientSsnResponse,
     DocumentBrief,
     ProfileUpdate,
     VehicleCreate,
@@ -38,7 +40,7 @@ def _load_client(db, client_id: int) -> Client | None:
             .options(
                 joinedload(Client.addresses),
                 joinedload(Client.vehicles),
-                joinedload(Client.documents),
+                joinedload(Client.documents).joinedload(Document.verifications),
             )
             .where(Client.id == client_id)
         )
@@ -89,6 +91,16 @@ def portal_documents(current_user: CurrentUser, db: DbSession) -> list[DocumentB
         if doc.verification_status == DocumentVerificationStatus.PENDIENTE.value:
             enqueue_document_verification(doc.id)
     return [doc_service.to_brief(d, include_download_url=True) for d in client.documents]
+
+
+@router.get("/ssn", response_model=ClientSsnResponse)
+def portal_ssn(current_user: CurrentUser, db: DbSession) -> ClientSsnResponse:
+    client_id = _require_client_user(current_user)
+    client = db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    service = ClientService(db)
+    return ClientSsnResponse(ssn=service.get_client_ssn(client))
 
 
 @router.patch("/profile", response_model=ClientResponse)

@@ -64,6 +64,7 @@ class AuthService:
 
         return LoginResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             must_change_password=user.must_change_password,
             user=self._build_user_me(user),
         )

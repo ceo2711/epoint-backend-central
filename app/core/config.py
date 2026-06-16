@@ -65,8 +65,9 @@ class Settings(BaseSettings):
 
     # Notifications
     notifications_dry_run: bool = True
+    resend_api_key: str = ""
     sendgrid_api_key: str = ""
-    email_from: str = "notificaciones@epoint.com"
+    email_from: str = "onboarding@resend.dev"
     email_from_name: str = "ePoint CRM"
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""

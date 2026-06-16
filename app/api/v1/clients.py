@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, require_permissions
 from app.models.client import Client
+from app.models.document import Document
 from app.models.user import User
 from app.schemas.client import (
     ClientApprove,
@@ -17,6 +18,7 @@ from app.schemas.client import (
     ClientPortalPasswordResponse,
     ClientReject,
     ClientResponse,
+    ClientStatsResponse,
     ClientUpdate,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
@@ -112,6 +114,15 @@ def create_client(
     return _to_response(client)
 
 
+@router.get("/stats", response_model=ClientStatsResponse)
+def get_client_stats(
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+) -> ClientStatsResponse:
+    service = ClientService(db)
+    return ClientStatsResponse(**service.get_client_stats(current_user))
+
+
 @router.get("/{client_id}", response_model=ClientDetailResponse)
 def get_client(
     client_id: int,
@@ -125,7 +136,11 @@ def get_client(
     client = (
         db.execute(
             select(Client)
-            .options(joinedload(Client.addresses), joinedload(Client.vehicles), joinedload(Client.documents))
+            .options(
+                joinedload(Client.addresses),
+                joinedload(Client.vehicles),
+                joinedload(Client.documents).joinedload(Document.verifications),
+            )
             .where(Client.id == client_id)
         )
         .unique()

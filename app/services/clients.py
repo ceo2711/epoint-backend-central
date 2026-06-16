@@ -1,12 +1,13 @@
+import re
 import secrets
 import string
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.encryption import encrypt_value
+from app.core.encryption import decrypt_value, encrypt_value
 from app.core.security import hash_password
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
@@ -61,6 +62,51 @@ class ClientService:
             "client_id": client.id,
             "client_name": client.full_name,
             "client_email": client.email,
+        }
+
+    def _scoped_clients_query(self, user: User):
+        query = select(Client)
+        if user.role.code == "SALES_REP":
+            query = query.where(Client.registered_by_user_id == user.id)
+        elif user.role.code == "ADVISOR":
+            query = query.join(ClientAssignment).where(
+                ClientAssignment.advisor_user_id == user.id,
+                ClientAssignment.unassigned_at.is_(None),
+            )
+        return query
+
+    def get_client_stats(self, user: User) -> dict[str, int]:
+        pending = ClientStatus.PENDIENTE_DE_REVISION.value
+        rejected = ClientStatus.RECHAZADO.value
+        completed = ClientStatus.ONBOARDING_COMPLETADO.value
+        in_progress = ClientStatus.ONBOARDING_EN_PROGRESO.value
+        approved_statuses = {
+            ClientStatus.APROBADO_PARA_ONBOARDING.value,
+            ClientStatus.EN_CARGA_DATOS.value,
+            ClientStatus.DOCUMENTOS_EN_REVISION.value,
+            ClientStatus.LISTO_PARA_TABLERO.value,
+        }
+
+        scoped = self._scoped_clients_query(user).subquery()
+        rows = self.db.execute(
+            select(scoped.c.status, func.count()).group_by(scoped.c.status)
+        ).all()
+
+        counts: dict[str, int] = {status: count for status, count in rows}
+        pending_review = counts.get(pending, 0)
+        rejected_count = counts.get(rejected, 0)
+        completed_count = counts.get(completed, 0)
+        onboarding_in_progress = counts.get(in_progress, 0)
+        approved_in_onboarding = sum(counts.get(s, 0) for s in approved_statuses)
+        total = sum(counts.values())
+
+        return {
+            "pending_review": pending_review,
+            "approved_in_onboarding": approved_in_onboarding,
+            "rejected": rejected_count,
+            "onboarding_in_progress": onboarding_in_progress,
+            "completed": completed_count,
+            "total": total,
         }
 
     def assert_email_available(self, email: str, *, exclude_client_id: int | None = None) -> None:
@@ -444,6 +490,22 @@ class ClientService:
         self.db.commit()
         self.db.refresh(client)
         return client
+
+    @staticmethod
+    def format_ssn_display(digits: str) -> str:
+        cleaned = re.sub(r"\D", "", digits)
+        if len(cleaned) == 9:
+            return f"{cleaned[:3]}-{cleaned[3:5]}-{cleaned[5:]}"
+        return cleaned
+
+    def get_client_ssn(self, client: Client) -> str:
+        if not client.ssn_encrypted:
+            raise HTTPException(status_code=404, detail="SSN no registrado")
+        try:
+            raw = decrypt_value(client.ssn_encrypted)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="No se pudo leer el SSN") from exc
+        return self.format_ssn_display(raw)
 
     def check_data_complete(self, client: Client) -> bool:
         from app.models.address import Address

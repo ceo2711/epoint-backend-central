@@ -15,6 +15,7 @@ class TokenResponse(BaseModel):
 
 
 class LoginResponse(TokenResponse):
+    refresh_token: str
     user: UserMeResponse
 
 

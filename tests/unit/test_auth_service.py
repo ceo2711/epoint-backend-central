@@ -92,6 +92,7 @@ class TestAuthServiceLogin:
             response = AuthService(db).login(LoginRequest(email="admin@test.com", password="Admin123!"))
 
         assert response.access_token
+        assert response.refresh_token
         assert response.user.email == "admin@test.com"
         db.add.assert_called_once()
         db.commit.assert_called_once()

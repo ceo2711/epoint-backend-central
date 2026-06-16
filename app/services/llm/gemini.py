@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.services.document_media import prepare_vision_images
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +63,24 @@ class GeminiLLMService:
     def analyze_document_bytes(self, *, content: bytes, media_type: str, prompt: str) -> str:
         from langchain_core.messages import HumanMessage
 
-        b64 = base64.b64encode(content).decode("utf-8")
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
-            ]
-        )
+        vision_images = prepare_vision_images(content, media_type)
+        if len(vision_images) > 1:
+            prompt = (
+                f"{prompt}\n\nThe document is a PDF with {len(vision_images)} page(s). "
+                "Each image is one page. Analyze all pages together."
+            )
+
+        message_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image_bytes, image_media_type in vision_images:
+            b64 = base64.b64encode(image_bytes).decode("utf-8")
+            message_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{image_media_type};base64,{b64}"},
+                }
+            )
+
+        message = HumanMessage(content=message_content)
         response = self._get_llm().invoke([message])
         return self._extract_content(response.content)
 

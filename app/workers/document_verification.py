@@ -13,25 +13,44 @@ from app.models.document_verification import DocumentVerification
 from app.models.enums import DocumentVerificationStatus, NotificationEventType
 from app.models.role import Role
 from app.models.user import User
+from app.services.document_verification_messages import (
+    build_approval_messages,
+    build_rejection_messages,
+)
+from app.services.document_verification_rules import (
+    build_document_type_context,
+    is_verification_approved,
+)
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
-VERIFICATION_PROMPT = """Analizá este documento de identidad o comprobante y respondé ÚNICAMENTE con JSON válido:
+VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification and respond ONLY with valid JSON:
 {
   "is_readable": true/false,
   "is_complete": true/false,
   "is_color": true/false,
   "corners_cut": true/false,
   "is_expired": true/false,
-  "expires_at": "YYYY-MM-DD o null",
+  "expires_at": "YYYY-MM-DD or null",
+  "document_type_matches": true/false,
+  "detected_document_type": "short label of what the file actually is (e.g. SSN card, invoice, bank statement)",
   "name_matches": true/false,
   "address_matches": true/false,
-  "rejection_reasons": ["motivo1", ...]
+  "rejection_reasons": [{"en": "English reason", "es": "Motivo en español"}],
+  "approval_reasons": [{"en": "English detail", "es": "Detalle en español"}]
 }
-Criterios: legible, completo, a color, sin esquinas cortadas, vigente.
-Para utility bill/bank statement verificar nombre y dirección si se proporcionan datos del cliente."""
+
+Critical rules:
+- document_type_matches is the most important field. Set it to false if the file is NOT the exact document type requested, even when quality is good.
+- detected_document_type must describe what you actually see, not what was requested.
+- name_matches: true only if the client's full name appears on the document (required for identity documents and address proofs).
+- address_matches: true only for utility bills / bank statements when the service/mailing address is visible and plausible.
+- Every reason must include both "en" and "es".
+- If rejected, rejection_reasons must explain the main issue (wrong document type, missing name, poor quality, etc.).
+- If approved, approval_reasons must cite verified facts (type matched, name found, etc.) — never claim a match that is false.
+- Criteria: readable, complete, in color, no cropped corners, valid/not expired, AND correct document type."""
 
 
 def run_document_verification(document_id: int) -> dict:
@@ -57,41 +76,52 @@ def run_document_verification(document_id: int) -> dict:
         from app.services.llm import get_llm_service
 
         llm = get_llm_service()
-        client_context = (
-            f"Cliente: {client.first_name} {client.last_name}. "
-            f"Tipo documento: {document.type}."
-        )
+        client_name = f"{client.first_name} {client.last_name}".strip()
+        type_context = build_document_type_context(document.type, client_name)
         try:
             result_text = llm.analyze_document_bytes(
                 content=file_bytes,
                 media_type=document.mime_type or media_type,
-                prompt=f"{VERIFICATION_PROMPT}\n{client_context}",
+                prompt=f"{VERIFICATION_PROMPT}\n\n{type_context}",
             )
             result = json.loads(result_text.strip().removeprefix("```json").removesuffix("```").strip())
         except Exception as exc:
             logger.exception("Error verificando documento %s", document_id)
             result = {
                 "is_readable": False,
-                "rejection_reasons": [f"Error de verificación IA: {str(exc)}"],
+                "rejection_reasons": [
+                    {
+                        "en": f"AI verification error: {exc}",
+                        "es": f"Error de verificación IA: {exc}",
+                    }
+                ],
             }
 
-        rejection_reasons = result.get("rejection_reasons", [])
-        approved = (
-            result.get("is_readable", False)
-            and result.get("is_complete", False)
-            and result.get("is_color", False)
-            and not result.get("corners_cut", True)
-            and not result.get("is_expired", True)
-        )
-
-        if document.type in ("UTILITY_BILL", "BANK_STATEMENT"):
-            approved = approved and result.get("name_matches", False) and result.get("address_matches", False)
-
-        status = DocumentVerificationStatus.APROBADO.value if approved else DocumentVerificationStatus.RECHAZADO.value
-        document.verification_status = status
+        approved = is_verification_approved(result, document.type)
 
         expires_str = result.get("expires_at")
-        if expires_str:
+        rejection_messages: list[dict[str, str]] = []
+        approval_messages: list[dict[str, str]] = []
+
+        if approved:
+            approval_messages = build_approval_messages(
+                result,
+                document_type=document.type,
+                client_name=client_name,
+                expires_at=expires_str if isinstance(expires_str, str) else None,
+            )
+            status = DocumentVerificationStatus.APROBADO.value
+        else:
+            rejection_messages = build_rejection_messages(
+                result,
+                document_type=document.type,
+                client_name=client_name,
+            )
+            status = DocumentVerificationStatus.RECHAZADO.value
+
+        document.verification_status = status
+
+        if expires_str and approved:
             try:
                 document.expires_at = date.fromisoformat(expires_str)
                 if document.expires_at <= date.today() + timedelta(days=30):
@@ -104,7 +134,8 @@ def run_document_verification(document_id: int) -> dict:
             status=document.verification_status,
             ai_model=llm.model_name if llm.is_available else "unavailable",
             raw_response=result,
-            rejection_reasons=rejection_reasons if rejection_reasons else None,
+            rejection_reasons=rejection_messages or None,
+            approval_reasons=approval_messages or None,
         )
         db.add(verification)
 
@@ -112,12 +143,13 @@ def run_document_verification(document_id: int) -> dict:
         portal_users = list(db.execute(select(User).where(User.client_id == client.id)).scalars().all())
 
         if not approved:
+            rejection_es = [item["es"] for item in rejection_messages]
             if portal_users:
                 notifications.notify(
                     event_type=NotificationEventType.DOCUMENT_REJECTED.value,
                     users=portal_users,
                     title="Documento rechazado",
-                    body=f"Tu documento {document.type} no pasó la verificación: {', '.join(rejection_reasons) or 'revisar calidad'}",
+                    body=f"Tu documento {document.type} no pasó la verificación: {', '.join(rejection_es) or 'revisar calidad'}",
                     payload={"document_id": document.id, "client_id": client.id},
                 )
             onboarding = list(
