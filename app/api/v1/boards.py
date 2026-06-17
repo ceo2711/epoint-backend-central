@@ -1,11 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, require_permissions
 from app.core.encryption import encrypt_value
 from app.models.board_card import BoardCard
+from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
 from app.models.client import Client
 from app.models.credential_submission import CredentialSubmission
@@ -13,12 +15,16 @@ from app.models.user import User
 from app.schemas.board import (
     BoardCardResponse,
     BoardListResponse,
+    BoardMentionableUserResponse,
     BoardResponse,
     CardAttachmentResponse,
     CardCommentCreate,
     CardCommentResponse,
+    CardCreate,
+    CardMoveUpdate,
     CardResultUpdate,
     CardStatusUpdate,
+    CardUpdate,
     CredentialSubmit,
 )
 from app.schemas.common import MessageResponse
@@ -28,6 +34,86 @@ from app.services.clients import ClientService
 from app.services.storage import get_storage_provider
 
 router = APIRouter(prefix="/boards", tags=["Tableros"])
+
+BOARD_STAFF_ROLES = frozenset({"ADMIN", "ONBOARDING_MANAGER", "ADVISOR"})
+
+
+def _is_board_staff(user: User) -> bool:
+    return user.role.code in BOARD_STAFF_ROLES
+
+
+def _require_board_staff(user: User) -> None:
+    if not _is_board_staff(user):
+        raise HTTPException(status_code=403, detail="No tenés permiso para modificar el tablero")
+
+
+def _attachment_response(
+    attachment: CardAttachment,
+    storage,
+    *,
+    include_download_url: bool = False,
+) -> CardAttachmentResponse:
+    download_url = storage.generate_download_url(attachment.storage_key) if include_download_url else None
+    return CardAttachmentResponse(
+        id=attachment.id,
+        type=attachment.type,
+        original_filename=attachment.original_filename,
+        mime_type=attachment.mime_type,
+        download_url=download_url,
+        comment_id=attachment.comment_id,
+        uploaded_by_name=attachment.uploaded_by.full_name if attachment.uploaded_by else None,
+        created_at=attachment.created_at,
+    )
+
+
+def _card_response(card: BoardCard, storage) -> BoardCardResponse:
+    comments = [
+        CardCommentResponse(
+            id=c.id,
+            body=c.body,
+            is_internal=c.is_internal,
+            author_name=c.author.full_name if c.author else "—",
+            created_at=c.created_at,
+        )
+        for c in card.comments
+    ]
+    attachments = [_attachment_response(a, storage) for a in card.attachments]
+    return BoardCardResponse(
+        id=card.id,
+        title=card.title,
+        description_md=card.description_md,
+        instructions_md=card.instructions_md,
+        external_links=card.external_links,
+        status=card.status,
+        position=card.position,
+        requires_credentials=card.requires_credentials,
+        requires_file_upload=card.requires_file_upload,
+        client_result_text=card.client_result_text,
+        comments=comments,
+        attachments=attachments,
+        has_credentials=len(card.credential_submissions) > 0,
+    )
+
+
+def _get_card_client(card: BoardCard, current_user: User, db) -> Client:
+    client = db.get(Client, card.board_list.board.client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
+        raise HTTPException(status_code=403)
+    if current_user.role.code != "CLIENT":
+        cs = ClientService(db)
+        if not cs.user_can_access_client(current_user, client.id):
+            raise HTTPException(status_code=404)
+    return client
+
+
+def _get_attachment_for_user(attachment_id: int, current_user: User, db) -> CardAttachment:
+    attachment = db.get(CardAttachment, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+    _get_card_client(attachment.card, current_user, db)
+    return attachment
 
 
 def _build_board_response(board, storage, user: User) -> BoardResponse:
@@ -47,12 +133,7 @@ def _build_board_response(board, storage, user: User) -> BoardResponse:
                 if not c.is_internal or user.role.code != "CLIENT"
             ]
             attachments = [
-                CardAttachmentResponse(
-                    id=a.id,
-                    type=a.type,
-                    original_filename=a.original_filename,
-                    download_url=storage.generate_download_url(a.storage_key),
-                )
+                _attachment_response(a, storage)
                 for a in card.attachments
             ]
             cards.append(
@@ -86,7 +167,7 @@ def get_board(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         cs = ClientService(db)
-        if cs.get_client_for_user(current_user, client_id) is None:
+        if not cs.user_can_access_client(current_user, client_id):
             raise HTTPException(status_code=404)
     board_service = BoardService(db)
     board = board_service.get_board_for_client(client_id)
@@ -101,6 +182,87 @@ def get_board(
     if board is None:
         raise HTTPException(status_code=404, detail="Tablero no encontrado")
     return _build_board_response(board, get_storage_provider(), current_user)
+
+
+@router.get("/client/{client_id}/mentionable-users", response_model=list[BoardMentionableUserResponse])
+def list_mentionable_users(
+    client_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    include_client: bool = True,
+) -> list[BoardMentionableUserResponse]:
+    if current_user.role.code == "CLIENT" and current_user.client_id != client_id:
+        raise HTTPException(status_code=403)
+    cs = ClientService(db)
+    if current_user.role.code != "CLIENT":
+        if not cs.user_can_access_client(current_user, client_id):
+            raise HTTPException(status_code=404)
+        client = cs.get_client_detail(client_id)
+    else:
+        client = cs.get_client_detail(client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+
+    users = cs.get_mentionable_users(
+        client=client,
+        current_user=current_user,
+        include_client=include_client,
+    )
+    return [
+        BoardMentionableUserResponse(
+            id=user.id,
+            full_name=user.full_name,
+            role_code=user.role.code,
+        )
+        for user in users
+    ]
+
+
+@router.post("/lists/{list_id}/cards", response_model=BoardCardResponse)
+def create_card(
+    list_id: int,
+    payload: CardCreate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> BoardCardResponse:
+    board_list = db.get(BoardList, list_id)
+    if board_list is None:
+        raise HTTPException(status_code=404, detail="Columna no encontrada")
+
+    board = board_list.board
+    client = db.get(Client, board.client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
+        raise HTTPException(status_code=403)
+    if current_user.role.code != "CLIENT":
+        cs = ClientService(db)
+        if not cs.user_can_access_client(current_user, client.id):
+            raise HTTPException(status_code=404)
+    _require_board_staff(current_user)
+
+    board_service = BoardService(db)
+    try:
+        card = board_service.create_card(
+            board_list=board_list,
+            title=payload.title,
+            position=payload.position,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BoardCardResponse(
+        id=card.id,
+        title=card.title,
+        description_md=card.description_md,
+        instructions_md=card.instructions_md,
+        external_links=card.external_links,
+        status=card.status,
+        position=card.position,
+        requires_credentials=card.requires_credentials,
+        requires_file_upload=card.requires_file_upload,
+        client_result_text=card.client_result_text,
+    )
 
 
 @router.patch("/cards/{card_id}/status", response_model=BoardCardResponse)
@@ -135,6 +297,142 @@ def update_card_status(
     )
 
 
+@router.patch("/cards/{card_id}/move", response_model=BoardCardResponse)
+def move_card(
+    card_id: int,
+    payload: CardMoveUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> BoardCardResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    board = card.board_list.board
+    client = db.get(Client, board.client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
+    if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
+        raise HTTPException(status_code=403)
+    if current_user.role.code != "CLIENT":
+        cs = ClientService(db)
+        if not cs.user_can_access_client(current_user, client.id):
+            raise HTTPException(status_code=404)
+    _require_board_staff(current_user)
+
+    board_service = BoardService(db)
+    try:
+        card = board_service.move_card(
+            card=card,
+            target_list_id=payload.list_id,
+            target_position=payload.position,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BoardCardResponse(
+        id=card.id,
+        title=card.title,
+        description_md=card.description_md,
+        instructions_md=card.instructions_md,
+        external_links=card.external_links,
+        status=card.status,
+        position=card.position,
+        requires_credentials=card.requires_credentials,
+        requires_file_upload=card.requires_file_upload,
+        client_result_text=card.client_result_text,
+    )
+
+
+@router.patch("/cards/{card_id}", response_model=BoardCardResponse)
+def update_card(
+    card_id: int,
+    payload: CardUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> BoardCardResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    _get_card_client(card, current_user, db)
+    _require_board_staff(current_user)
+
+    board_service = BoardService(db)
+    try:
+        card = board_service.update_card(
+            card=card,
+            title=payload.title,
+            description_md=payload.description_md,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BoardCardResponse(
+        id=card.id,
+        title=card.title,
+        description_md=card.description_md,
+        instructions_md=card.instructions_md,
+        external_links=card.external_links,
+        status=card.status,
+        position=card.position,
+        requires_credentials=card.requires_credentials,
+        requires_file_upload=card.requires_file_upload,
+        client_result_text=card.client_result_text,
+    )
+
+
+@router.post("/cards/{card_id}/attachments", response_model=CardAttachmentResponse)
+async def upload_card_attachment(
+    card_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    file: Annotated[UploadFile, File()],
+    comment_id: Annotated[int | None, Form()] = None,
+    attachment_type: Annotated[str, Form()] = "CLIENT_UPLOAD",
+) -> CardAttachmentResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    client = _get_card_client(card, current_user, db)
+
+    if current_user.role.code == "CLIENT" and comment_id is None:
+        raise HTTPException(status_code=403, detail="Solo podés adjuntar archivos en comentarios")
+
+    file_bytes = await file.read()
+    board_service = BoardService(db)
+    try:
+        attachment = board_service.upload_attachment(
+            card=card,
+            actor=current_user,
+            client=client,
+            filename=file.filename or "attachment",
+            content_type=file.content_type or "",
+            file_bytes=file_bytes,
+            attachment_type=attachment_type,
+            comment_id=comment_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    storage = get_storage_provider()
+    return _attachment_response(attachment, storage)
+
+
+@router.get("/attachments/{attachment_id}/content")
+def get_attachment_content(
+    attachment_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    attachment = _get_attachment_for_user(attachment_id, current_user, db)
+    storage = get_storage_provider()
+    file_bytes, media_type = storage.get_object_bytes(attachment.storage_key)
+    return StreamingResponse(
+        iter([file_bytes]),
+        media_type=attachment.mime_type or media_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.original_filename}"'},
+    )
+
+
 @router.post("/cards/{card_id}/comments", response_model=CardCommentResponse)
 def add_comment(
     card_id: int,
@@ -146,10 +444,16 @@ def add_comment(
     if card is None:
         raise HTTPException(status_code=404)
     client = db.get(Client, card.board_list.board.client_id)
+    if client is None:
+        raise HTTPException(status_code=404)
     if current_user.role.code == "CLIENT":
         if current_user.client_id != client.id:
             raise HTTPException(status_code=403)
         payload.is_internal = False
+    else:
+        cs = ClientService(db)
+        if not cs.user_can_access_client(current_user, client.id):
+            raise HTTPException(status_code=404)
     comment = BoardService(db).add_comment(
         card=card, author=current_user, body=payload.body, is_internal=payload.is_internal, client=client
     )

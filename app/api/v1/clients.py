@@ -3,11 +3,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, require_permissions
 from app.models.client import Client
-from app.models.document import Document
 from app.models.user import User
 from app.schemas.client import (
     ClientApprove,
@@ -54,22 +52,16 @@ def list_clients(
     page_size: int = Query(20, ge=1, le=100),
     status_filter: str | None = None,
     search: str | None = None,
+    onboarding_only: bool = Query(False),
 ) -> PaginatedResponse[ClientResponse]:
-    query = select(Client)
-    if current_user.role.code == "SALES_REP":
-        query = query.where(Client.registered_by_user_id == current_user.id)
-    if status_filter:
-        query = query.where(Client.status == status_filter)
-    if search:
-        term = f"%{search}%"
-        query = query.where(
-            or_(Client.first_name.ilike(term), Client.last_name.ilike(term), Client.email.ilike(term))
-        )
-    total = db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
-    clients = (
-        db.execute(query.order_by(Client.created_at.desc()).offset((page - 1) * page_size).limit(page_size))
-        .scalars()
-        .all()
+    service = ClientService(db)
+    clients, total = service.list_clients_for_user(
+        current_user,
+        page=page,
+        page_size=page_size,
+        status_filter=status_filter,
+        search=search,
+        onboarding_only=onboarding_only,
     )
     return PaginatedResponse(
         items=[_to_response(c) for c in clients],
@@ -130,31 +122,28 @@ def get_client(
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
 ) -> ClientDetailResponse:
     service = ClientService(db)
-    client = service.get_client_for_user(current_user, client_id)
+    if not service.user_can_access_client(current_user, client_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    client = service.get_client_detail(client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    client = (
-        db.execute(
-            select(Client)
-            .options(
-                joinedload(Client.addresses),
-                joinedload(Client.vehicles),
-                joinedload(Client.documents).joinedload(Document.verifications),
-            )
-            .where(Client.id == client_id)
-        )
-        .unique()
-        .scalar_one()
-    )
     base = _to_response(client)
     portal = service.get_portal_access_info(client)
     doc_service = DocumentService(db)
+    latest_verifications = doc_service.load_latest_verifications_map([doc.id for doc in client.documents])
     return ClientDetailResponse(
         **base.model_dump(),
         **portal,
         addresses=client.addresses,
         vehicles=client.vehicles,
-        documents=[doc_service.to_brief(d) for d in client.documents],
+        documents=[
+            doc_service.to_brief(
+                doc,
+                include_download_url=False,
+                latest_verification=latest_verifications.get(doc.id),
+            )
+            for doc in client.documents
+        ],
     )
 
 

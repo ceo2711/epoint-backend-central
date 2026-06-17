@@ -1,17 +1,21 @@
 import json
+import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
+from app.models.card_attachment import CardAttachment
 from app.models.card_comment import CardComment
 from app.models.client import Client
 from app.models.enums import NotificationEventType, TaskStatus
 from app.models.role import Role
 from app.models.user import User
 from app.services.notifications import NotificationService
+from app.services.storage import get_storage_provider
+from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
 
 
 class BoardService:
@@ -64,14 +68,17 @@ class BoardService:
             self.db.execute(
                 select(Board)
                 .options(
-                    joinedload(Board.lists)
-                    .joinedload(BoardList.cards)
-                    .joinedload(BoardCard.comments)
-                    .joinedload(CardComment.author),
-                    joinedload(Board.lists).joinedload(BoardList.cards).joinedload(BoardCard.attachments),
-                    joinedload(Board.lists)
-                    .joinedload(BoardList.cards)
-                    .joinedload(BoardCard.credential_submissions),
+                    selectinload(Board.lists)
+                    .selectinload(BoardList.cards)
+                    .selectinload(BoardCard.comments)
+                    .selectinload(CardComment.author),
+                    selectinload(Board.lists)
+                    .selectinload(BoardList.cards)
+                    .selectinload(BoardCard.attachments)
+                    .selectinload(CardAttachment.uploaded_by),
+                    selectinload(Board.lists)
+                    .selectinload(BoardList.cards)
+                    .selectinload(BoardCard.credential_submissions),
                 )
                 .where(Board.client_id == client_id)
             )
@@ -136,35 +143,224 @@ class BoardService:
         )
         self.db.add(comment)
 
-        portal_user = self.db.execute(
-            select(User).where(User.client_id == client.id)
-        ).scalar_one_or_none()
-        if author.role.code == "CLIENT" and portal_user:
-            from app.models.role import Role
+        from app.services.clients import ClientService
+        from app.utils.comment_mentions import extract_mention_user_ids
 
-            team = list(
-                self.db.execute(
-                    select(User).join(Role).where(
-                        Role.code.in_(["ONBOARDING_MANAGER", "ADVISOR"]),
-                        User.is_active.is_(True),
-                    )
-                ).scalars().all()
-            )
+        mentioned_users = ClientService(self.db).validate_mention_user_ids(
+            client=client,
+            current_user=author,
+            user_ids=extract_mention_user_ids(body),
+            is_internal=is_internal,
+        )
+
+        recipients = self._comment_notification_recipients(
+            client=client,
+            author=author,
+            is_internal=is_internal,
+        )
+        seen = {user.id for user in recipients}
+        for user in mentioned_users:
+            if user.id != author.id and user.id not in seen:
+                seen.add(user.id)
+                recipients.append(user)
+        recipients = [
+            user for user in recipients if user.role.code != "ONBOARDING_MANAGER"
+        ]
+        if recipients:
+            from app.utils.comment_mentions import format_comment_preview
+
+            preview = format_comment_preview(body)
             self.notifications.notify(
                 event_type=NotificationEventType.TASK_COMMENTED.value,
-                users=team,
+                users=recipients,
                 title="Nuevo comentario en tarea",
-                body=f"Comentario en '{card.title}': {body[:100]}",
-                payload={"card_id": card.id, "client_id": client.id},
-            )
-        elif portal_user:
-            self.notifications.notify(
-                event_type=NotificationEventType.TASK_COMMENTED.value,
-                users=[portal_user],
-                title="Nuevo comentario en tu tarea",
-                body=f"El equipo comentó en '{card.title}'",
+                body=f"Comentario en '{card.title}': {preview}",
                 payload={"card_id": card.id, "client_id": client.id},
             )
         self.db.commit()
         self.db.refresh(comment)
         return comment
+
+    def _comment_notification_recipients(
+        self,
+        *,
+        client: Client,
+        author: User,
+        is_internal: bool,
+    ) -> list[User]:
+        from app.services.clients import ClientService
+
+        client_service = ClientService(self.db)
+        portal_user = self.db.execute(
+            select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT")
+        ).scalar_one_or_none()
+        advisor = client_service._get_active_advisor(client)
+
+        recipients: list[User] = []
+        role = author.role.code
+
+        if is_internal:
+            if role == "ONBOARDING_MANAGER" and advisor:
+                recipients = [advisor]
+        elif role == "CLIENT":
+            if advisor:
+                recipients = [advisor]
+        elif role == "ADVISOR":
+            if portal_user:
+                recipients = [portal_user]
+        elif role == "ONBOARDING_MANAGER":
+            if portal_user:
+                recipients.append(portal_user)
+            if advisor:
+                recipients.append(advisor)
+        else:
+            if portal_user:
+                recipients.append(portal_user)
+            if advisor:
+                recipients.append(advisor)
+
+        seen: set[int] = set()
+        unique: list[User] = []
+        for user in recipients:
+            if user and user.id != author.id and user.id not in seen:
+                seen.add(user.id)
+                unique.append(user)
+        return unique
+
+    def move_card(
+        self,
+        *,
+        card: BoardCard,
+        target_list_id: int,
+        target_position: int,
+    ) -> BoardCard:
+        board = card.board_list.board
+        target_list = self.db.get(BoardList, target_list_id)
+        if target_list is None or target_list.board_id != board.id:
+            raise ValueError("Lista destino inválida")
+
+        source_list_id = card.list_id
+        source_cards = [
+            item
+            for item in sorted(card.board_list.cards, key=lambda row: row.position)
+            if item.id != card.id
+        ]
+        target_cards = [
+            item
+            for item in sorted(target_list.cards, key=lambda row: row.position)
+            if item.id != card.id
+        ]
+
+        card.list_id = target_list_id
+        insert_at = max(0, min(target_position, len(target_cards)))
+        target_cards.insert(insert_at, card)
+
+        for index, item in enumerate(source_cards):
+            item.position = index
+        for index, item in enumerate(target_cards):
+            item.position = index
+
+        self.db.commit()
+        self.db.refresh(card)
+        return card
+
+    def create_card(
+        self,
+        *,
+        board_list: BoardList,
+        title: str,
+        position: int | None = None,
+    ) -> BoardCard:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("El título es obligatorio")
+
+        target_cards = sorted(board_list.cards, key=lambda row: row.position)
+        insert_at = len(target_cards) if position is None else max(0, min(position, len(target_cards)))
+
+        new_card = BoardCard(
+            list_id=board_list.id,
+            title=clean_title,
+            status=TaskStatus.PENDIENTE.value,
+            position=insert_at,
+        )
+        self.db.add(new_card)
+        self.db.flush()
+
+        ordered = [item for item in sorted(board_list.cards, key=lambda row: row.position) if item.id != new_card.id]
+        ordered.insert(insert_at, new_card)
+        for index, item in enumerate(ordered):
+            item.position = index
+
+        self.db.commit()
+        self.db.refresh(new_card)
+        return new_card
+
+    def update_card(
+        self,
+        *,
+        card: BoardCard,
+        title: str | None = None,
+        description_md: str | None = None,
+    ) -> BoardCard:
+        if title is not None:
+            clean_title = title.strip()
+            if not clean_title:
+                raise ValueError("El título es obligatorio")
+            card.title = clean_title
+        if description_md is not None:
+            card.description_md = description_md.strip() or None
+        self.db.commit()
+        self.db.refresh(card)
+        return card
+
+    def upload_attachment(
+        self,
+        *,
+        card: BoardCard,
+        actor: User,
+        client: Client,
+        filename: str,
+        content_type: str,
+        file_bytes: bytes,
+        attachment_type: str = "CLIENT_UPLOAD",
+        comment_id: int | None = None,
+    ) -> CardAttachment:
+        if not file_bytes:
+            raise ValueError("El archivo está vacío")
+
+        if comment_id is not None:
+            comment = self.db.get(CardComment, comment_id)
+            if comment is None or comment.card_id != card.id:
+                raise ValueError("Comentario inválido")
+
+        mime_type = resolve_content_type(content_type, filename)
+        if mime_type not in ALLOWED_MIME_TYPES:
+            raise ValueError("Tipo de archivo no permitido")
+
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
+        storage = get_storage_provider()
+        key = storage.build_key(
+            "clients",
+            str(client.id),
+            "board",
+            "cards",
+            str(card.id),
+            f"{uuid.uuid4()}.{ext}",
+        )
+        storage.put_object(key, file_bytes, mime_type)
+
+        attachment = CardAttachment(
+            card_id=card.id,
+            comment_id=comment_id,
+            type=attachment_type,
+            storage_key=key,
+            original_filename=filename,
+            mime_type=mime_type,
+            uploaded_by_user_id=actor.id,
+        )
+        self.db.add(attachment)
+        attachment.uploaded_by = actor
+        self.db.commit()
+        self.db.refresh(attachment)
+        return attachment

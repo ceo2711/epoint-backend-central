@@ -11,7 +11,6 @@ from app.models.client import Client
 from app.models.document import Document
 from app.models.document_verification import DocumentVerification
 from app.models.enums import DocumentVerificationStatus, NotificationEventType
-from app.models.role import Role
 from app.models.user import User
 from app.services.document_verification_messages import (
     build_approval_messages,
@@ -65,6 +64,8 @@ def run_document_verification(document_id: int) -> dict:
         if client is None:
             logger.error("Cliente no encontrado para documento %s", document_id)
             return {"error": "client not found"}
+
+        previous_status = document.verification_status
 
         if document.verification_status == DocumentVerificationStatus.PENDIENTE.value:
             document.verification_status = DocumentVerificationStatus.EN_PROCESO.value
@@ -144,7 +145,7 @@ def run_document_verification(document_id: int) -> dict:
 
         if not approved:
             rejection_es = [item["es"] for item in rejection_messages]
-            if portal_users:
+            if portal_users and previous_status != DocumentVerificationStatus.RECHAZADO.value:
                 notifications.notify(
                     event_type=NotificationEventType.DOCUMENT_REJECTED.value,
                     users=portal_users,
@@ -152,18 +153,6 @@ def run_document_verification(document_id: int) -> dict:
                     body=f"Tu documento {document.type} no pasó la verificación: {', '.join(rejection_es) or 'revisar calidad'}",
                     payload={"document_id": document.id, "client_id": client.id},
                 )
-            onboarding = list(
-                db.execute(
-                    select(User).join(Role).where(Role.code.in_(["ONBOARDING_MANAGER", "ADMIN"]))
-                ).scalars().all()
-            )
-            notifications.notify(
-                event_type=NotificationEventType.DOCUMENT_REJECTED.value,
-                users=onboarding,
-                title="Documento rechazado por IA",
-                body=f"Documento de {client.full_name} rechazado: {document.type}",
-                payload={"document_id": document.id, "client_id": client.id},
-            )
         elif document.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value and portal_users:
             notifications.notify(
                 event_type=NotificationEventType.DOCUMENT_EXPIRING_SOON.value,

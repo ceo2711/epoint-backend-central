@@ -37,7 +37,13 @@ class ClientService:
         self.db = db
         self.notifications = NotificationService(db)
         self.audit = AuditService(db)
-        self.boards = BoardService(db)
+        self._boards: BoardService | None = None
+
+    @property
+    def boards(self) -> BoardService:
+        if self._boards is None:
+            self._boards = BoardService(self.db)
+        return self._boards
 
     def find_client_with_email(self, email: str, exclude_client_id: int | None = None) -> Client | None:
         normalized = email.lower().strip()
@@ -69,13 +75,51 @@ class ClientService:
         if user.role.code == "SALES_REP":
             query = query.where(Client.registered_by_user_id == user.id)
         elif user.role.code == "ADVISOR":
-            query = query.join(ClientAssignment).where(
-                ClientAssignment.advisor_user_id == user.id,
-                ClientAssignment.unassigned_at.is_(None),
+            query = query.where(
+                Client.id.in_(
+                    select(ClientAssignment.client_id).where(
+                        ClientAssignment.advisor_user_id == user.id,
+                        ClientAssignment.unassigned_at.is_(None),
+                    )
+                )
             )
         return query
 
+    def list_clients_for_user(
+        self,
+        user: User,
+        *,
+        page: int,
+        page_size: int,
+        status_filter: str | None = None,
+        search: str | None = None,
+        onboarding_only: bool = False,
+    ) -> tuple[list[Client], int]:
+        from sqlalchemy import func, or_
+
+        query = self._scoped_clients_query(user)
+        if onboarding_only:
+            query = query.where(Client.approved_at.isnot(None))
+        if status_filter:
+            query = query.where(Client.status == status_filter)
+        if search:
+            term = f"%{search}%"
+            query = query.where(
+                or_(Client.first_name.ilike(term), Client.last_name.ilike(term), Client.email.ilike(term))
+            )
+        total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
+        clients = (
+            self.db.execute(
+                query.order_by(Client.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+            )
+            .scalars()
+            .all()
+        )
+        return list(clients), total
+
     def get_client_stats(self, user: User) -> dict[str, int]:
+        from sqlalchemy import func
+
         pending = ClientStatus.PENDIENTE_DE_REVISION.value
         rejected = ClientStatus.RECHAZADO.value
         completed = ClientStatus.ONBOARDING_COMPLETADO.value
@@ -605,30 +649,100 @@ class ClientService:
                 return a.advisor
         return None
 
+    def get_mentionable_users(
+        self,
+        *,
+        client: Client,
+        current_user: User,
+        include_client: bool = True,
+    ) -> list[User]:
+        portal_user = self.db.execute(
+            select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT", User.is_active.is_(True))
+        ).scalar_one_or_none()
+        advisor = self._get_active_advisor(client)
+        onboarding_team = self._get_onboarding_team()
+
+        candidates: list[User] = []
+        if include_client and portal_user:
+            candidates.append(portal_user)
+        if advisor:
+            candidates.append(advisor)
+        candidates.extend(onboarding_team)
+
+        seen: set[int] = set()
+        unique: list[User] = []
+        for user in candidates:
+            if user.id != current_user.id and user.id not in seen:
+                seen.add(user.id)
+                unique.append(user)
+        unique.sort(key=lambda row: row.full_name.lower())
+        return unique
+
+    def validate_mention_user_ids(
+        self,
+        *,
+        client: Client,
+        current_user: User,
+        user_ids: list[int],
+        is_internal: bool,
+    ) -> list[User]:
+        if not user_ids:
+            return []
+        allowed = {
+            user.id: user
+            for user in self.get_mentionable_users(
+                client=client,
+                current_user=current_user,
+                include_client=not is_internal,
+            )
+        }
+        mentioned: list[User] = []
+        seen: set[int] = set()
+        for user_id in user_ids:
+            user = allowed.get(user_id)
+            if user and user_id not in seen:
+                seen.add(user_id)
+                mentioned.append(user)
+        return mentioned
+
     def get_client_for_user(self, user: User, client_id: int) -> Client | None:
-        client = (
+        if not self.user_can_access_client(user, client_id):
+            return None
+        return self.db.get(Client, client_id)
+
+    def user_can_access_client(self, user: User, client_id: int) -> bool:
+        row = self.db.execute(
+            select(Client.id, Client.registered_by_user_id).where(Client.id == client_id)
+        ).one_or_none()
+        if row is None:
+            return False
+        if user.role.code == "CLIENT":
+            return user.client_id == client_id
+        if user.role.code == "SALES_REP":
+            return row.registered_by_user_id == user.id
+        if user.role.code == "ADVISOR":
+            assignment = self.db.execute(
+                select(ClientAssignment.id).where(
+                    ClientAssignment.client_id == client_id,
+                    ClientAssignment.advisor_user_id == user.id,
+                    ClientAssignment.unassigned_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            return assignment is not None
+        return True
+
+    def get_client_detail(self, client_id: int) -> Client | None:
+        return (
             self.db.execute(
                 select(Client)
                 .options(
-                    joinedload(Client.assignments),
+                    joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
                     joinedload(Client.addresses),
                     joinedload(Client.vehicles),
                     joinedload(Client.documents),
-                    joinedload(Client.board),
                 )
                 .where(Client.id == client_id)
             )
             .unique()
             .scalar_one_or_none()
         )
-        if client is None:
-            return None
-        if user.role.code == "CLIENT" and user.client_id != client_id:
-            return None
-        if user.role.code == "SALES_REP" and client.registered_by_user_id != user.id:
-            return None
-        if user.role.code == "ADVISOR":
-            advisor = self._get_active_advisor(client)
-            if not advisor or advisor.id != user.id:
-                return None
-        return client

@@ -2,8 +2,8 @@ import uuid
 from datetime import date, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, load_only
 
 from app.models.client import Client
 from app.models.document import Document
@@ -14,6 +14,7 @@ from app.services.clients import ClientService
 from app.services.document_verification_messages import normalize_bilingual_messages, to_localized_lists
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
+from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
 
 
 REQUIRED_DOCUMENT_TYPES = [
@@ -23,35 +24,21 @@ REQUIRED_DOCUMENT_TYPES = [
     "UTILITY_BILL",
 ]
 
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-}
-
-MIME_BY_EXTENSION = {
-    "pdf": "application/pdf",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-}
-
 
 class DocumentService:
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.storage = get_storage_provider()
         self.notifications = NotificationService(db)
+        self._storage = None
+
+    @property
+    def storage(self):
+        if self._storage is None:
+            self._storage = get_storage_provider()
+        return self._storage
 
     def resolve_content_type(self, content_type: str, filename: str) -> str:
-        normalized = content_type.split(";")[0].strip().lower()
-        if normalized in ALLOWED_MIME_TYPES:
-            return "image/jpeg" if normalized == "image/jpg" else normalized
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        return MIME_BY_EXTENSION.get(ext, normalized)
+        return resolve_content_type(content_type, filename)
 
     def build_storage_key(self, *, client: Client, document_type: str, filename: str) -> str:
         ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
@@ -150,7 +137,49 @@ class DocumentService:
     def get_download_url(self, document: Document) -> str:
         return self.storage.generate_download_url(document.storage_key)
 
-    def latest_verification_messages(self, document: Document) -> tuple["LocalizedStringList | None", "LocalizedStringList | None"]:
+    def load_latest_verifications_map(self, document_ids: list[int]) -> dict[int, DocumentVerification]:
+        if not document_ids:
+            return {}
+
+        latest_per_doc = (
+            select(
+                DocumentVerification.document_id,
+                func.max(DocumentVerification.verified_at).label("verified_at"),
+            )
+            .where(DocumentVerification.document_id.in_(document_ids))
+            .group_by(DocumentVerification.document_id)
+            .subquery()
+        )
+        rows = (
+            self.db.execute(
+                select(DocumentVerification)
+                .join(
+                    latest_per_doc,
+                    (DocumentVerification.document_id == latest_per_doc.c.document_id)
+                    & (DocumentVerification.verified_at == latest_per_doc.c.verified_at),
+                )
+                .options(
+                    load_only(
+                        DocumentVerification.id,
+                        DocumentVerification.document_id,
+                        DocumentVerification.status,
+                        DocumentVerification.rejection_reasons,
+                        DocumentVerification.approval_reasons,
+                        DocumentVerification.verified_at,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {row.document_id: row for row in rows}
+
+    def latest_verification_messages(
+        self,
+        document: Document,
+        *,
+        latest_verification: DocumentVerification | None = None,
+    ) -> tuple["LocalizedStringList | None", "LocalizedStringList | None"]:
         from app.schemas.client import LocalizedStringList
 
         if document.verification_status not in {
@@ -160,16 +189,24 @@ class DocumentService:
         }:
             return None, None
 
-        verifications = document.verifications
-        if not verifications:
+        latest = latest_verification
+        if latest is None:
             latest = self.db.execute(
                 select(DocumentVerification)
                 .where(DocumentVerification.document_id == document.id)
                 .order_by(DocumentVerification.verified_at.desc())
                 .limit(1)
+                .options(
+                    load_only(
+                        DocumentVerification.id,
+                        DocumentVerification.document_id,
+                        DocumentVerification.status,
+                        DocumentVerification.rejection_reasons,
+                        DocumentVerification.approval_reasons,
+                        DocumentVerification.verified_at,
+                    )
+                )
             ).scalar_one_or_none()
-        else:
-            latest = max(verifications, key=lambda item: item.verified_at)
 
         if latest is None:
             return None, None
@@ -188,10 +225,19 @@ class DocumentService:
 
         return rejection, approval
 
-    def to_brief(self, document: Document, *, include_download_url: bool = True) -> "DocumentBrief":
+    def to_brief(
+        self,
+        document: Document,
+        *,
+        include_download_url: bool = True,
+        latest_verification: DocumentVerification | None = None,
+    ) -> "DocumentBrief":
         from app.schemas.client import DocumentBrief
 
-        rejection_reasons, approval_reasons = self.latest_verification_messages(document)
+        rejection_reasons, approval_reasons = self.latest_verification_messages(
+            document,
+            latest_verification=latest_verification,
+        )
 
         return DocumentBrief(
             id=document.id,

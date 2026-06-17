@@ -9,13 +9,13 @@ from sqlalchemy import select
 
 from app.core.database import SessionLocal
 from app.core.security import hash_password
-import json
 
 from app.models.area import Area
 from app.models.board import BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.user import User
+from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 
 PERMISSIONS = [
     ("users:read", "Ver usuarios"),
@@ -114,84 +114,8 @@ BOARD_TEMPLATE = {
     "code": "DEFAULT_ONBOARDING",
     "name": "Onboarding estándar",
     "lists": [
-        {
-            "title": "Tareas iniciales",
-            "position": 0,
-            "cards": [
-                {
-                    "title": "Registro en Experian",
-                    "instructions_md": "Registrate en Experian y entregá tus credenciales de forma segura en esta tarjeta.",
-                    "external_links": json.dumps([{"label": "Experian", "url": "https://www.experian.com/"}]),
-                    "requires_credentials": True,
-                    "position": 0,
-                },
-                {
-                    "title": "Registro en Equifax",
-                    "instructions_md": "Creá tu cuenta en Equifax y entregá las credenciales.",
-                    "external_links": json.dumps([{"label": "Equifax", "url": "https://www.equifax.com/"}]),
-                    "requires_credentials": True,
-                    "position": 1,
-                },
-                {
-                    "title": "Registro en TransUnion",
-                    "instructions_md": "Creá tu cuenta en TransUnion y entregá las credenciales.",
-                    "external_links": json.dumps([{"label": "TransUnion", "url": "https://www.transunion.com/"}]),
-                    "requires_credentials": True,
-                    "position": 2,
-                },
-                {
-                    "title": "Descargar reportes de los 3 burós",
-                    "instructions_md": "Ingresá a Experian, generá y descargá los 3 reportes (Experian, Equifax, TransUnion). Adjuntá los PDFs aquí.",
-                    "external_links": json.dumps([{"label": "Experian", "url": "https://www.experian.com/"}]),
-                    "requires_file_upload": True,
-                    "position": 3,
-                },
-                {
-                    "title": "Lista de bancos con relación",
-                    "instructions_md": "Cargá la lista de todos los bancos con los que tenés o tuviste relación (cuentas, tarjetas, negocios, incluso cerradas).",
-                    "requires_file_upload": False,
-                    "position": 4,
-                },
-            ],
-        },
-        {
-            "title": "Apertura de cuentas & Freeze",
-            "position": 1,
-            "cards": [
-                {
-                    "title": "ChexSystems",
-                    "instructions_md": "Registrate como consumidor en ChexSystems. Completá el formulario, verificá identidad y entregá credenciales.",
-                    "external_links": json.dumps([{"label": "ChexSystems", "url": "https://www.chexsystems.com"}]),
-                    "requires_credentials": True,
-                    "position": 0,
-                },
-                {
-                    "title": "Innovis",
-                    "instructions_md": "Solicitá tu Innovis Credit Report. Completá datos, verificá identidad y entregá acceso/reporte.",
-                    "external_links": json.dumps([{"label": "Innovis", "url": "https://www.innovis.com/"}]),
-                    "requires_credentials": True,
-                    "position": 1,
-                },
-                {
-                    "title": "Experian Clarity Services",
-                    "instructions_md": "Accedé a 'ACCESS YOUR CLARITY CREDIT REPORT', completá datos y adjuntá el reporte completo.",
-                    "external_links": json.dumps([
-                        {"label": "Clarity Services", "url": "https://consumers.clarityservices.com/reports"}
-                    ]),
-                    "requires_file_upload": True,
-                    "position": 2,
-                },
-                {
-                    "title": "Congelar LexisNexis",
-                    "instructions_md": "Security Freeze → Request a Freeze. Completá datos, verificá identidad y adjuntá captura del número de confirmación.",
-                    "external_links": json.dumps([
-                        {"label": "LexisNexis", "url": "https://consumer.risk.lexisnexis.com/"}
-                    ]),
-                    "requires_file_upload": True,
-                    "position": 3,
-                },
-            ],
-        },
+        {"title": title, "position": index, "cards": []}
+        for index, title in enumerate(KANBAN_COLUMN_TITLES)
     ],
 }
 
