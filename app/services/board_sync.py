@@ -7,6 +7,7 @@ from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
+from app.services.default_board_cards import seed_default_template_cards_for_list
 
 
 def sync_template_lists(db: Session, template: BoardTemplate) -> None:
@@ -17,8 +18,10 @@ def sync_template_lists(db: Session, template: BoardTemplate) -> None:
     db.flush()
 
     for position, title in enumerate(KANBAN_COLUMN_TITLES):
-        db.add(BoardTemplateList(template_id=template.id, title=title, position=position))
-    db.flush()
+        template_list = BoardTemplateList(template_id=template.id, title=title, position=position)
+        db.add(template_list)
+        db.flush()
+        seed_default_template_cards_for_list(db, template_list=template_list)
 
 
 def sync_board_lists(db: Session, board: Board) -> None:

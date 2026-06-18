@@ -13,6 +13,10 @@ from app.models.client import Client
 from app.models.enums import NotificationEventType, TaskStatus
 from app.models.role import Role
 from app.models.user import User
+from app.services.default_board_cards import (
+    apply_default_cards_to_board_list,
+    refresh_dynamic_card_descriptions,
+)
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
 from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
@@ -46,20 +50,34 @@ class BoardService:
             bl = BoardList(board_id=board.id, title=t_list.title, position=t_list.position)
             self.db.add(bl)
             self.db.flush()
-            for t_card in sorted(t_list.template_cards, key=lambda x: x.position):
-                self.db.add(
-                    BoardCard(
-                        list_id=bl.id,
-                        title=t_card.title,
-                        description_md=t_card.description_md,
-                        instructions_md=t_card.instructions_md,
-                        external_links=t_card.external_links,
-                        position=t_card.position,
-                        requires_credentials=t_card.requires_credentials,
-                        requires_file_upload=t_card.requires_file_upload,
-                        status=TaskStatus.PENDIENTE.value,
+            template_cards = sorted(t_list.template_cards, key=lambda x: x.position)
+            if template_cards:
+                for t_card in template_cards:
+                    self.db.add(
+                        BoardCard(
+                            list_id=bl.id,
+                            title=t_card.title,
+                            description_md=t_card.description_md,
+                            instructions_md=t_card.instructions_md,
+                            external_links=t_card.external_links,
+                            position=t_card.position,
+                            requires_credentials=t_card.requires_credentials,
+                            requires_file_upload=t_card.requires_file_upload,
+                            status=TaskStatus.PENDIENTE.value,
+                        )
                     )
-                )
+            else:
+                apply_default_cards_to_board_list(self.db, board_list=bl, client=client)
+        self.db.flush()
+        board_lists = list(
+            self.db.execute(
+                select(BoardList)
+                .options(selectinload(BoardList.cards))
+                .where(BoardList.board_id == board.id)
+                .order_by(BoardList.position)
+            ).scalars().all()
+        )
+        refresh_dynamic_card_descriptions(self.db, board_lists=board_lists, client=client)
         self.db.flush()
         return board
 

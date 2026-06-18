@@ -15,6 +15,7 @@ from app.models.board import BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.user import User
+from app.constants.default_board_cards import EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, default_cards_for_column
 from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 
 PERMISSIONS = [
@@ -108,13 +109,27 @@ DEMO_USERS = [
     ("vendedor@epoint.com", "Vendedor", "Demo", "SALES_REP", "VENTAS", "Vendedor123!"),
     ("onboarding@epoint.com", "Encargado", "Onboarding", "ONBOARDING_MANAGER", "ONBOARDING", "Onboard123!"),
     ("asesor@epoint.com", "Asesor", "Demo", "ADVISOR", "ONBOARDING", "Asesor123!"),
+    (EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, "EPoint", "Corp", "ONBOARDING_MANAGER", "ONBOARDING", "SystemBoard123!"),
 ]
 
 BOARD_TEMPLATE = {
     "code": "DEFAULT_ONBOARDING",
     "name": "Onboarding estándar",
     "lists": [
-        {"title": title, "position": index, "cards": []}
+        {
+            "title": title,
+            "position": index,
+            "cards": [
+                {
+                    "title": card.title,
+                    "description_md": card.description_md,
+                    "position": card.position,
+                    "requires_credentials": card.requires_credentials,
+                    "requires_file_upload": card.requires_file_upload,
+                }
+                for card in default_cards_for_column(title)
+            ],
+        }
         for index, title in enumerate(KANBAN_COLUMN_TITLES)
     ],
 }
