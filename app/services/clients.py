@@ -19,12 +19,9 @@ from app.services.boards import BoardService
 from app.core.config import get_settings
 from app.core.phone import phones_match
 from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_email
+from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
-from app.services.notifications.templates import (
-    client_approved_in_app_body,
-    client_approved_whatsapp_body,
-    client_approved_whatsapp_content_variables,
-)
+from app.services.notifications.templates import client_approved_in_app_body
 
 
 def _generate_temp_password(length: int = 12) -> str:
@@ -427,17 +424,22 @@ class ClientService:
         settings = get_settings()
         portal_login_url = settings.portal_login_url
         welcome_title = "¡Bienvenido a ePoint!"
-        credential_kwargs = {
-            "first_name": client.first_name,
-            "email": client.email,
-            "temp_password": temp_password,
-            "portal_login_url": portal_login_url,
-        }
 
         send_client_welcome_email(
             ClientWelcomeEmailPayload(
                 recipient_email=client.email,
                 first_name=client.first_name,
+                temp_password=temp_password,
+                portal_login_url=portal_login_url,
+                client_id=client.id,
+            )
+        )
+
+        send_client_welcome_whatsapp(
+            ClientWelcomeWhatsAppPayload(
+                recipient_phone=client.phone,
+                first_name=client.first_name,
+                email=client.email,
                 temp_password=temp_password,
                 portal_login_url=portal_login_url,
                 client_id=client.id,
@@ -454,12 +456,9 @@ class ClientService:
                 "email": client.email,
                 "client_phone": client.phone,
                 "portal_url": portal_login_url,
-                "content_sid": settings.twilio_whatsapp_client_approved_content_sid,
-                "content_variables": client_approved_whatsapp_content_variables(**credential_kwargs),
             },
             channel_bodies={
                 "IN_APP": client_approved_in_app_body(first_name=client.first_name),
-                "WHATSAPP": client_approved_whatsapp_body(**credential_kwargs),
             },
         )
 

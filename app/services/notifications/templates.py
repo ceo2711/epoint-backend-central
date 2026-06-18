@@ -2,7 +2,9 @@
 
 El email de bienvenida al aprobar un cliente se envía vía
 `app.services.email.send_client_welcome_email` (no por NotificationService).
-`client_approved_email_body` se usará cuando se implemente el envío real.
+
+El WhatsApp de bienvenida se envía vía
+`app.services.whatsapp.send_client_welcome_whatsapp` (no por NotificationService).
 """
 
 
