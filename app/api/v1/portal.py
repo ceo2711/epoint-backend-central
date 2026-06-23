@@ -21,6 +21,7 @@ from app.schemas.client import (
     VehicleResponse,
 )
 from app.schemas.common import MessageResponse
+from app.serializers.client import client_to_response
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
 
@@ -38,6 +39,7 @@ def _load_client(db, client_id: int) -> Client | None:
         db.execute(
             select(Client)
             .options(
+                joinedload(Client.merchant),
                 joinedload(Client.addresses),
                 joinedload(Client.vehicles),
                 joinedload(Client.documents).joinedload(Document.verifications),
@@ -56,20 +58,9 @@ def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     doc_service = DocumentService(db)
+    base = client_to_response(client)
     return ClientDetailResponse(
-        id=client.id,
-        status=client.status,
-        first_name=client.first_name,
-        last_name=client.last_name,
-        email=client.email,
-        phone=client.phone,
-        rejection_reason=client.rejection_reason,
-        rejected_at=client.rejected_at,
-        approved_at=client.approved_at,
-        date_of_birth=client.date_of_birth,
-        has_ssn=bool(client.ssn_encrypted),
-        registered_by_user_id=client.registered_by_user_id,
-        created_at=client.created_at,
+        **base.model_dump(),
         addresses=[AddressResponse.model_validate(a) for a in client.addresses],
         vehicles=[VehicleResponse.model_validate(v) for v in client.vehicles],
         documents=[
@@ -110,7 +101,13 @@ def update_profile(
     db: DbSession,
 ) -> ClientResponse:
     client_id = _require_client_user(current_user)
-    client = db.get(Client, client_id)
+    client = (
+        db.execute(
+            select(Client).options(joinedload(Client.merchant)).where(Client.id == client_id)
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
     if client is None:
         raise HTTPException(status_code=404)
     service = ClientService(db)
@@ -120,21 +117,8 @@ def update_profile(
         ssn=payload.ssn,
         date_of_birth=payload.date_of_birth,
     )
-    return ClientResponse(
-        id=client.id,
-        status=client.status,
-        first_name=client.first_name,
-        last_name=client.last_name,
-        email=client.email,
-        phone=client.phone,
-        rejection_reason=client.rejection_reason,
-        rejected_at=client.rejected_at,
-        approved_at=client.approved_at,
-        date_of_birth=client.date_of_birth,
-        has_ssn=bool(client.ssn_encrypted),
-        registered_by_user_id=client.registered_by_user_id,
-        created_at=client.created_at,
-    )
+    db.refresh(client, attribute_names=["merchant"])
+    return client_to_response(client)
 
 
 @router.post("/addresses", response_model=AddressResponse, status_code=status.HTTP_201_CREATED)
