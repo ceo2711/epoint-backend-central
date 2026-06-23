@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    db_connect_timeout: int = 30
+    db_connect_retries: int = 4
+    db_connect_retry_delay_seconds: float = 2.0
+    db_pool_timeout: int = 60
 
     # JWT
     jwt_secret_key: str

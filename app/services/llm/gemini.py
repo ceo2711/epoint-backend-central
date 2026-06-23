@@ -48,6 +48,39 @@ class GeminiLLMService:
         response = await self._get_llm().ainvoke([HumanMessage(content=prompt)])
         return self._extract_content(response.content)
 
+    async def chat(
+        self,
+        *,
+        system_prompt: str,
+        messages: list[dict[str, str]],
+        temperature: float = 0.35,
+    ) -> str:
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        llm = self._get_chat_llm(temperature)
+        history: list = [SystemMessage(content=system_prompt)]
+        for item in messages:
+            role = item.get("role")
+            content = item.get("content", "")
+            if role == "user":
+                history.append(HumanMessage(content=content))
+            elif role == "assistant":
+                history.append(AIMessage(content=content))
+
+        response = await llm.ainvoke(history)
+        return self._extract_content(response.content)
+
+    def _get_chat_llm(self, temperature: float) -> Any:
+        if not self._api_key:
+            raise RuntimeError("Servicio Gemini no disponible: configure GEMINI_API_KEY")
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(
+            model=self.model_name,
+            google_api_key=self._api_key,
+            temperature=temperature,
+        )
+
     def analyze_document_sync(self, *, image_url: str, prompt: str) -> str:
         """Analiza documento desde URL (presigned S3) con visión multimodal."""
         from langchain_core.messages import HumanMessage

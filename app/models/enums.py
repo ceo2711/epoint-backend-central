@@ -1,6 +1,16 @@
 import enum
 
 
+class ClientSource(str, enum.Enum):
+    WEB_PAGE = "WEB_PAGE"
+    WHATSAPP = "WHATSAPP"
+    FACEBOOK = "FACEBOOK"
+    INSTAGRAM = "INSTAGRAM"
+    REFERRAL = "REFERRAL"
+    PHONE_CALL = "PHONE_CALL"
+    OTHER = "OTHER"
+
+
 class ClientStatus(str, enum.Enum):
     PENDIENTE_DE_REVISION = "PENDIENTE_DE_REVISION"
     RECHAZADO = "RECHAZADO"

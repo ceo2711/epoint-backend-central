@@ -3,7 +3,14 @@ import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.models.enums import ClientSource
 from app.schemas.common import ORMBase
+
+
+class MerchantBrief(ORMBase):
+    id: int
+    code: str
+    name: str
 
 
 class ClientCreate(BaseModel):
@@ -11,6 +18,8 @@ class ClientCreate(BaseModel):
     last_name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     phone: str = Field(min_length=5, max_length=30)
+    source: ClientSource
+    merchant_id: int
 
 
 class ClientUpdate(BaseModel):
@@ -18,6 +27,8 @@ class ClientUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, min_length=5, max_length=30)
+    source: ClientSource | None = None
+    merchant_id: int | None = None
 
 
 class ClientReject(BaseModel):
@@ -54,6 +65,8 @@ class ClientResponse(ORMBase):
     last_name: str
     email: str
     phone: str
+    source: str | None
+    merchant: MerchantBrief | None = None
     rejection_reason: str | None
     rejected_at: datetime | None
     approved_at: datetime | None

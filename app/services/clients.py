@@ -11,7 +11,8 @@ from app.core.encryption import decrypt_value, encrypt_value
 from app.core.security import hash_password
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
-from app.models.enums import ClientStatus, NotificationEventType
+from app.models.enums import ClientSource, ClientStatus, NotificationEventType
+from app.models.merchant import Merchant
 from app.models.role import Role
 from app.models.user import User
 from app.services.audit import AuditService
@@ -107,8 +108,12 @@ class ClientService:
         total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
         clients = (
             self.db.execute(
-                query.order_by(Client.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+                query.options(joinedload(Client.merchant))
+                .order_by(Client.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
+            .unique()
             .scalars()
             .all()
         )
@@ -186,6 +191,17 @@ class ClientService:
                 result["phone"] = self._conflict_payload(duplicate)
         return result
 
+    def _get_active_merchant(self, merchant_id: int) -> Merchant:
+        merchant = self.db.get(Merchant, merchant_id)
+        if merchant is None or not merchant.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Merchant no válido o inactivo")
+        return merchant
+
+    def _resolve_default_merchant(self) -> Merchant | None:
+        return self.db.execute(
+            select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.id).limit(1)
+        ).scalar_one_or_none()
+
     def create_client(
         self,
         *,
@@ -194,16 +210,32 @@ class ClientService:
         last_name: str,
         email: str,
         phone: str,
+        source: str | None = None,
+        merchant_id: int | None = None,
     ) -> Client:
         normalized_email = email.lower().strip()
         normalized_phone = phone.strip()
         self.assert_email_available(normalized_email)
         self.assert_phone_available(normalized_phone)
+
+        resolved_source = source or ClientSource.OTHER.value
+        if merchant_id is not None:
+            merchant = self._get_active_merchant(merchant_id)
+        else:
+            merchant = self._resolve_default_merchant()
+            if merchant is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No hay merchants activos configurados",
+                )
+
         client = Client(
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             email=normalized_email,
             phone=normalized_phone,
+            source=resolved_source,
+            merchant_id=merchant.id,
             registered_by_user_id=actor.id,
             status=ClientStatus.PENDIENTE_DE_REVISION.value,
         )
@@ -239,6 +271,10 @@ class ClientService:
             self.assert_email_available(fields["email"], exclude_client_id=client.id)
         if "phone" in fields and fields["phone"] is not None:
             self.assert_phone_available(fields["phone"], exclude_client_id=client.id)
+        if "merchant_id" in fields and fields["merchant_id"] is not None:
+            self._get_active_merchant(fields["merchant_id"])
+        if "source" in fields and fields["source"] is not None:
+            fields["source"] = str(fields["source"])
         for key, value in fields.items():
             if value is not None and hasattr(client, key):
                 if key == "email" and value:
@@ -735,6 +771,7 @@ class ClientService:
             self.db.execute(
                 select(Client)
                 .options(
+                    joinedload(Client.merchant),
                     joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
                     joinedload(Client.addresses),
                     joinedload(Client.vehicles),

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.board import Board
     from app.models.client_assignment import ClientAssignment
     from app.models.document import Document
+    from app.models.merchant import Merchant
     from app.models.user import User
     from app.models.vehicle import Vehicle
 
@@ -26,6 +27,8 @@ class Client(Base):
     last_name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), index=True)
     phone: Mapped[str] = mapped_column(String(30))
+    source: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    merchant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("merchants.id"), nullable=True, index=True)
 
     registered_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -41,6 +44,7 @@ class Client(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    merchant: Mapped["Merchant | None"] = relationship(back_populates="clients")
     registered_by: Mapped["User"] = relationship(foreign_keys=[registered_by_user_id])
     approved_by: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])
     assignments: Mapped[List["ClientAssignment"]] = relationship(

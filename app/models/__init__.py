@@ -11,6 +11,7 @@ from app.models.client_assignment import ClientAssignment
 from app.models.credential_submission import CredentialSubmission
 from app.models.document import Document
 from app.models.document_verification import DocumentVerification
+from app.models.merchant import Merchant
 from app.models.notification import Notification
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
@@ -35,6 +36,7 @@ __all__ = [
     "CredentialSubmission",
     "Document",
     "DocumentVerification",
+    "Merchant",
     "Notification",
     "Permission",
     "Role",

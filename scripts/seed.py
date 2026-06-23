@@ -12,6 +12,7 @@ from app.core.security import hash_password
 
 from app.models.area import Area
 from app.models.board import BoardTemplate, BoardTemplateCard, BoardTemplateList
+from app.models.merchant import Merchant
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.user import User
@@ -41,6 +42,10 @@ PERMISSIONS = [
     ("boards:read", "Ver tableros"),
     ("boards:manage", "Gestionar tableros"),
     ("credentials:read", "Ver credenciales cifradas"),
+    ("merchants:read", "Ver merchants"),
+    ("merchants:create", "Crear merchants"),
+    ("merchants:update", "Editar merchants"),
+    ("merchants:delete", "Desactivar merchants"),
 ]
 
 ROLES = {
@@ -100,6 +105,12 @@ ROLES = {
 AREAS = [
     ("VENTAS", "Ventas", "Equipo comercial"),
     ("ONBOARDING", "Onboarding", "Equipo de incorporación de clientes"),
+]
+
+MERCHANTS = [
+    ("epoint-lab", "ePoint Lab", "Laboratorio y servicios técnicos"),
+    ("epoint-solution", "ePoint Solution", "Soluciones empresariales"),
+    ("epoint-credits", "ePoint Credits", "Créditos y financiamiento"),
 ]
 
 ADMIN_EMAIL = "admin@epoint.com"
@@ -171,11 +182,32 @@ def seed() -> None:
                 if pid not in existing_rp:
                     db.add(RolePermission(role_id=role.id, permission_id=pid))
 
+        # Merchants: solo ADMIN (revocar si quedaron asignados a otros roles)
+        merchant_perm_ids = {
+            perm_map[code].id
+            for code in ("merchants:read", "merchants:create", "merchants:update", "merchants:delete")
+            if code in perm_map
+        }
+        for role in db.execute(select(Role).where(Role.code != "ADMIN")).scalars().all():
+            for rp in db.execute(
+                select(RolePermission).where(
+                    RolePermission.role_id == role.id,
+                    RolePermission.permission_id.in_(merchant_perm_ids),
+                )
+            ).scalars().all():
+                db.delete(rp)
+
         # Áreas
         for code, name, desc in AREAS:
             area = db.execute(select(Area).where(Area.code == code)).scalar_one_or_none()
             if area is None:
                 db.add(Area(code=code, name=name, description=desc))
+
+        # Merchants
+        for code, name, desc in MERCHANTS:
+            merchant = db.execute(select(Merchant).where(Merchant.code == code)).scalar_one_or_none()
+            if merchant is None:
+                db.add(Merchant(code=code, name=name, description=desc))
 
         db.flush()
 

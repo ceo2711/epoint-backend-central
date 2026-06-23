@@ -18,6 +18,7 @@ from app.schemas.client import (
     ClientResponse,
     ClientStatsResponse,
     ClientUpdate,
+    MerchantBrief,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.services.clients import ClientService
@@ -27,6 +28,9 @@ router = APIRouter(prefix="/clients", tags=["Clientes"])
 
 
 def _to_response(client: Client) -> ClientResponse:
+    merchant = None
+    if client.merchant:
+        merchant = MerchantBrief.model_validate(client.merchant)
     return ClientResponse(
         id=client.id,
         status=client.status,
@@ -34,6 +38,8 @@ def _to_response(client: Client) -> ClientResponse:
         last_name=client.last_name,
         email=client.email,
         phone=client.phone,
+        source=client.source,
+        merchant=merchant,
         rejection_reason=client.rejection_reason,
         rejected_at=client.rejected_at,
         approved_at=client.approved_at,
@@ -102,7 +108,10 @@ def create_client(
         last_name=payload.last_name,
         email=str(payload.email),
         phone=payload.phone,
+        source=payload.source.value,
+        merchant_id=payload.merchant_id,
     )
+    db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
 
 
@@ -159,6 +168,7 @@ def update_client(
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.update_client(actor=current_user, client=client, **payload.model_dump(exclude_unset=True))
+    db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
 
 

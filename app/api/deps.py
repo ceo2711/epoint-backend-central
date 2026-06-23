@@ -53,6 +53,24 @@ def get_user_permissions(db: Session, user: User) -> list[str]:
     return [row[0] for row in rows]
 
 
+def require_any_permissions(*required: str):
+    def checker(
+        db: Annotated[Session, Depends(get_db)],
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        user_perms = set(get_user_permissions(db, current_user))
+        if current_user.role.code == "ADMIN":
+            return current_user
+        if not any(perm in user_perms for perm in required):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene permisos para esta acción",
+            )
+        return current_user
+
+    return checker
+
+
 def require_permissions(*required: str):
     def checker(
         db: Annotated[Session, Depends(get_db)],

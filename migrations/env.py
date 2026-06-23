@@ -22,6 +22,7 @@ from app.models import (  # noqa: F401 — registrar modelos
     CredentialSubmission,
     Document,
     DocumentVerification,
+    Merchant,
     Notification,
     Permission,
     Role,
