@@ -62,6 +62,7 @@ ROLES = {
             "clients:read",
             "clients:update",
             "documents:read",
+            "documents:upload",
             "boards:read",
             "boards:manage",
         ],
@@ -79,6 +80,7 @@ ROLES = {
             "clients:update",
             "clients:approve",
             "documents:read",
+            "documents:upload",
             "boards:read",
             "boards:manage",
             "credentials:read",
@@ -90,6 +92,7 @@ ROLES = {
         "permissions": [
             "clients:read",
             "documents:read",
+            "documents:upload",
             "boards:read",
             "boards:manage",
             "credentials:read",

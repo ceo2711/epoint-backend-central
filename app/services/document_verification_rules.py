@@ -65,20 +65,33 @@ DOCUMENT_TYPE_GUIDANCE: dict[str, dict[str, str]] = {
     "DRIVERS_LICENSE_BACK": {
         "description": (
             "The back side of a government-issued driver's license with barcode/MRZ "
-            "and reverse-side information."
+            "and reverse-side information. The holder's printed name is usually NOT on this side."
         ),
         "reject_examples": "front of license, SSN cards, invoices, unrelated documents.",
+        "name_rule": (
+            "Do NOT require the client's name to be visible on this side. "
+            "Set name_matches=true when the image is clearly the back of a driver's license."
+        ),
     },
     "PASSPORT": {
-        "description": "A passport identity page with photo, name, passport number, and nationality.",
-        "reject_examples": "invoices, SSN cards, driver's licenses, unrelated documents.",
+        "description": (
+            "A passport identity page with photo, name, passport number, and nationality. "
+            "Accepted as an alternative to a driver's license when the client does not have one."
+        ),
+        "reject_examples": "invoices, SSN cards, unrelated documents.",
     },
     "GREEN_CARD": {
-        "description": "A US Permanent Resident Card (Green Card) with photo, name, and USCIS number.",
+        "description": (
+            "A US Permanent Resident Card (Green Card) with photo, name, and USCIS number. "
+            "Accepted as an alternative to a driver's license when the client does not have one."
+        ),
         "reject_examples": "invoices, SSN cards, unrelated documents.",
     },
     "WORK_PERMIT": {
-        "description": "A US work authorization document (EAD/work permit) with photo, name, and validity dates.",
+        "description": (
+            "A US work authorization document (EAD/work permit) with photo, name, and validity dates. "
+            "Accepted as an alternative to a driver's license when the client does not have one."
+        ),
         "reject_examples": "invoices, SSN cards, unrelated documents.",
     },
     "UTILITY_BILL": {
@@ -90,14 +103,17 @@ DOCUMENT_TYPE_GUIDANCE: dict[str, dict[str, str]] = {
     },
     "BANK_STATEMENT": {
         "description": (
-            "A recent bank account statement showing the client's full name and mailing/residential address."
+            "A recent bank account statement showing the client's full name and mailing/residential address. "
+            "Accepted as an alternative to a Utility Bill when the client does not have a utility bill."
         ),
-        "reject_examples": "SSN cards, utility bills, unrelated financial reports.",
+        "reject_examples": "SSN cards, unrelated financial reports.",
     },
 }
 
 
 def requires_name_match(document_type: str) -> bool:
+    if document_type == "DRIVERS_LICENSE_BACK":
+        return False
     return document_type in IDENTITY_DOCUMENT_TYPES or document_type in ADDRESS_PROOF_TYPES
 
 
@@ -116,6 +132,7 @@ def build_document_type_context(document_type: str, client_name: str) -> str:
         f"REJECT (document_type_matches=false) if the file is any of: {guidance['reject_examples']}\n"
         "document_type_matches must be false when the content is a different document category, "
         "even if the image/PDF is readable and in color."
+        + (f"\n{guidance['name_rule']}" if guidance.get("name_rule") else "")
     )
 
 

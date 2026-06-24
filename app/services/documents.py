@@ -11,18 +11,11 @@ from app.models.document_verification import DocumentVerification
 from app.models.enums import ClientStatus, DocumentVerificationStatus, NotificationEventType
 from app.models.user import User
 from app.services.clients import ClientService
+from app.services.document_requirements import all_required_documents_approved
 from app.services.document_verification_messages import normalize_bilingual_messages, to_localized_lists
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
 from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
-
-
-REQUIRED_DOCUMENT_TYPES = [
-    "SSN_CARD",
-    "DRIVERS_LICENSE_FRONT",
-    "DRIVERS_LICENSE_BACK",
-    "UTILITY_BILL",
-]
 
 
 class DocumentService:
@@ -280,6 +273,4 @@ class DocumentService:
 
     def all_documents_approved(self, client_id: int) -> bool:
         docs = self.db.execute(select(Document).where(Document.client_id == client_id)).scalars().all()
-        if len(docs) < len(REQUIRED_DOCUMENT_TYPES):
-            return False
-        return all(d.verification_status == DocumentVerificationStatus.APROBADO.value for d in docs)
+        return all_required_documents_approved(list(docs))

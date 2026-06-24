@@ -49,6 +49,22 @@ def test_missing_document_type_matches_fails_closed():
     assert is_verification_approved(result, "SSN_CARD") is False
 
 
+def test_license_back_approved_without_name_match():
+    result = _quality_pass_result(
+        detected_document_type="driver license back",
+        name_matches=False,
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_BACK") is True
+
+
+def test_license_front_rejected_when_name_missing():
+    result = _quality_pass_result(
+        detected_document_type="driver license front",
+        name_matches=False,
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_FRONT") is False
+
+
 def test_build_document_type_context_includes_expected_type():
     context = build_document_type_context("SSN_CARD", "Alexis Guanique")
     assert "SSN_CARD" in context

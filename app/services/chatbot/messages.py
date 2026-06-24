@@ -33,6 +33,7 @@ def friendly_register_success(
     phone: str,
     source: str | None = None,
     merchant_name: str | None = None,
+    include_continue_prompt: bool = False,
 ) -> str:
     source_line = ""
     merchant_line = ""
@@ -40,7 +41,7 @@ def friendly_register_success(
         source_line = f"\n- {t(locale, 'Fuente', 'Source')}: {source_label(source, locale)}"
     if merchant_name:
         merchant_line = f"\n- {t(locale, 'Comercio', 'Merchant')}: {merchant_name}"
-    return t(
+    base = t(
         locale,
         (
             f"¡Listo! 🎉 Ya registré a **{full_name}**.\n\n"
@@ -53,6 +54,53 @@ def friendly_register_success(
             f"- Email: {email}\n"
             f"- Phone: {phone}{source_line}{merchant_line}\n\n"
             "Status: **pending review**."
+        ),
+    )
+    if include_continue_prompt:
+        base += friendly_register_continue_prompt(locale)
+    return base
+
+
+def friendly_register_continue_prompt(locale: str) -> str:
+    return t(
+        locale,
+        (
+            "\n\n¿Querés registrar **otro cliente**? "
+            "Mandame los datos del siguiente, o pegá varios bloques juntos con el formato "
+            "*(Datos personales / Nombre completo / Email / Teléfono / merchant)*."
+        ),
+        (
+            "\n\nWant to register **another client**? "
+            "Send the next client's details, or paste several blocks at once using "
+            "*(Personal data / Full name / Email / Phone / merchant)*."
+        ),
+    )
+
+
+def friendly_registration_meta_reply(locale: str) -> str:
+    return t(
+        locale,
+        (
+            "Sí, podés registrar **varios clientes seguidos** en esta conversación. "
+            "Cuando termino de cargar uno, te pido los datos del siguiente.\n\n"
+            "También podés pegar **varios en un solo mensaje** con este formato:\n\n"
+            "```\nDatos personales\n"
+            "Nombre completo: Juan Pérez\n"
+            "Email: juan@mail.com\n"
+            "Numero de telefono: 1134567890\n"
+            "merchant: db-studio\n```\n\n"
+            "Repetí el bloque por cada cliente. Cada uno necesita **email y teléfono únicos**."
+        ),
+        (
+            "Yes, you can register **multiple clients in a row** in this chat. "
+            "After each one is saved, I'll ask for the next.\n\n"
+            "You can also paste **several in one message** like this:\n\n"
+            "```\nPersonal data\n"
+            "Full name: John Doe\n"
+            "Email: john@mail.com\n"
+            "Phone number: 5551234567\n"
+            "merchant: db-studio\n```\n\n"
+            "Repeat the block for each client. Each one needs a **unique email and phone**."
         ),
     )
 
@@ -173,6 +221,58 @@ def friendly_register_error(locale: str, detail: str) -> str:
     )
 
 
+def friendly_bulk_register_result(
+    locale: str,
+    *,
+    successes: list[tuple[str, int, str, str]],
+    failures: list[tuple[str, str]],
+) -> str:
+    parts: list[str] = []
+
+    if successes:
+        lines = [
+            f"- **{name}** (#{client_id}) — {email} / {phone}"
+            for name, client_id, email, phone in successes
+        ]
+        parts.append(
+            t(
+                locale,
+                f"✅ **Registrados ({len(successes)}):**\n" + "\n".join(lines),
+                f"✅ **Registered ({len(successes)}):**\n" + "\n".join(lines),
+            )
+        )
+
+    if failures:
+        lines = [f"- **{name}**: {reason}" for name, reason in failures]
+        parts.append(
+            t(
+                locale,
+                f"❌ **No se pudieron registrar ({len(failures)}):**\n" + "\n".join(lines),
+                f"❌ **Could not register ({len(failures)}):**\n" + "\n".join(lines),
+            )
+        )
+
+    if not successes and not failures:
+        return t(
+            locale,
+            "No encontré clientes para registrar en ese mensaje.",
+            "I couldn't find any clients to register in that message.",
+        )
+
+    summary = "\n\n".join(parts)
+    if failures and any("email" in reason.lower() or "teléfono" in reason.lower() or "phone" in reason.lower() for _, reason in failures):
+        summary += t(
+            locale,
+            "\n\n_Recordá que cada cliente debe tener un **email** y un **teléfono** únicos._",
+            "\n\n_Remember each client must have a unique **email** and **phone number**._",
+        )
+
+    if successes:
+        summary += friendly_register_continue_prompt(locale)
+
+    return summary
+
+
 def friendly_advisor_prompt(locale: str, lines: list[str]) -> str:
     body = "\n".join(lines)
     return t(
@@ -197,6 +297,46 @@ def friendly_approve_one_intro(locale: str, *, full_name: str, issues: list[str]
     )
 
 
+def friendly_approve_success(
+    locale: str,
+    *,
+    full_name: str,
+    client_id: int,
+    advisor_name: str,
+) -> str:
+    return t(
+        locale,
+        (
+            f"✅ Cliente **{full_name}** (#{client_id}) aprobado.\n\n"
+            f"- Asesor asignado: **{advisor_name}**\n"
+            "- Se envió la bienvenida por email y WhatsApp.\n"
+            "- La contraseña temporal aparece en el modal de confirmación."
+        ),
+        (
+            f"✅ Client **{full_name}** (#{client_id}) approved.\n\n"
+            f"- Assigned advisor: **{advisor_name}**\n"
+            "- Welcome email and WhatsApp were sent.\n"
+            "- The temporary password is shown in the confirmation modal."
+        ),
+    )
+
+
+def friendly_approve_need_advisor(locale: str) -> str:
+    return t(
+        locale,
+        "Para continuar con la aprobación, indicame el **asesor** (nombre o email).",
+        "To continue with the approval, tell me the **advisor** (name or email).",
+    )
+
+
+def friendly_reject_need_reason(locale: str) -> str:
+    return t(
+        locale,
+        "Para rechazar al cliente, escribí el **motivo** (al menos 5 caracteres).",
+        "To reject the client, write the **reason** (at least 5 characters).",
+    )
+
+
 def friendly_reject_one_intro(locale: str, *, full_name: str) -> str:
     return t(
         locale,
@@ -210,4 +350,74 @@ def friendly_verify_pending_footer(locale: str) -> str:
         locale,
         "\n\nSi querés, decime por ejemplo: *aprobar a [nombre]*, *aprobar todos*, *rechazar a [nombre]* o *rechazar todos*.",
         "\n\nYou can say: *approve [name]*, *approve all*, *reject [name]*, or *reject all*.",
+    )
+
+
+def friendly_upload_document_start(locale: str, *, for_staff: bool) -> str:
+    if for_staff:
+        return t(
+            locale,
+            "Perfecto, vamos a **subir un documento** para el cliente. Elegí el tipo abajo o decime cuál es (ej. licencia frente, SSN).",
+            "Great, let's **upload a document** for the client. Pick the type below or tell me which one (e.g. license front, SSN).",
+        )
+    return t(
+        locale,
+        "Dale, vamos a **subir un documento**. Elegí el tipo abajo o decime cuál es (ej. licencia frente, SSN).",
+        "Sure, let's **upload a document**. Pick the type below or tell me which one (e.g. license front, SSN).",
+    )
+
+
+def friendly_upload_document_need_client(locale: str) -> str:
+    return t(
+        locale,
+        "¿Para qué **cliente** es el documento? Decime el **#ID** o el nombre.",
+        "Which **client** is this document for? Tell me the **#ID** or name.",
+    )
+
+
+def friendly_upload_document_need_type(locale: str) -> str:
+    return t(
+        locale,
+        "¿Qué **tipo de documento** querés subir? Elegí una opción abajo.",
+        "Which **document type** do you want to upload? Pick an option below.",
+    )
+
+
+def friendly_upload_document_ready(locale: str, *, document_label: str) -> str:
+    return t(
+        locale,
+        f"Listo, vamos con **{document_label}**. Tocá el clip 📎 y elegí el archivo (PDF o imagen).",
+        f"Got it — **{document_label}**. Tap the clip 📎 and choose the file (PDF or image).",
+    )
+
+
+def friendly_upload_board_start(locale: str) -> str:
+    return t(
+        locale,
+        "Vamos a **adjuntar un archivo a una tarjeta** del tablero. Elegí la tarjeta abajo o decime el título / #ID.",
+        "Let's **attach a file to a board card**. Pick the card below or tell me the title / #ID.",
+    )
+
+
+def friendly_upload_board_need_client(locale: str) -> str:
+    return t(
+        locale,
+        "¿De qué **cliente** es la tarjeta? Decime el **#ID** o el nombre.",
+        "Which **client's** card is it? Tell me the **#ID** or name.",
+    )
+
+
+def friendly_upload_board_need_card(locale: str) -> str:
+    return t(
+        locale,
+        "¿A qué **tarjeta** del tablero querés adjuntar el archivo?",
+        "Which board **card** should receive the file?",
+    )
+
+
+def friendly_upload_board_ready(locale: str, *, card_title: str) -> str:
+    return t(
+        locale,
+        f"Perfecto, tarjeta **{card_title}**. Tocá el clip 📎 y elegí el archivo.",
+        f"Perfect — card **{card_title}**. Tap the clip 📎 and choose the file.",
     )

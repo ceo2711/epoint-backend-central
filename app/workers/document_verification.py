@@ -44,7 +44,7 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
 Critical rules:
 - document_type_matches is the most important field. Set it to false if the file is NOT the exact document type requested, even when quality is good.
 - detected_document_type must describe what you actually see, not what was requested.
-- name_matches: true only if the client's full name appears on the document (required for identity documents and address proofs).
+- name_matches: true only if the client's full name appears on the document (required for identity documents and address proofs), EXCEPT DRIVERS_LICENSE_BACK where name is usually absent — set name_matches=true when it is clearly the license back.
 - address_matches: true only for utility bills / bank statements when the service/mailing address is visible and plausible.
 - Every reason must include both "en" and "es".
 - If rejected, rejection_reasons must explain the main issue (wrong document type, missing name, poor quality, etc.).

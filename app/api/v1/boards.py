@@ -18,7 +18,6 @@ from app.schemas.board import (
     BoardMentionableUserResponse,
     BoardResponse,
     CardAttachmentResponse,
-    CardCommentCreate,
     CardCommentResponse,
     CardCreate,
     CardMoveUpdate,
@@ -434,11 +433,13 @@ def get_attachment_content(
 
 
 @router.post("/cards/{card_id}/comments", response_model=CardCommentResponse)
-def add_comment(
+async def add_comment(
     card_id: int,
-    payload: CardCommentCreate,
     db: DbSession,
     current_user: CurrentUser,
+    body: Annotated[str, Form()] = "",
+    is_internal: Annotated[bool, Form()] = False,
+    files: Annotated[list[UploadFile] | None, File()] = None,
 ) -> CardCommentResponse:
     card = db.get(BoardCard, card_id)
     if card is None:
@@ -449,14 +450,41 @@ def add_comment(
     if current_user.role.code == "CLIENT":
         if current_user.client_id != client.id:
             raise HTTPException(status_code=403)
-        payload.is_internal = False
+        is_internal = False
     else:
         cs = ClientService(db)
         if not cs.user_can_access_client(current_user, client.id):
             raise HTTPException(status_code=404)
-    comment = BoardService(db).add_comment(
-        card=card, author=current_user, body=payload.body, is_internal=payload.is_internal, client=client
-    )
+
+    attachments: list[tuple[str, str, bytes]] = []
+    for upload in files or []:
+        file_bytes = await upload.read()
+        if not file_bytes:
+            continue
+        attachments.append(
+            (
+                upload.filename or "attachment",
+                upload.content_type or "",
+                file_bytes,
+            )
+        )
+
+    if not body.strip() and not attachments:
+        raise HTTPException(status_code=400, detail="El comentario o al menos un archivo es obligatorio")
+
+    board_service = BoardService(db)
+    try:
+        comment = board_service.add_comment(
+            card=card,
+            author=current_user,
+            body=body,
+            is_internal=is_internal,
+            client=client,
+            attachments=attachments,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return CardCommentResponse(
         id=comment.id,
         body=comment.body,

@@ -15,11 +15,28 @@ class PendingChatAction(BaseModel):
         "reject_client",
         "approve_all",
         "reject_all",
+        "upload_document",
+        "upload_board_attachment",
     ]
     client_id: int | None = None
     client_ids: list[int] = Field(default_factory=list)
     advisor_user_id: int | None = None
     draft: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClientApprovalResult(BaseModel):
+    client_id: int
+    client_name: str
+    client_email: str
+    temp_password: str
+    advisor_name: str
+
+
+class ChatUploadOptions(BaseModel):
+    kind: Literal["document", "board_card"]
+    document_types: list[dict[str, str]] = Field(default_factory=list)
+    board_cards: list[dict[str, Any]] = Field(default_factory=list)
+    ready_for_file: bool = False
 
 
 class ChatbotRequest(BaseModel):
@@ -36,3 +53,7 @@ class ChatbotResponse(BaseModel):
     client_id: int | None = None
     pending_action: PendingChatAction | None = None
     chat_locale: str = "es"
+    client_approval: ClientApprovalResult | None = None
+    client_approvals: list[ClientApprovalResult] = Field(default_factory=list)
+    upload_options: ChatUploadOptions | None = None
+    clients_updated: bool = False

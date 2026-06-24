@@ -27,7 +27,7 @@ class BoardService:
         self.db = db
         self.notifications = NotificationService(db)
 
-    def create_from_template(self, client: Client, template_code: str = "DEFAULT_ONBOARDING") -> Board:
+    def get_active_template(self, template_code: str = "DEFAULT_ONBOARDING") -> BoardTemplate:
         template = (
             self.db.execute(
                 select(BoardTemplate)
@@ -41,6 +41,17 @@ class BoardService:
         )
         if template is None:
             raise ValueError(f"Template {template_code} no encontrado")
+        return template
+
+    def create_from_template(
+        self,
+        client: Client,
+        template_code: str = "DEFAULT_ONBOARDING",
+        *,
+        template: BoardTemplate | None = None,
+    ) -> Board:
+        if template is None:
+            template = self.get_active_template(template_code)
 
         board = Board(client_id=client.id, template_code=template_code)
         self.db.add(board)
@@ -150,19 +161,62 @@ class BoardService:
         body: str,
         is_internal: bool,
         client: Client,
+        attachments: list[tuple[str, str, bytes]] | None = None,
     ):
         from app.models.card_comment import CardComment
+
+        clean_body = body.strip()
+        files = attachments or []
+        if not clean_body and not files:
+            raise ValueError("El comentario o al menos un archivo es obligatorio")
 
         comment = CardComment(
             card_id=card.id,
             author_user_id=author.id,
-            body=body.strip(),
+            body=clean_body,
             is_internal=is_internal,
         )
         self.db.add(comment)
+        self.db.flush()
 
+        stored_attachments: list[CardAttachment] = []
+        for filename, content_type, file_bytes in files:
+            stored_attachments.append(
+                self._create_attachment(
+                    card=card,
+                    actor=author,
+                    client=client,
+                    filename=filename,
+                    content_type=content_type,
+                    file_bytes=file_bytes,
+                    comment_id=comment.id,
+                )
+            )
+
+        self._notify_comment(
+            card=card,
+            author=author,
+            client=client,
+            body=clean_body,
+            is_internal=is_internal,
+        )
+        self.db.commit()
+        self.db.refresh(comment)
+        for attachment in stored_attachments:
+            self.db.refresh(attachment)
+        return comment
+
+    def _notify_comment(
+        self,
+        *,
+        card: BoardCard,
+        author: User,
+        client: Client,
+        body: str,
+        is_internal: bool,
+    ) -> None:
         from app.services.clients import ClientService
-        from app.utils.comment_mentions import extract_mention_user_ids
+        from app.utils.comment_mentions import extract_mention_user_ids, format_comment_preview
 
         mentioned_users = ClientService(self.db).validate_mention_user_ids(
             client=client,
@@ -170,6 +224,7 @@ class BoardService:
             user_ids=extract_mention_user_ids(body),
             is_internal=is_internal,
         )
+        explicit_mention_ids = {user.id for user in mentioned_users if user.id != author.id}
 
         recipients = self._comment_notification_recipients(
             client=client,
@@ -182,22 +237,21 @@ class BoardService:
                 seen.add(user.id)
                 recipients.append(user)
         recipients = [
-            user for user in recipients if user.role.code != "ONBOARDING_MANAGER"
+            user
+            for user in recipients
+            if user.role.code != "ONBOARDING_MANAGER" or user.id in explicit_mention_ids
         ]
-        if recipients:
-            from app.utils.comment_mentions import format_comment_preview
+        if not recipients:
+            return
 
-            preview = format_comment_preview(body)
-            self.notifications.notify(
-                event_type=NotificationEventType.TASK_COMMENTED.value,
-                users=recipients,
-                title="Nuevo comentario en tarea",
-                body=f"Comentario en '{card.title}': {preview}",
-                payload={"card_id": card.id, "client_id": client.id},
-            )
-        self.db.commit()
-        self.db.refresh(comment)
-        return comment
+        preview = format_comment_preview(body) if body else "(archivos adjuntos)"
+        self.notifications.notify(
+            event_type=NotificationEventType.TASK_COMMENTED.value,
+            users=recipients,
+            title="Nuevo comentario en tarea",
+            body=f"Comentario en '{card.title}': {preview}",
+            payload={"card_id": card.id, "client_id": client.id},
+        )
 
     def _comment_notification_recipients(
         self,
@@ -344,6 +398,32 @@ class BoardService:
         attachment_type: str = "CLIENT_UPLOAD",
         comment_id: int | None = None,
     ) -> CardAttachment:
+        attachment = self._create_attachment(
+            card=card,
+            actor=actor,
+            client=client,
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+            attachment_type=attachment_type,
+            comment_id=comment_id,
+        )
+        self.db.commit()
+        self.db.refresh(attachment)
+        return attachment
+
+    def _create_attachment(
+        self,
+        *,
+        card: BoardCard,
+        actor: User,
+        client: Client,
+        filename: str,
+        content_type: str,
+        file_bytes: bytes,
+        attachment_type: str = "CLIENT_UPLOAD",
+        comment_id: int | None = None,
+    ) -> CardAttachment:
         if not file_bytes:
             raise ValueError("El archivo está vacío")
 
@@ -379,6 +459,4 @@ class BoardService:
         )
         self.db.add(attachment)
         attachment.uploaded_by = actor
-        self.db.commit()
-        self.db.refresh(attachment)
         return attachment

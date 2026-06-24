@@ -39,6 +39,10 @@ class ClientApprove(BaseModel):
     advisor_user_id: int
 
 
+class ClientAssignAdvisor(BaseModel):
+    advisor_user_id: int
+
+
 class ClientConflict(BaseModel):
     client_id: int
     client_name: str
@@ -80,6 +84,7 @@ class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False
     portal_email: str | None = None
     portal_login_url: str | None = None
+    advisor: AdvisorBrief | None = None
     addresses: list["AddressResponse"] = []
     vehicles: list["VehicleResponse"] = []
     documents: list["DocumentBrief"] = []

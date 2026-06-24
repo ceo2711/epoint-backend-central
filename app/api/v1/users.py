@@ -7,11 +7,41 @@ from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, require_permissions
 from app.core.security import hash_password
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
+
+
+def _staff_users_query():
+    """Usuarios internos de la plataforma (empleados), sin cuentas portal de clientes."""
+    return (
+        select(User)
+        .options(joinedload(User.role), joinedload(User.area))
+        .join(Role)
+        .where(Role.code != "CLIENT")
+    )
+
+
+def _get_staff_user(db: DbSession, user_id: int) -> User | None:
+    return (
+        db.execute(_staff_users_query().where(User.id == user_id))
+        .unique()
+        .scalar_one_or_none()
+    )
+
+
+def _assert_staff_role(db: DbSession, role_id: int) -> None:
+    role = db.get(Role, role_id)
+    if role is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rol inválido")
+    if role.code == "CLIENT":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los clientes del portal no se gestionan desde usuarios de la plataforma",
+        )
 
 
 @router.get("", response_model=PaginatedResponse[UserResponse])
@@ -23,7 +53,7 @@ def list_users(
     search: str | None = None,
     is_active: bool | None = None,
 ) -> PaginatedResponse[UserResponse]:
-    query = select(User).options(joinedload(User.role), joinedload(User.area))
+    query = _staff_users_query()
 
     if search:
         term = f"%{search}%"
@@ -66,6 +96,8 @@ def create_user(
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
 
+    _assert_staff_role(db, payload.role_id)
+
     user = User(
         email=payload.email.lower(),
         password_hash=hash_password(payload.password),
@@ -88,15 +120,7 @@ def get_user(
     db: DbSession,
     _current_user: Annotated[User, Depends(require_permissions("users:read"))],
 ) -> UserResponse:
-    user = (
-        db.execute(
-            select(User)
-            .options(joinedload(User.role), joinedload(User.area))
-            .where(User.id == user_id)
-        )
-        .unique()
-        .scalar_one_or_none()
-    )
+    user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     return UserResponse.model_validate(user)
@@ -109,21 +133,15 @@ def update_user(
     db: DbSession,
     _current_user: Annotated[User, Depends(require_permissions("users:update"))],
 ) -> UserResponse:
-    user = (
-        db.execute(
-            select(User)
-            .options(joinedload(User.role), joinedload(User.area))
-            .where(User.id == user_id)
-        )
-        .unique()
-        .scalar_one_or_none()
-    )
+    user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
     data = payload.model_dump(exclude_unset=True)
     if "email" in data and data["email"]:
         data["email"] = data["email"].lower()
+    if "role_id" in data and data["role_id"] is not None:
+        _assert_staff_role(db, int(data["role_id"]))
 
     for field, value in data.items():
         setattr(user, field, value)
@@ -141,7 +159,7 @@ def deactivate_user(
 ) -> MessageResponse:
     if user_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No podés desactivar tu propia cuenta")
-    user = db.get(User, user_id)
+    user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     user.is_active = False

@@ -45,6 +45,7 @@ class NotificationService:
         payload: dict[str, Any] | None = None,
         channels: list[str] | None = None,
         channel_bodies: dict[str, str] | None = None,
+        commit: bool = True,
     ) -> list[Notification]:
         active_channels = channels or EVENT_CHANNELS.get(event_type, ["IN_APP"])
         created: list[Notification] = []
@@ -70,7 +71,8 @@ class NotificationService:
                 if notification:
                     created.append(notification)
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return created
 
     def apply_in_app_scope(self, query, user: User):

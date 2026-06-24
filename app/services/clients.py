@@ -1,11 +1,14 @@
+import logging
 import re
 import secrets
 import string
 from datetime import datetime, timezone
 
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.encryption import decrypt_value, encrypt_value
 from app.core.security import hash_password
@@ -23,6 +26,11 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body
+
+if TYPE_CHECKING:
+    from app.models.board import Board, BoardTemplate
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_temp_password(length: int = 12) -> str:
@@ -97,7 +105,13 @@ class ClientService:
 
         query = self._scoped_clients_query(user)
         if onboarding_only:
-            query = query.where(Client.approved_at.isnot(None))
+            query = query.where(
+                or_(
+                    Client.status == ClientStatus.PENDIENTE_DE_REVISION.value,
+                    Client.status == ClientStatus.RECHAZADO.value,
+                    Client.approved_at.isnot(None),
+                )
+            )
         if status_filter:
             query = query.where(Client.status == status_filter)
         if search:
@@ -421,6 +435,9 @@ class ClientService:
         actor: User,
         client: Client,
         advisor_user_id: int,
+        send_welcome_notifications: bool = True,
+        commit: bool = True,
+        board_template: "BoardTemplate | None" = None,
     ) -> tuple[Client, str]:
         if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
             raise HTTPException(status_code=400, detail="Solo clientes pendientes pueden aprobarse")
@@ -461,26 +478,33 @@ class ClientService:
         portal_login_url = settings.portal_login_url
         welcome_title = "¡Bienvenido a ePoint!"
 
-        send_client_welcome_email(
-            ClientWelcomeEmailPayload(
-                recipient_email=client.email,
-                first_name=client.first_name,
-                temp_password=temp_password,
-                portal_login_url=portal_login_url,
-                client_id=client.id,
+        if send_welcome_notifications:
+            send_client_welcome_email(
+                ClientWelcomeEmailPayload(
+                    recipient_email=client.email,
+                    first_name=client.first_name,
+                    temp_password=temp_password,
+                    portal_login_url=portal_login_url,
+                    client_id=client.id,
+                )
             )
-        )
 
-        send_client_welcome_whatsapp(
-            ClientWelcomeWhatsAppPayload(
-                recipient_phone=client.phone,
-                first_name=client.first_name,
-                email=client.email,
-                temp_password=temp_password,
-                portal_login_url=portal_login_url,
-                client_id=client.id,
+            send_client_welcome_whatsapp(
+                ClientWelcomeWhatsAppPayload(
+                    recipient_phone=client.phone,
+                    first_name=client.first_name,
+                    email=client.email,
+                    temp_password=temp_password,
+                    portal_login_url=portal_login_url,
+                    client_id=client.id,
+                )
             )
-        )
+        else:
+            logger.info(
+                "Welcome email/WhatsApp omitidos para cliente #%s (%s) — aprobación masiva",
+                client.id,
+                client.email,
+            )
 
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_APPROVED.value,
@@ -496,6 +520,7 @@ class ClientService:
             channel_bodies={
                 "IN_APP": client_approved_in_app_body(first_name=client.first_name),
             },
+            commit=commit,
         )
 
         self.audit.log(
@@ -505,10 +530,106 @@ class ClientService:
             entity_id=client.id,
             metadata={"advisor_id": advisor_user_id},
         )
-        self.ensure_board(client)
-        self.db.commit()
-        self.db.refresh(client)
+        self.ensure_board(client, board_template=board_template)
+        if commit:
+            self.db.commit()
+            self.db.refresh(client)
+        else:
+            self.db.flush()
         return client, temp_password
+
+    def bulk_approve_clients(
+        self,
+        *,
+        actor: User,
+        clients: list[Client],
+        advisor_user_id: int,
+        send_welcome_notifications: bool = False,
+    ) -> tuple[list[tuple[Client, str]], list[tuple[Client, str]]]:
+        """Aprueba varios clientes en una sola transacción (más rápido que uno por uno)."""
+        if not clients:
+            return [], []
+
+        advisor = self.db.get(User, advisor_user_id)
+        if advisor is None or advisor.role.code != "ADVISOR":
+            raise HTTPException(status_code=400, detail="Asesor inválido")
+
+        try:
+            board_template = self.boards.get_active_template()
+        except ValueError:
+            board_template = None
+
+        successes: list[tuple[Client, str]] = []
+        failures: list[tuple[Client, str]] = []
+
+        for client in clients:
+            if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
+                failures.append((client, "Solo clientes pendientes pueden aprobarse"))
+                continue
+            try:
+                approved_client, temp_password = self.approve_client(
+                    actor=actor,
+                    client=client,
+                    advisor_user_id=advisor_user_id,
+                    send_welcome_notifications=send_welcome_notifications,
+                    commit=False,
+                    board_template=board_template,
+                )
+                successes.append((approved_client, temp_password))
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+                failures.append((client, detail))
+
+        if successes:
+            self.db.commit()
+            for client, _ in successes:
+                self.db.refresh(client)
+        elif failures:
+            self.db.rollback()
+
+        return successes, failures
+
+    def reassign_advisor(
+        self,
+        *,
+        actor: User,
+        client: Client,
+        advisor_user_id: int,
+    ) -> User:
+        if client.approved_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Solo clientes aprobados pueden tener asesor asignado",
+            )
+
+        advisor = self.db.get(User, advisor_user_id)
+        if advisor is None or advisor.role.code != "ADVISOR" or not advisor.is_active:
+            raise HTTPException(status_code=400, detail="Asesor inválido")
+
+        current = self._get_active_advisor(client)
+        if current and current.id == advisor_user_id:
+            return advisor
+
+        for assignment in client.assignments:
+            if assignment.unassigned_at is None:
+                assignment.unassigned_at = datetime.now(timezone.utc)
+
+        self.db.add(
+            ClientAssignment(
+                client_id=client.id,
+                advisor_user_id=advisor_user_id,
+                assigned_by_user_id=actor.id,
+            )
+        )
+        self.audit.log(
+            actor=actor,
+            action="CLIENT_ADVISOR_REASSIGNED",
+            entity_type="client",
+            entity_id=client.id,
+            metadata={"advisor_id": advisor_user_id},
+        )
+        self.db.commit()
+        return advisor
 
     def get_portal_access_info(self, client: Client) -> dict:
         settings = get_settings()
@@ -589,7 +710,6 @@ class ClientService:
     def check_data_complete(self, client: Client) -> bool:
         from app.models.address import Address
         from app.models.document import Document
-        from app.models.enums import DocumentType
         from app.models.vehicle import Vehicle
 
         if not client.ssn_encrypted or not client.date_of_birth:
@@ -605,17 +725,13 @@ class ClientService:
         if not vehicle:
             return False
 
-        required_docs = [
-            DocumentType.SSN_CARD.value,
-            DocumentType.DRIVERS_LICENSE_FRONT.value,
-            DocumentType.DRIVERS_LICENSE_BACK.value,
-            DocumentType.UTILITY_BILL.value,
-        ]
+        from app.services.document_requirements import is_upload_requirement_met
+
         uploaded_types = {
             d.type
             for d in self.db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
         }
-        if not all(dt in uploaded_types for dt in required_docs):
+        if not is_upload_requirement_met(uploaded_types):
             return False
         return True
 
@@ -631,12 +747,12 @@ class ClientService:
             payload={"client_id": client.id},
         )
 
-    def ensure_board(self, client: Client) -> "Board":
+    def ensure_board(self, client: Client, board_template: "BoardTemplate | None" = None) -> "Board":
         from app.models.board import Board
 
         if client.board:
             return client.board
-        return self.boards.create_from_template(client)
+        return self.boards.create_from_template(client, template=board_template)
 
     def try_create_board(self, *, client: Client) -> None:
         """Crea el tablero si aún no existe (idempotente, sin requisito de documentos)."""

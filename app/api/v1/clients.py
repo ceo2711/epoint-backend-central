@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.client import (
     ClientApprove,
     ClientApproveResponse,
+    ClientAssignAdvisor,
     ClientAvailabilityResponse,
     ClientCreate,
     ClientDetailResponse,
@@ -18,6 +19,7 @@ from app.schemas.client import (
     ClientResponse,
     ClientStatsResponse,
     ClientUpdate,
+    AdvisorBrief,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.serializers.client import client_to_response
@@ -121,9 +123,20 @@ def get_client(
     portal = service.get_portal_access_info(client)
     doc_service = DocumentService(db)
     latest_verifications = doc_service.load_latest_verifications_map([doc.id for doc in client.documents])
+    advisor_brief: AdvisorBrief | None = None
+    if current_user.role.code in ("ONBOARDING_MANAGER", "ADMIN"):
+        active_advisor = service._get_active_advisor(client)
+        if active_advisor is not None:
+            advisor_brief = AdvisorBrief(
+                id=active_advisor.id,
+                first_name=active_advisor.first_name,
+                last_name=active_advisor.last_name,
+                email=active_advisor.email,
+            )
     return ClientDetailResponse(
         **base.model_dump(),
         **portal,
+        advisor=advisor_brief,
         addresses=client.addresses,
         vehicles=client.vehicles,
         documents=[
@@ -224,6 +237,36 @@ def approve_client(
         actor=current_user, client=client, advisor_user_id=payload.advisor_user_id
     )
     return ClientApproveResponse(client=_to_response(client), temp_password=temp_password)
+
+
+@router.patch("/{client_id}/advisor", response_model=AdvisorBrief)
+def assign_client_advisor(
+    client_id: int,
+    payload: ClientAssignAdvisor,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+) -> AdvisorBrief:
+    if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Solo onboarding puede gestionar el asesor asignado")
+
+    service = ClientService(db)
+    client = service.get_client_detail(client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if not service.user_can_access_client(current_user, client_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    advisor = service.reassign_advisor(
+        actor=current_user,
+        client=client,
+        advisor_user_id=payload.advisor_user_id,
+    )
+    return AdvisorBrief(
+        id=advisor.id,
+        first_name=advisor.first_name,
+        last_name=advisor.last_name,
+        email=advisor.email,
+    )
 
 
 @router.post("/{client_id}/reset-portal-password", response_model=ClientPortalPasswordResponse)

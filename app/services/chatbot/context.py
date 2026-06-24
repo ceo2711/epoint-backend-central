@@ -8,11 +8,20 @@ from app.core.config import get_settings
 from app.models.address import Address
 from app.models.client import Client
 from app.models.document import Document
-from app.models.enums import DocumentType, TaskStatus
+from app.models.enums import ClientStatus, DocumentType, TaskStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
+from app.services.chatbot.approval_rules import validate_approval_requirements
+from app.services.chatbot.registration_options import source_label
 from app.services.boards import BoardService
 from app.services.clients import ClientService
+from app.services.document_requirements import (
+    ADDRESS_GAP_KEY,
+    ALL_UPLOADABLE_TYPES,
+    IDENTITY_GAP_KEY,
+    build_documents_status_for_context,
+    document_upload_gaps,
+)
 from app.services.documents import DocumentService
 
 DOCUMENT_TYPE_LABELS = {
@@ -26,12 +35,12 @@ DOCUMENT_TYPE_LABELS = {
     DocumentType.BANK_STATEMENT.value: "Estado de cuenta bancario",
 }
 
-REQUIRED_DOCUMENT_TYPES = [
-    DocumentType.SSN_CARD.value,
-    DocumentType.DRIVERS_LICENSE_FRONT.value,
-    DocumentType.DRIVERS_LICENSE_BACK.value,
-    DocumentType.UTILITY_BILL.value,
-]
+DOCUMENT_GAP_LABELS = {
+    IDENTITY_GAP_KEY: "Documento de identidad (licencia o alternativa)",
+    ADDRESS_GAP_KEY: "Comprobante de domicilio (Utility Bill o Bank Statement)",
+}
+
+REQUIRED_DOCUMENT_TYPES = list(ALL_UPLOADABLE_TYPES)
 
 STAFF_ROLES = {"ADMIN", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
 SALES_ROLE = "SALES_REP"
@@ -79,10 +88,13 @@ class ChatbotContextBuilder:
 
         scoped_query = self.clients._scoped_clients_query(self.user)
         clients = self.db.execute(scoped_query.order_by(Client.created_at.desc()).limit(200)).scalars().all()
-        lowered = message.lower()
+        lowered = message.strip().lower()
+        if not lowered:
+            return None
+
         for client in clients:
             full_name = client.full_name.lower()
-            if full_name and full_name in lowered:
+            if full_name and (full_name in lowered or lowered in full_name):
                 return client.id
             if client.email.lower() in lowered:
                 return client.id
@@ -90,6 +102,16 @@ class ChatbotContextBuilder:
             last = client.last_name.lower()
             if first and last and first in lowered and last in lowered:
                 return client.id
+
+        exact_matches = [
+            client
+            for client in clients
+            if client.full_name.lower() == lowered
+            or client.first_name.lower() == lowered
+            or client.last_name.lower() == lowered
+        ]
+        if len(exact_matches) == 1:
+            return exact_matches[0].id
 
         return None
 
@@ -102,7 +124,10 @@ class ChatbotContextBuilder:
             return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
         if role == SALES_ROLE:
-            payload = self._build_sales_payload(include_actions=self._can_create())
+            payload = self._build_sales_payload(
+                include_actions=self._can_create(),
+                client_id=resolved_client_id,
+            )
             return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
         if role in STAFF_ROLES:
@@ -112,7 +137,7 @@ class ChatbotContextBuilder:
         payload = {"note": "Rol sin contexto específico configurado."}
         return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
-    def _build_sales_payload(self, *, include_actions: bool) -> dict[str, Any]:
+    def _build_sales_payload(self, *, include_actions: bool, client_id: int | None = None) -> dict[str, Any]:
         clients = self.db.execute(
             self.clients._scoped_clients_query(self.user).order_by(Client.created_at.desc()).limit(100)
         ).scalars().all()
@@ -146,8 +171,17 @@ class ChatbotContextBuilder:
         }
         if include_actions:
             payload["acciones_disponibles"] = [
-                "registrar cliente (nombre, apellido, email, teléfono)",
+                "registrar cliente (nombre, apellido, email, teléfono, fuente, comercio)",
+                "informe completo de cliente (nombre, email o ID)",
             ]
+        else:
+            payload["acciones_disponibles"] = [
+                "informe completo de cliente (nombre, email o ID)",
+            ]
+
+        if client_id is not None and self.clients.user_can_access_client(self.user, client_id):
+            payload["cliente_consultado"] = self._client_detail_payload(client_id)
+
         return payload
 
     def _build_staff_payload(self, client_id: int | None, *, include_approval_data: bool) -> dict[str, Any]:
@@ -170,9 +204,10 @@ class ChatbotContextBuilder:
                         "id": client.id,
                         "nombre": client.full_name,
                         "estado": client.status,
-                        "faltantes": self._profile_gaps(client),
+                        "pendientes_onboarding": self._onboarding_gaps(client),
                     }
                 )
+            approval_problems = validate_approval_requirements(client, self.clients)
             client_summaries.append(
                 {
                     "id": client.id,
@@ -180,18 +215,23 @@ class ChatbotContextBuilder:
                     "email": client.email,
                     "estado": client.status,
                     "aprobado": client.approved_at is not None,
-                    "datos_completos": data_complete,
+                    "onboarding_completo": data_complete,
+                    "listo_para_aprobar": len(approval_problems) == 0,
                 }
             )
 
         payload: dict[str, Any] = {
             "rol": self.user.role.code,
             "estadisticas_generales": stats,
-            "resumen_datos": {
-                "clientes_con_datos_completos": complete_count,
-                "clientes_con_datos_incompletos": len(clients) - complete_count,
+            "reglas_aprobacion": {
+                "campos_requeridos": ["nombre completo", "email", "teléfono", "fuente", "comercio"],
+                "nota": "Documentos, SSN, dirección y vehículo son POST-aprobación y NO bloquean la aprobación inicial.",
             },
-            "clientes_datos_incompletos": incomplete_clients[:30],
+            "resumen_onboarding_post_aprobacion": {
+                "clientes_con_onboarding_completo": complete_count,
+                "clientes_con_onboarding_incompleto": len(clients) - complete_count,
+            },
+            "clientes_onboarding_incompleto": incomplete_clients[:30],
             "clientes": client_summaries,
         }
 
@@ -199,31 +239,45 @@ class ChatbotContextBuilder:
             payload["cliente_consultado"] = self._client_detail_payload(client_id)
 
         if include_approval_data:
-            from app.services.chatbot.actions import ChatbotActionHandler
-
-            handler = ChatbotActionHandler(self.db, self.user)
-            pending = handler._pending_clients()
+            pending = self._pending_clients_scoped()
             payload["clientes_pendientes_revision"] = [
                 {
                     "id": client.id,
                     "nombre": client.full_name,
                     "email": client.email,
                     "telefono": client.phone,
-                    "datos_ok": len(problems) == 0,
-                    "problemas": problems,
+                    "listo_para_aprobar": len(problems) == 0,
+                    "problemas_aprobacion": problems,
                 }
                 for client in pending
-                for problems in [handler.validate_registration_data(client)]
+                for problems in [validate_approval_requirements(client, self.clients)]
             ]
             payload["acciones_disponibles"] = [
+                "consultar pendientes de aprobación",
+                "informe completo de cliente (nombre, email o ID)",
                 "verificar pendientes",
                 "aprobar cliente #ID",
                 "aprobar todos",
                 "rechazar cliente #ID",
                 "rechazar todos",
             ]
+        else:
+            payload["acciones_disponibles"] = [
+                "informe completo de cliente (nombre, email o ID)",
+            ]
 
         return payload
+
+    def _pending_clients_scoped(self) -> list[Client]:
+        return list(
+            self.db.execute(
+                self.clients._scoped_clients_query(self.user)
+                .where(Client.status == ClientStatus.PENDIENTE_DE_REVISION.value)
+                .order_by(Client.created_at.asc())
+            )
+            .scalars()
+            .all()
+        )
 
     def _build_client_payload(self) -> dict[str, Any]:
         client_id = self.user.client_id
@@ -244,31 +298,10 @@ class ChatbotContextBuilder:
         if client is None:
             return {"error": f"Cliente {client_id} no encontrado."}
 
-        uploaded_docs = {doc.type: doc for doc in client.documents}
-        documents_info: list[dict[str, Any]] = []
-
-        for doc_type in REQUIRED_DOCUMENT_TYPES:
-            doc = uploaded_docs.get(doc_type)
-            if doc is None:
-                documents_info.append(
-                    {
-                        "tipo": DOCUMENT_TYPE_LABELS.get(doc_type, doc_type),
-                        "subido": False,
-                        "estado_verificacion": "FALTANTE",
-                    }
-                )
-                continue
-
-            brief = self.documents.to_brief(doc, include_download_url=False)
-            documents_info.append(
-                {
-                    "tipo": DOCUMENT_TYPE_LABELS.get(doc_type, doc_type),
-                    "subido": True,
-                    "estado_verificacion": brief.verification_status,
-                    "motivos_rechazo": brief.rejection_reasons.model_dump() if brief.rejection_reasons else None,
-                    "motivos_aprobacion": brief.approval_reasons.model_dump() if brief.approval_reasons else None,
-                }
-            )
+        documents_status = build_documents_status_for_context(
+            client.documents,
+            type_labels=DOCUMENT_TYPE_LABELS,
+        )
 
         extra_docs = [
             {
@@ -276,10 +309,11 @@ class ChatbotContextBuilder:
                 "estado_verificacion": doc.verification_status,
             }
             for doc in client.documents
-            if doc.type not in REQUIRED_DOCUMENT_TYPES
+            if doc.type not in ALL_UPLOADABLE_TYPES
         ]
 
         board_summary = self._board_summary(client_id)
+        approval_problems = validate_approval_requirements(client, self.clients)
 
         return {
             "id": client.id,
@@ -287,16 +321,21 @@ class ChatbotContextBuilder:
             "email": client.email,
             "telefono": client.phone,
             "estado": client.status,
+            "fuente": client.source,
+            "fuente_label": source_label(client.source, "es") if client.source else None,
+            "comercio": client.merchant.name if client.merchant else None,
             "aprobado": client.approved_at is not None,
             "motivo_rechazo": client.rejection_reason,
-            "datos_completos": self.clients.check_data_complete(client),
-            "faltantes_perfil": self._profile_gaps(client),
-            "documentos_requeridos": documents_info,
+            "listo_para_aprobar": len(approval_problems) == 0,
+            "problemas_aprobacion": approval_problems,
+            "onboarding_completo": self.clients.check_data_complete(client),
+            "pendientes_onboarding": self._onboarding_gaps(client),
+            "documentos": documents_status,
             "documentos_adicionales": extra_docs,
             "tablero": board_summary,
         }
 
-    def _profile_gaps(self, client: Client) -> list[str]:
+    def _onboarding_gaps(self, client: Client) -> list[str]:
         gaps: list[str] = []
         if not client.ssn_encrypted:
             gaps.append("SSN")
@@ -319,9 +358,9 @@ class ChatbotContextBuilder:
             doc.type
             for doc in self.db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
         }
-        for doc_type in REQUIRED_DOCUMENT_TYPES:
-            if doc_type not in uploaded_types:
-                gaps.append(f"Documento: {DOCUMENT_TYPE_LABELS.get(doc_type, doc_type)}")
+        for gap in document_upload_gaps(uploaded_types):
+            label = DOCUMENT_GAP_LABELS.get(gap, DOCUMENT_TYPE_LABELS.get(gap, gap))
+            gaps.append(f"Documento: {label}")
 
         return gaps
 
@@ -345,6 +384,7 @@ class ChatbotContextBuilder:
                     pending_cards += 1
                 cards_info.append(
                     {
+                        "id": card.id,
                         "titulo": card.title,
                         "estado": card.status,
                         "requiere_archivo": card.requires_file_upload,

@@ -75,9 +75,19 @@ def resolve_source(message: str) -> str | None:
     return None
 
 
+PHONE_ONLY_PATTERN = re.compile(r"^\+?[\d][\d\s\-()]{7,}[\d]$")
+
+
 def resolve_merchant_id(message: str, merchants: list[Merchant]) -> int | None:
-    lower = message.lower().strip()
-    id_match = re.search(r"(?:comercio|merchant|empresa)?\s*#?(\d+)\b", lower)
+    stripped = message.strip()
+    lower = stripped.lower()
+    if PHONE_ONLY_PATTERN.fullmatch(stripped):
+        return None
+
+    id_match = re.search(
+        r"(?:comercio|merchant|empresa)\s*#?(\d+)\b",
+        lower,
+    )
     if id_match:
         candidate = int(id_match.group(1))
         if any(m.id == candidate for m in merchants):
