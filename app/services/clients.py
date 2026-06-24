@@ -466,6 +466,7 @@ class ClientService:
         temp_password = _generate_temp_password()
         client_role = self.db.execute(select(Role).where(Role.code == "CLIENT")).scalar_one()
         portal_user = self._resolve_portal_user(client, client_role, temp_password)
+        client.portal_temp_password_encrypted = encrypt_value(temp_password)
 
         client.status = ClientStatus.EN_CARGA_DATOS.value
 
@@ -631,6 +632,15 @@ class ClientService:
         self.db.commit()
         return advisor
 
+    def get_stored_portal_temp_password(self, client: Client) -> str | None:
+        if not client.portal_temp_password_encrypted:
+            return None
+        try:
+            return decrypt_value(client.portal_temp_password_encrypted)
+        except Exception:
+            logger.exception("No se pudo descifrar la contraseña temporal del portal para cliente #%s", client.id)
+            return None
+
     def get_portal_access_info(self, client: Client) -> dict:
         settings = get_settings()
         portal_user = self.db.execute(
@@ -660,6 +670,7 @@ class ClientService:
         temp_password = _generate_temp_password()
         portal_user.password_hash = hash_password(temp_password)
         portal_user.must_change_password = True
+        client.portal_temp_password_encrypted = encrypt_value(temp_password)
         self.audit.log(
             actor=actor,
             action="CLIENT_PORTAL_PASSWORD_RESET",

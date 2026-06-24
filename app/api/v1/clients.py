@@ -121,6 +121,7 @@ def get_client(
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     base = _to_response(client)
     portal = service.get_portal_access_info(client)
+    portal_temp_password = service.get_stored_portal_temp_password(client)
     doc_service = DocumentService(db)
     latest_verifications = doc_service.load_latest_verifications_map([doc.id for doc in client.documents])
     advisor_brief: AdvisorBrief | None = None
@@ -136,6 +137,7 @@ def get_client(
     return ClientDetailResponse(
         **base.model_dump(),
         **portal,
+        portal_temp_password=portal_temp_password,
         advisor=advisor_brief,
         addresses=client.addresses,
         vehicles=client.vehicles,

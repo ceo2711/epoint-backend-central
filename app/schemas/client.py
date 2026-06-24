@@ -84,6 +84,7 @@ class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False
     portal_email: str | None = None
     portal_login_url: str | None = None
+    portal_temp_password: str | None = None
     advisor: AdvisorBrief | None = None
     addresses: list["AddressResponse"] = []
     vehicles: list["VehicleResponse"] = []
