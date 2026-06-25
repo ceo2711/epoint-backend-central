@@ -11,6 +11,20 @@ def verify_document_task(document_id: int) -> dict:
     return run_document_verification(document_id)
 
 
+@celery_app.task(name="verify_card_attachment")
+def verify_card_attachment_task(attachment_id: int) -> dict:
+    from app.workers.card_attachment_verification import run_card_attachment_verification
+
+    return run_card_attachment_verification(attachment_id)
+
+
 @celery_app.task(name="send_notification_async")
 def send_notification_async(notification_id: int) -> None:
     logger.info("send_notification_async %s", notification_id)
+
+
+@celery_app.task(name="send_onboarding_reminders")
+def send_onboarding_reminders_task() -> dict:
+    from app.workers.onboarding_reminders import run_onboarding_reminders_job
+
+    return run_onboarding_reminders_job()

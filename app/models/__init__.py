@@ -5,6 +5,7 @@ from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTempl
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
+from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.card_comment import CardComment
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
@@ -30,6 +31,7 @@ __all__ = [
     "BoardTemplateCard",
     "BoardTemplateList",
     "CardAttachment",
+    "CardAttachmentVerification",
     "CardComment",
     "Client",
     "ClientAssignment",

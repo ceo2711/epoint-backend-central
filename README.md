@@ -27,7 +27,7 @@ alembic revision --autogenerate -m "initial"
 alembic upgrade head
 python scripts/seed.py
 
-# 5. Arrancar API
+# 5. Arrancar API (incluye recordatorios automáticos y verificación IA en background)
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -47,8 +47,21 @@ Ver `.env.example`. Las más importantes:
 | `JWT_SECRET_KEY` | Secreto para tokens |
 | `ENCRYPTION_KEY` | Cifrado SSN/credenciales (32 bytes base64) |
 | `GEMINI_API_KEY` | API key de Google AI (Gemini Flash 2.5) |
-| `REDIS_URL` | Redis para Celery |
+| `REDIS_URL` | Opcional (solo si usás Celery legacy manualmente) |
+| `ONBOARDING_REMINDER_INTERVAL_MINUTES` | Recordatorios automáticos dentro de la API (0 = off; ej. `5` cada 5 min). También disponible el botón manual en Clientes |
 | `AWS_*` / `BUCKETEER_*` | Almacenamiento S3 |
+
+## Recordatorios y tareas en background
+
+Todo corre **dentro del proceso de la API** (hilos daemon):
+
+- **Recordatorios de onboarding:** scheduler al arrancar uvicorn si `ONBOARDING_REMINDER_INTERVAL_MINUTES` > 0
+- **Verificación IA de documentos/adjuntos:** se lanza en background al subir archivos
+- **Disparo manual:** botón «Enviar recordatorios» en Clientes (admin / onboarding)
+
+No hace falta Celery, Redis ni terminales extra para desarrollo ni Heroku.
+
+En Heroku: solo el dyno `web`. Si escalás a varios dynos web, cada uno ejecutaría el scheduler (usá 1 dyno web o intervalo 0 + botón manual).
 
 ## Heroku
 
@@ -61,7 +74,11 @@ heroku addons:create bucketeer:hobbyist
 git push heroku main
 ```
 
-El `Procfile` define `web`, `worker` (Celery) y `release` (migraciones).
+El `Procfile` define `web` (API con scheduler integrado) y `release` (migraciones).
+
+```bash
+heroku config:set ONBOARDING_REMINDER_INTERVAL_MINUTES=120 -a tu-app-backend
+```
 
 ## Tests
 

@@ -1,16 +1,17 @@
 import json
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
+from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.card_comment import CardComment
 from app.models.client import Client
-from app.models.enums import NotificationEventType, TaskStatus
+from app.models.enums import DocumentVerificationStatus, NotificationEventType, TaskStatus
 from app.models.role import Role
 from app.models.user import User
 from app.services.default_board_cards import (
@@ -204,6 +205,8 @@ class BoardService:
         self.db.refresh(comment)
         for attachment in stored_attachments:
             self.db.refresh(attachment)
+            if attachment.verification_status:
+                self._queue_attachment_verification(attachment)
         return comment
 
     def _notify_comment(
@@ -410,7 +413,94 @@ class BoardService:
         )
         self.db.commit()
         self.db.refresh(attachment)
+        if attachment.verification_status:
+            self._queue_attachment_verification(attachment)
         return attachment
+
+    def _should_verify_attachment(self, *, card: BoardCard, actor: User) -> bool:
+        if actor.role.code == "CLIENT":
+            return True
+        return card.requires_file_upload
+
+    def _queue_attachment_verification(self, attachment: CardAttachment) -> None:
+        attachment.verification_status = DocumentVerificationStatus.EN_PROCESO.value
+        self.db.commit()
+        from app.workers.enqueue import enqueue_card_attachment_verification
+
+        enqueue_card_attachment_verification(attachment.id)
+
+    def load_latest_attachment_verifications_map(
+        self, attachment_ids: list[int]
+    ) -> dict[int, CardAttachmentVerification]:
+        if not attachment_ids:
+            return {}
+
+        latest_per_attachment = (
+            select(
+                CardAttachmentVerification.attachment_id,
+                func.max(CardAttachmentVerification.verified_at).label("verified_at"),
+            )
+            .where(CardAttachmentVerification.attachment_id.in_(attachment_ids))
+            .group_by(CardAttachmentVerification.attachment_id)
+            .subquery()
+        )
+        rows = (
+            self.db.execute(
+                select(CardAttachmentVerification)
+                .join(
+                    latest_per_attachment,
+                    (CardAttachmentVerification.attachment_id == latest_per_attachment.c.attachment_id)
+                    & (CardAttachmentVerification.verified_at == latest_per_attachment.c.verified_at),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {row.attachment_id: row for row in rows}
+
+    def latest_attachment_verification_messages(
+        self,
+        attachment: CardAttachment,
+        *,
+        latest_verification: CardAttachmentVerification | None = None,
+    ) -> tuple["LocalizedStringList | None", "LocalizedStringList | None"]:
+        from app.schemas.client import LocalizedStringList
+        from app.services.document_verification_messages import (
+            normalize_bilingual_messages,
+            to_localized_lists,
+        )
+
+        if not attachment.verification_status or attachment.verification_status not in {
+            DocumentVerificationStatus.RECHAZADO.value,
+            DocumentVerificationStatus.APROBADO.value,
+        }:
+            return None, None
+
+        latest = latest_verification
+        if latest is None:
+            latest = self.db.execute(
+                select(CardAttachmentVerification)
+                .where(CardAttachmentVerification.attachment_id == attachment.id)
+                .order_by(CardAttachmentVerification.verified_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+
+        if latest is None:
+            return None, None
+
+        rejection = None
+        approval = None
+
+        if attachment.verification_status == DocumentVerificationStatus.RECHAZADO.value:
+            rejection_items = normalize_bilingual_messages(latest.rejection_reasons)
+            if rejection_items:
+                rejection = LocalizedStringList(**to_localized_lists(rejection_items))
+        else:
+            approval_items = normalize_bilingual_messages(latest.approval_reasons)
+            if approval_items:
+                approval = LocalizedStringList(**to_localized_lists(approval_items))
+
+        return rejection, approval
 
     def _create_attachment(
         self,
@@ -457,6 +547,8 @@ class BoardService:
             mime_type=mime_type,
             uploaded_by_user_id=actor.id,
         )
+        if self._should_verify_attachment(card=card, actor=actor):
+            attachment.verification_status = DocumentVerificationStatus.PENDIENTE.value
         self.db.add(attachment)
         attachment.uploaded_by = actor
         return attachment

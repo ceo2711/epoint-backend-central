@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     twilio_whatsapp_client_approved_content_sid: str = ""
     whatsapp_default_country_code: str = "54"
 
+    # Recordatorios automáticos de onboarding incompleto (0 = deshabilitado; corre dentro de la API)
+    onboarding_reminder_interval_minutes: int = 0
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

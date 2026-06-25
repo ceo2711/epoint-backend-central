@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.client import LocalizedStringList
 from app.schemas.common import ORMBase
 
 
@@ -33,6 +34,9 @@ class CardAttachmentResponse(ORMBase):
     comment_id: int | None = None
     uploaded_by_name: str | None = None
     created_at: datetime | None = None
+    verification_status: str | None = None
+    rejection_reasons: LocalizedStringList | None = None
+    approval_reasons: LocalizedStringList | None = None
 
 
 class CardStatusUpdate(BaseModel):

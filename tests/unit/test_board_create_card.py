@@ -13,7 +13,13 @@ from app.services.boards import BoardService
 @pytest.fixture()
 def db_session():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    tables = [
+        Client.__table__,
+        Board.__table__,
+        BoardList.__table__,
+        BoardCard.__table__,
+    ]
+    Base.metadata.create_all(engine, tables=tables)
     session = sessionmaker(bind=engine)()
     client = Client(
         first_name="Alexis",
@@ -21,6 +27,7 @@ def db_session():
         email="alexis@example.com",
         phone="+15551234567",
         status="APROBADO_PARA_ONBOARDING",
+        registered_by_user_id=1,
     )
     session.add(client)
     session.flush()

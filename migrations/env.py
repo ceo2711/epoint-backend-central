@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401 — registrar modelos
     BoardTemplateCard,
     BoardTemplateList,
     CardAttachment,
+    CardAttachmentVerification,
     CardComment,
     Client,
     ClientAssignment,

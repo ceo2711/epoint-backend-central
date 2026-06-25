@@ -13,9 +13,36 @@ from app.core.validation_errors import humanize_validation_errors
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging() -> None:
+    """Hace visibles en consola los logs INFO de la app (recordatorios, dry run, etc.)."""
+    app_logger = logging.getLogger("app")
+    if app_logger.level == logging.NOTSET:
+        app_logger.setLevel(logging.INFO)
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s — %(message)s"))
+        app_logger.addHandler(handler)
+    app_logger.propagate = False
+
+
+_configure_logging()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
+    stop_reminders = None
+    from app.workers.inline_scheduler import start_onboarding_reminder_scheduler
+
+    stop_reminders = start_onboarding_reminder_scheduler(settings)
+    if stop_reminders is not None:
+        logger.info(
+            "Scheduler de recordatorios en la API — cada %s min",
+            settings.onboarding_reminder_interval_minutes,
+        )
     yield
+    if stop_reminders is not None:
+        stop_reminders.set()
 
 
 def create_app() -> FastAPI:

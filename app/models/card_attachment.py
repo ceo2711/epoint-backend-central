@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +9,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.board_card import BoardCard
     from app.models.card_comment import CardComment
+    from app.models.card_attachment_verification import CardAttachmentVerification
     from app.models.user import User
 
 
@@ -25,8 +26,12 @@ class CardAttachment(Base):
     original_filename: Mapped[str] = mapped_column(String(255))
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     uploaded_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    verification_status: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     card: Mapped["BoardCard"] = relationship(back_populates="attachments")
+    verifications: Mapped[List["CardAttachmentVerification"]] = relationship(
+        back_populates="attachment", cascade="all, delete-orphan"
+    )
     comment: Mapped["CardComment | None"] = relationship()
     uploaded_by: Mapped["User"] = relationship()

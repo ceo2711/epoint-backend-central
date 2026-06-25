@@ -9,6 +9,7 @@ from app.core.encryption import encrypt_value
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
+from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.client import Client
 from app.models.credential_submission import CredentialSubmission
 from app.models.user import User
@@ -49,10 +50,16 @@ def _require_board_staff(user: User) -> None:
 def _attachment_response(
     attachment: CardAttachment,
     storage,
+    board_service: BoardService,
     *,
     include_download_url: bool = False,
+    latest_verification: CardAttachmentVerification | None = None,
 ) -> CardAttachmentResponse:
     download_url = storage.generate_download_url(attachment.storage_key) if include_download_url else None
+    rejection_reasons, approval_reasons = board_service.latest_attachment_verification_messages(
+        attachment,
+        latest_verification=latest_verification,
+    )
     return CardAttachmentResponse(
         id=attachment.id,
         type=attachment.type,
@@ -62,10 +69,20 @@ def _attachment_response(
         comment_id=attachment.comment_id,
         uploaded_by_name=attachment.uploaded_by.full_name if attachment.uploaded_by else None,
         created_at=attachment.created_at,
+        verification_status=attachment.verification_status,
+        rejection_reasons=rejection_reasons,
+        approval_reasons=approval_reasons,
     )
 
 
-def _card_response(card: BoardCard, storage) -> BoardCardResponse:
+def _card_response(
+    card: BoardCard,
+    storage,
+    board_service: BoardService,
+    *,
+    verifications_map: dict[int, CardAttachmentVerification] | None = None,
+) -> BoardCardResponse:
+    verifications_map = verifications_map or {}
     comments = [
         CardCommentResponse(
             id=c.id,
@@ -76,7 +93,15 @@ def _card_response(card: BoardCard, storage) -> BoardCardResponse:
         )
         for c in card.comments
     ]
-    attachments = [_attachment_response(a, storage) for a in card.attachments]
+    attachments = [
+        _attachment_response(
+            a,
+            storage,
+            board_service,
+            latest_verification=verifications_map.get(a.id),
+        )
+        for a in card.attachments
+    ]
     return BoardCardResponse(
         id=card.id,
         title=card.title,
@@ -115,7 +140,15 @@ def _get_attachment_for_user(attachment_id: int, current_user: User, db) -> Card
     return attachment
 
 
-def _build_board_response(board, storage, user: User) -> BoardResponse:
+def _build_board_response(board, storage, user: User, board_service: BoardService) -> BoardResponse:
+    all_attachment_ids = [
+        attachment.id
+        for bl in board.lists
+        for card in bl.cards
+        for attachment in card.attachments
+    ]
+    verifications_map = board_service.load_latest_attachment_verifications_map(all_attachment_ids)
+
     lists = []
     for bl in sorted(board.lists, key=lambda x: x.position):
         cards = []
@@ -132,7 +165,12 @@ def _build_board_response(board, storage, user: User) -> BoardResponse:
                 if not c.is_internal or user.role.code != "CLIENT"
             ]
             attachments = [
-                _attachment_response(a, storage)
+                _attachment_response(
+                    a,
+                    storage,
+                    board_service,
+                    latest_verification=verifications_map.get(a.id),
+                )
                 for a in card.attachments
             ]
             cards.append(
@@ -180,7 +218,7 @@ def get_board(
             board = board_service.get_board_for_client(client_id)
     if board is None:
         raise HTTPException(status_code=404, detail="Tablero no encontrado")
-    return _build_board_response(board, get_storage_provider(), current_user)
+    return _build_board_response(board, get_storage_provider(), current_user, board_service)
 
 
 @router.get("/client/{client_id}/mentionable-users", response_model=list[BoardMentionableUserResponse])
@@ -413,7 +451,7 @@ async def upload_card_attachment(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     storage = get_storage_provider()
-    return _attachment_response(attachment, storage)
+    return _attachment_response(attachment, storage, board_service)
 
 
 @router.get("/attachments/{attachment_id}/content")

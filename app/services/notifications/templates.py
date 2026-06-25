@@ -75,3 +75,45 @@ def client_approved_whatsapp_content_variables(
         "3": email,
         "4": temp_password,
     }
+
+
+def onboarding_reminder_email_body(
+    *,
+    first_name: str,
+    pending_items: list[str],
+    portal_login_url: str,
+) -> str:
+    items_block = "\n".join(f"  • {item}" for item in pending_items)
+    return f"""Hola {first_name},
+
+Te escribimos desde ePoint para recordarte amablemente que aún tenés pendiente completar tu onboarding en la plataforma.
+
+Para continuar con tu proceso, ingresá al portal y completá lo siguiente:
+
+{items_block}
+
+Portal del cliente: {portal_login_url}
+
+Si ya subiste algún documento, puede estar en revisión. Si fue rechazado, volvé a subirlo desde la sección de documentos.
+
+Ante cualquier duda, respondé a este correo o contactá a tu asesor ePoint.
+
+Saludos,
+Equipo ePoint
+"""
+
+
+def onboarding_reminder_whatsapp_body(
+    *,
+    first_name: str,
+    pending_items: list[str],
+    portal_login_url: str,
+) -> str:
+    items_block = "\n".join(f"• {item}" for item in pending_items)
+    return (
+        f"Hola {first_name}, te recordamos desde ePoint que aún tenés pendiente completar tu onboarding.\n\n"
+        f"Pendiente:\n{items_block}\n\n"
+        f"Ingresá al portal:\n{portal_login_url}\n\n"
+        "Si algún documento fue rechazado, volvé a subirlo desde la plataforma."
+    )
+
