@@ -42,7 +42,9 @@ async def lifespan(app: FastAPI):
         )
     yield
     if stop_reminders is not None:
-        stop_reminders.set()
+        from app.workers.inline_scheduler import stop_onboarding_reminder_scheduler
+
+        stop_onboarding_reminder_scheduler()
 
 
 def create_app() -> FastAPI:

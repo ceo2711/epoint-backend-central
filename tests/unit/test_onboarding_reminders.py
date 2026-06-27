@@ -101,4 +101,8 @@ def test_scheduler_starts_when_interval_positive():
     )
     stop_event = start_onboarding_reminder_scheduler(settings)
     assert stop_event is not None
-    stop_event.set()
+    duplicate = start_onboarding_reminder_scheduler(settings)
+    assert duplicate is stop_event
+    from app.workers.inline_scheduler import stop_onboarding_reminder_scheduler
+
+    stop_onboarding_reminder_scheduler()
