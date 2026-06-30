@@ -14,6 +14,7 @@ from app.models.document import Document
 from app.models.document_verification import DocumentVerification
 from app.models.merchant import Merchant
 from app.models.notification import Notification
+from app.models.password_reset_token import PasswordResetToken
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.session import UserSession
@@ -40,6 +41,7 @@ __all__ = [
     "DocumentVerification",
     "Merchant",
     "Notification",
+    "PasswordResetToken",
     "Permission",
     "Role",
     "RolePermission",

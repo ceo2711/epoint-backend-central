@@ -117,3 +117,23 @@ def onboarding_reminder_whatsapp_body(
         "Si algún documento fue rechazado, volvé a subirlo desde la plataforma."
     )
 
+
+def password_reset_email_body(
+    *,
+    first_name: str,
+    reset_url: str,
+    expire_minutes: int,
+) -> str:
+    return f"""Hola {first_name},
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta en ePoint.
+
+Para elegir una nueva contraseña, abrí el siguiente enlace (válido por {expire_minutes} minutos):
+
+{reset_url}
+
+Si no solicitaste este cambio, ignorá este correo. Tu contraseña actual seguirá siendo la misma.
+
+Saludos,
+Equipo ePoint
+"""

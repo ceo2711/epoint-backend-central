@@ -1,7 +1,15 @@
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, TokenResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    RefreshTokenRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+)
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserMeResponse
 from app.services.auth import AuthService
@@ -36,3 +44,13 @@ def change_password(
     db: DbSession,
 ) -> MessageResponse:
     return AuthService(db).change_password(current_user, payload)
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> MessageResponse:
+    return AuthService(db).request_password_reset(payload)
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest, db: DbSession) -> MessageResponse:
+    return AuthService(db).reset_password(payload)

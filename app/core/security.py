@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -63,3 +65,11 @@ def safe_decode_token(token: str) -> dict[str, Any] | None:
         return decode_token(token)
     except JWTError:
         return None
+
+
+def generate_password_reset_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_password_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
