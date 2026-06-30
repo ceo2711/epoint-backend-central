@@ -335,6 +335,13 @@ class BoardService:
         for index, item in enumerate(target_cards):
             item.position = index
 
+        from app.models.client import Client
+        from app.services.client_onboarding_status import sync_client_onboarding_status
+
+        client = self.db.get(Client, board.client_id)
+        if client is not None:
+            sync_client_onboarding_status(self.db, client)
+
         self.db.commit()
         self.db.refresh(card)
         return card

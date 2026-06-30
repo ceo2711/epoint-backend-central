@@ -162,6 +162,9 @@ def run_document_verification(document_id: int) -> dict:
                 payload={"document_id": document.id, "client_id": client.id},
             )
 
+        from app.services.client_onboarding_status import sync_client_onboarding_status
+
+        sync_client_onboarding_status(db, client)
         db.commit()
 
         return {"document_id": document_id, "status": document.verification_status}

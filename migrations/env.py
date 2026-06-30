@@ -30,6 +30,7 @@ from app.models import (  # noqa: F401 — registrar modelos
     RolePermission,
     User,
     UserSession,
+    PasswordResetToken,
     Vehicle,
 )
 

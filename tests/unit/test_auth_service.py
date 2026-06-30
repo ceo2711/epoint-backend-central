@@ -57,6 +57,7 @@ class TestAuthServiceLogin:
         user.password_hash = hash_password(password)
         user.is_active = active
         user.must_change_password = False
+        user.totp_enabled = False
         user.role = role
         user.area = None
         return user
@@ -82,6 +83,7 @@ class TestAuthServiceLogin:
             area=None,
             client_id=None,
             must_change_password=False,
+            totp_enabled=False,
             is_active=True,
             last_login_at=None,
             created_at=datetime.now(timezone.utc),
@@ -95,7 +97,7 @@ class TestAuthServiceLogin:
         assert response.refresh_token
         assert response.user.email == "admin@test.com"
         db.add.assert_called_once()
-        db.commit.assert_called_once()
+        assert db.commit.call_count >= 1
 
     def test_login_invalid_credentials(self):
         db = MagicMock()

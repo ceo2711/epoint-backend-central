@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -63,3 +65,23 @@ def safe_decode_token(token: str) -> dict[str, Any] | None:
         return decode_token(token)
     except JWTError:
         return None
+
+
+def generate_password_reset_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_password_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_2fa_pending_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "exp": expire,
+        "type": "2fa_pending",
+    }
+    if extra_claims:
+        payload.update(extra_claims)
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)

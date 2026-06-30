@@ -189,8 +189,10 @@ def _find_portal_client_credentials(client: httpx.Client, admin_token: str) -> t
     approved_statuses = {
         "EN_CARGA_DATOS",
         "APROBADO_PARA_ONBOARDING",
-        "DOCUMENTACION_PENDIENTE",
-        "COMPLETADO",
+        "DOCUMENTOS_EN_REVISION",
+        "LISTO_PARA_TABLERO",
+        "ONBOARDING_EN_PROGRESO",
+        "ONBOARDING_COMPLETADO",
     }
     for item in res.json().get("items", []):
         if not item.get("approved_at") and item.get("status") not in approved_statuses:

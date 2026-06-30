@@ -27,6 +27,7 @@ class UserResponse(ORMBase):
     area: AreaBrief | None
     client_id: int | None = None
     must_change_password: bool
+    totp_enabled: bool = False
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime
