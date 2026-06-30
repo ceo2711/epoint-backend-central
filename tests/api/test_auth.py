@@ -26,6 +26,7 @@ def _sample_user_me() -> UserMeResponse:
         area=None,
         client_id=None,
         must_change_password=False,
+        totp_enabled=False,
         is_active=True,
         last_login_at=None,
         created_at=datetime.now(timezone.utc),

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_user_permissions
 from app.core.config import get_settings
 from app.core.security import (
+    create_2fa_pending_token,
     create_access_token,
     create_refresh_token,
     generate_password_reset_token,
@@ -26,12 +27,23 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     ResetPasswordRequest,
     TokenResponse,
+    TotpConfirmRequest,
+    TotpDisableRequest,
+    TotpSetupResponse,
+    TwoFactorVerifyRequest,
 )
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserMeResponse, UserResponse
 from app.services.email.password_reset import (
     PasswordResetEmailPayload,
     send_password_reset_email,
+)
+from app.services.totp import (
+    build_provisioning_uri,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_totp_secret,
+    verify_totp_code,
 )
 
 PASSWORD_RESET_SENT_MESSAGE = (
@@ -48,6 +60,21 @@ class AuthService:
         permissions = get_user_permissions(self.db, user)
         base = UserResponse.model_validate(user)
         return UserMeResponse(**base.model_dump(), permissions=permissions)
+
+    def _issue_session_tokens(self, user: User) -> tuple[str, str]:
+        access_token = create_access_token(
+            str(user.id),
+            extra_claims={"role": user.role.code},
+        )
+        refresh_token, jti = create_refresh_token(str(user.id))
+        settings = get_settings()
+        session = UserSession(
+            user_id=user.id,
+            jti=jti,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days),
+        )
+        self.db.add(session)
+        return access_token, refresh_token
 
     def login(self, payload: LoginRequest) -> LoginResponse:
         user = (
@@ -67,19 +94,21 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo")
 
         user.last_login_at = datetime.now(timezone.utc)
-        access_token = create_access_token(
-            str(user.id),
-            extra_claims={"role": user.role.code},
-        )
-        refresh_token, jti = create_refresh_token(str(user.id))
+        self.db.commit()
 
-        settings = get_settings()
-        session = UserSession(
-            user_id=user.id,
-            jti=jti,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days),
-        )
-        self.db.add(session)
+        if user.totp_enabled:
+            temp_token = create_2fa_pending_token(
+                str(user.id),
+                extra_claims={"role": user.role.code},
+            )
+            return LoginResponse(
+                requires_2fa=True,
+                temp_token=temp_token,
+                must_change_password=user.must_change_password,
+                user=self._build_user_me(user),
+            )
+
+        access_token, refresh_token = self._issue_session_tokens(user)
         self.db.commit()
 
         return LoginResponse(
@@ -88,6 +117,100 @@ class AuthService:
             must_change_password=user.must_change_password,
             user=self._build_user_me(user),
         )
+
+    def verify_2fa(self, payload: TwoFactorVerifyRequest) -> LoginResponse:
+        token_payload = safe_decode_token(payload.temp_token)
+        if token_payload is None or token_payload.get("type") != "2fa_pending":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
+
+        user_id = token_payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
+
+        user = (
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role), joinedload(User.area))
+                .where(User.id == int(user_id))
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        if user is None or not user.is_active or not user.totp_enabled or not user.totp_secret_encrypted:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
+
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        if not verify_totp_code(secret=secret, code=payload.code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
+
+        access_token, refresh_token = self._issue_session_tokens(user)
+        self.db.commit()
+
+        return LoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            must_change_password=user.must_change_password,
+            user=self._build_user_me(user),
+        )
+
+    def setup_totp(self, user: User) -> TotpSetupResponse:
+        if user.totp_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El doble factor ya está activado",
+            )
+
+        secret = generate_totp_secret()
+        user.totp_secret_encrypted = encrypt_totp_secret(secret)
+        user.totp_confirmed_at = None
+        self.db.commit()
+
+        return TotpSetupResponse(
+            secret=secret,
+            provisioning_uri=build_provisioning_uri(email=user.email, secret=secret),
+        )
+
+    def confirm_totp(self, user: User, payload: TotpConfirmRequest) -> MessageResponse:
+        if user.totp_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El doble factor ya está activado",
+            )
+        if not user.totp_secret_encrypted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Primero debés iniciar la configuración del doble factor",
+            )
+
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        if not verify_totp_code(secret=secret, code=payload.code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
+
+        user.totp_enabled = True
+        user.totp_confirmed_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return MessageResponse(message="Doble factor activado correctamente")
+
+    def disable_totp(self, user: User, payload: TotpDisableRequest) -> MessageResponse:
+        if not user.totp_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El doble factor no está activado",
+            )
+        if not verify_password(payload.password, user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contraseña incorrecta")
+        if not user.totp_secret_encrypted:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configuración 2FA incompleta")
+
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        if not verify_totp_code(secret=secret, code=payload.code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
+
+        user.totp_enabled = False
+        user.totp_secret_encrypted = None
+        user.totp_confirmed_at = None
+        self.db.commit()
+        return MessageResponse(message="Doble factor desactivado correctamente")
 
     def refresh_token(self, payload: RefreshTokenRequest) -> TokenResponse:
         token_payload = safe_decode_token(payload.refresh_token)

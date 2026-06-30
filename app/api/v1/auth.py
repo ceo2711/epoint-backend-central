@@ -9,6 +9,10 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     ResetPasswordRequest,
     TokenResponse,
+    TotpConfirmRequest,
+    TotpDisableRequest,
+    TotpSetupResponse,
+    TwoFactorVerifyRequest,
 )
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserMeResponse
@@ -20,6 +24,34 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: DbSession) -> LoginResponse:
     return AuthService(db).login(payload)
+
+
+@router.post("/2fa/verify", response_model=LoginResponse)
+def verify_2fa(payload: TwoFactorVerifyRequest, db: DbSession) -> LoginResponse:
+    return AuthService(db).verify_2fa(payload)
+
+
+@router.post("/2fa/setup", response_model=TotpSetupResponse)
+def setup_2fa(current_user: CurrentUser, db: DbSession) -> TotpSetupResponse:
+    return AuthService(db).setup_totp(current_user)
+
+
+@router.post("/2fa/confirm", response_model=MessageResponse)
+def confirm_2fa(
+    payload: TotpConfirmRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    return AuthService(db).confirm_totp(current_user, payload)
+
+
+@router.post("/2fa/disable", response_model=MessageResponse)
+def disable_2fa(
+    payload: TotpDisableRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    return AuthService(db).disable_totp(current_user, payload)
 
 
 @router.post("/refresh", response_model=TokenResponse)
