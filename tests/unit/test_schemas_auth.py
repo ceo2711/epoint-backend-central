@@ -12,7 +12,7 @@ class TestLoginRequest:
 
     def test_password_min_length(self):
         with pytest.raises(ValidationError):
-            LoginRequest(email="user@test.com", password="12345")
+            LoginRequest(email="user@test.com", password="1234567")
 
     def test_invalid_email(self):
         with pytest.raises(ValidationError):
@@ -20,12 +20,16 @@ class TestLoginRequest:
 
 
 class TestChangePasswordRequest:
+    def test_current_password_min_length(self):
+        with pytest.raises(ValidationError):
+            ChangePasswordRequest(current_password="1234567", new_password="newpass12")
+
     def test_new_password_min_length(self):
         with pytest.raises(ValidationError):
-            ChangePasswordRequest(current_password="oldpass1", new_password="short")
+            ChangePasswordRequest(current_password="oldpass12", new_password="short")
 
     def test_valid_change_password(self):
-        payload = ChangePasswordRequest(current_password="oldpass1", new_password="newpass12")
+        payload = ChangePasswordRequest(current_password="oldpass12", new_password="newpass12")
         assert payload.new_password == "newpass12"
 
 
