@@ -18,6 +18,8 @@ from app.models import (  # noqa: F401 — registrar modelos
     CardAttachment,
     CardAttachmentVerification,
     CardComment,
+    CalendlyConnection,
+    CalendlyEvent,
     Client,
     ClientAssignment,
     CredentialSubmission,

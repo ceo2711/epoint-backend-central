@@ -82,6 +82,11 @@ class Settings(BaseSettings):
 
     # Recordatorios automáticos de onboarding incompleto (0 = deshabilitado; corre dentro de la API)
     onboarding_reminder_interval_minutes: int = 0
+    # Mínimo entre recordatorios al mismo cliente (automático o manual)
+    onboarding_reminder_cooldown_hours: int = 24
+
+    # Calendly Scheduling API (crear/editar/cancelar). Requiere plan Standard+ en Calendly.
+    calendly_write_enabled: bool = False
 
     @field_validator("database_url", mode="before")
     @classmethod

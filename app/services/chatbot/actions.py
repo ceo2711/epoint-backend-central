@@ -1,6 +1,5 @@
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
@@ -14,6 +13,8 @@ from app.models.merchant import Merchant
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.chatbot import PendingChatAction, ClientApprovalResult, ChatUploadOptions
+from app.services.chatbot.action_result import ActionResult
+from app.services.chatbot.calendly_actions import CalendlyChatActions
 from app.services.chatbot.approval_intents import (
     APPROVE_ONE_ID_PATTERN,
     REJECT_ONE_ID_PATTERN,
@@ -105,17 +106,6 @@ NAME_PATTERN = re.compile(
 
 STAFF_UPLOAD_ROLES = STAFF_ROLES | {"ADMIN"}
 
-@dataclass
-class ActionResult:
-    handled: bool
-    reply: str
-    pending_action: PendingChatAction | None = None
-    client_id: int | None = None
-    client_approval: ClientApprovalResult | None = None
-    client_approvals: list[ClientApprovalResult] | None = None
-    upload_options: ChatUploadOptions | None = None
-    clients_updated: bool = False
-
 
 class ChatbotActionHandler:
     def __init__(self, db: Session, user: User, *, locale: str = "es") -> None:
@@ -134,9 +124,16 @@ class ChatbotActionHandler:
         pending_action: PendingChatAction | None,
         locale: str | None = None,
         client_id: int | None = None,
+        calendly_selection: dict[str, Any] | None = None,
     ) -> ActionResult | None:
         if locale:
             self.locale = locale
+
+        calendly = CalendlyChatActions(self)
+        if calendly_selection:
+            result = await calendly.handle_selection(calendly_selection)
+            if result:
+                return result
 
         if CANCEL_PATTERN.match(message.strip()):
             if pending_action:
@@ -148,6 +145,10 @@ class ChatbotActionHandler:
             return None
 
         if pending_action:
+            calendly_result = await calendly.continue_pending(pending_action, message)
+            if calendly_result and calendly_result.handled:
+                return calendly_result
+
             result = await self._continue_pending(pending_action, message, client_id=client_id)
             if result.handled:
                 return result
@@ -202,6 +203,13 @@ class ChatbotActionHandler:
                     if resolved
                     else None,
                 )
+            calendly_fallback = await calendly.pending_fallback(pending_action)
+            if calendly_fallback:
+                return calendly_fallback
+
+        calendly_detected = await calendly.detect(message)
+        if calendly_detected:
+            return calendly_detected
 
         return await self._detect_and_run(message, client_id=client_id)
 

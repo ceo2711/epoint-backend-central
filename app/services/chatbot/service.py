@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.merchant import Merchant
 from app.models.user import User
+from app.core.config import get_settings
 from app.schemas.chatbot import ChatHistoryMessage, ChatbotResponse, PendingChatAction
 from app.services.chatbot.actions import ChatbotActionHandler
 from app.services.chatbot.context import CLIENT_ROLE, SALES_ROLE, STAFF_ROLES, ChatbotContextBuilder
@@ -41,6 +42,7 @@ Mostrá las opciones de fuente y comercio disponibles cuando falten esos datos.
 Si ya dijo nombre y apellido juntos (ej. "Alexis Diaz"), NO se los vuelvas a pedir.
 El sistema ejecuta el registro automáticamente cuando tiene los datos.
 Para subir documentos o archivos al tablero, el usuario usa el clip 📎 del chat: primero indica el tipo de documento o la tarjeta, luego adjunta el archivo.
+Podés consultar reuniones de Calendly con *mis reuniones de hoy* o *mis reuniones de la semana*.
 Podés pedir un **informe completo** de cualquier cliente tuyo (datos, documentos con estado, tablero). Decime el nombre, email o ID.
 NUNCA digas que registraste o creaste un cliente: solo el sistema lo hace y confirma con "Ya registré".
 Si faltan datos, pedilos. No inventes confirmaciones de éxito.
@@ -117,6 +119,7 @@ class ChatbotService:
         locale: str,
         chat_locale: str | None = None,
         pending_action: PendingChatAction | None = None,
+        calendly_selection: dict | None = None,
     ) -> ChatbotResponse:
         effective_locale = resolve_chat_locale(
             message,
@@ -147,6 +150,7 @@ class ChatbotService:
             pending_action=pending_action,
             locale=effective_locale,
             client_id=client_id,
+            calendly_selection=calendly_selection,
         )
         if action_result and action_result.handled:
             return ChatbotResponse(
@@ -157,7 +161,9 @@ class ChatbotService:
                 client_approval=action_result.client_approval,
                 client_approvals=action_result.client_approvals or [],
                 upload_options=action_result.upload_options,
+                calendly_options=action_result.calendly_options,
                 clients_updated=action_result.clients_updated,
+                calendly_updated=action_result.calendly_updated,
             )
 
         if pending_action and pending_action.action == "register_client":
@@ -320,6 +326,13 @@ class ChatbotService:
             base = prompts[CLIENT_ROLE]
         elif role == SALES_ROLE:
             base = prompts[SALES_ROLE]
+            if get_settings().calendly_write_enabled:
+                base += (
+                    "\nTambién podés agendar, cancelar o reprogramar reuniones de Calendly desde el chat "
+                    "(*agendar reunión*, *cancelar reunión #ID*, *reprogramar reunión #ID*)."
+                    if lang == "es"
+                    else "\nYou can also schedule, cancel or reschedule Calendly meetings from chat."
+                )
         elif role in STAFF_ROLES:
             base = prompts["STAFF"]
         else:

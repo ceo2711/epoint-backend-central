@@ -6,6 +6,7 @@ import pytest
 from app.core.config import Settings
 from app.models.client import Client
 from app.models.enums import ClientStatus
+from app.models.user import User
 from app.services.onboarding_reminders import run_onboarding_reminders
 from app.workers.inline_scheduler import start_onboarding_reminder_scheduler
 
@@ -30,17 +31,32 @@ def db_session():
     return MagicMock()
 
 
+def _sample_portal_user(client: Client) -> User:
+    return User(
+        id=10,
+        email=client.email,
+        password_hash="hash",
+        first_name=client.first_name,
+        last_name=client.last_name,
+        role_id=1,
+        client_id=client.id,
+        is_active=True,
+    )
+
+
 def test_run_onboarding_reminders_skips_complete_client(db_session, monkeypatch):
     monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
     client = _sample_client()
 
-    clients_result = MagicMock()
-    clients_result.scalars.return_value.all.return_value = [client]
-    db_session.execute.return_value = clients_result
-
-    with patch(
-        "app.services.onboarding_reminders.analyze_onboarding_gaps",
-        return_value=MagicMock(needs_reminder=False, all_pending_labels=lambda: []),
+    with (
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, _sample_portal_user(client))],
+        ),
+        patch(
+            "app.services.onboarding_reminders.analyze_onboarding_gaps",
+            return_value=MagicMock(needs_reminder=False, all_pending_labels=lambda: []),
+        ),
     ):
         summary = run_onboarding_reminders(db_session)
 
@@ -48,6 +64,7 @@ def test_run_onboarding_reminders_skips_complete_client(db_session, monkeypatch)
         "processed": 1,
         "sent": 0,
         "skipped": 1,
+        "skipped_cooldown": 0,
         "failed": 0,
         "dry_run": True,
     }
@@ -57,18 +74,17 @@ def test_run_onboarding_reminders_skips_complete_client(db_session, monkeypatch)
 def test_run_onboarding_reminders_sends_when_gaps_exist(db_session, monkeypatch):
     monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
     client = _sample_client()
-
-    clients_result = MagicMock()
-    clients_result.scalars.return_value.all.return_value = [client]
-    portal_result = MagicMock()
-    portal_result.scalar_one_or_none.return_value = None
-    db_session.execute.side_effect = [clients_result, portal_result]
+    portal_user = _sample_portal_user(client)
 
     gaps = MagicMock(
         needs_reminder=True,
         all_pending_labels=lambda: ["SSN / Seguro Social"],
     )
     with (
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, portal_user)],
+        ),
         patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
         patch("app.services.onboarding_reminders.send_onboarding_reminder_email", return_value=True),
         patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
@@ -81,7 +97,75 @@ def test_run_onboarding_reminders_sends_when_gaps_exist(db_session, monkeypatch)
     assert summary["skipped"] == 0
     assert summary["failed"] == 0
     assert summary["dry_run"] is True
-    mock_notify.return_value.notify.assert_not_called()
+    mock_notify.return_value.notify.assert_called_once()
+
+
+def test_run_onboarding_reminders_skips_clients_without_active_portal_user(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+
+    with patch(
+        "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+        return_value=[],
+    ):
+        summary = run_onboarding_reminders(db_session)
+
+    assert summary == {
+        "processed": 0,
+        "sent": 0,
+        "skipped": 0,
+        "skipped_cooldown": 0,
+        "failed": 0,
+        "dry_run": True,
+    }
+    db_session.commit.assert_called_once()
+
+
+def test_run_onboarding_reminders_skips_cooldown(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+    monkeypatch.setenv("ONBOARDING_REMINDER_COOLDOWN_HOURS", "24")
+    client = _sample_client(last_onboarding_reminder_at=datetime.now(timezone.utc))
+
+    gaps = MagicMock(
+        needs_reminder=True,
+        all_pending_labels=lambda: ["SSN / Seguro Social"],
+    )
+    with (
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, _sample_portal_user(client))],
+        ),
+        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_email") as mock_email,
+    ):
+        summary = run_onboarding_reminders(db_session)
+
+    assert summary["sent"] == 0
+    assert summary["skipped_cooldown"] == 1
+    mock_email.assert_not_called()
+
+
+def test_run_onboarding_reminders_force_ignores_cooldown(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+    client = _sample_client(last_onboarding_reminder_at=datetime.now(timezone.utc))
+
+    gaps = MagicMock(
+        needs_reminder=True,
+        all_pending_labels=lambda: ["SSN / Seguro Social"],
+    )
+    with (
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, _sample_portal_user(client))],
+        ),
+        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_email", return_value=True),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
+        patch("app.services.onboarding_reminders.NotificationService"),
+    ):
+        summary = run_onboarding_reminders(db_session, respect_cooldown=False)
+
+    assert summary["sent"] == 1
+    assert summary["skipped_cooldown"] == 0
 
 
 def test_scheduler_disabled_when_interval_zero():

@@ -22,4 +22,5 @@ async def send_chat_message(
         locale=body.locale,
         chat_locale=body.chat_locale,
         pending_action=body.pending_action,
+        calendly_selection=body.calendly_selection.model_dump(exclude_none=True) if body.calendly_selection else None,
     )
