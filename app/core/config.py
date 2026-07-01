@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # Calendly Scheduling API (crear/editar/cancelar). Requiere plan Standard+ en Calendly.
     calendly_write_enabled: bool = False
 
+    # DocuSign eSignature (JWT Grant — credenciales en DB vía UI admin o env opcional)
+    docusign_auth_server: str = "account-d.docusign.com"
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

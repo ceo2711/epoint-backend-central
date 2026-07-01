@@ -12,6 +12,8 @@ from app.models.calendly_event import CalendlyEvent
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
 from app.models.credential_submission import CredentialSubmission
+from app.models.docusign_connection import DocusignConnection
+from app.models.docusign_envelope import DocusignEnvelope
 from app.models.document import Document
 from app.models.document_verification import DocumentVerification
 from app.models.merchant import Merchant
@@ -41,6 +43,8 @@ __all__ = [
     "Client",
     "ClientAssignment",
     "CredentialSubmission",
+    "DocusignConnection",
+    "DocusignEnvelope",
     "Document",
     "DocumentVerification",
     "Merchant",
