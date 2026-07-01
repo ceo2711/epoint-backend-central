@@ -49,16 +49,15 @@ Ver `.env.example`. Las más importantes:
 | `GEMINI_API_KEY` | API key de Google AI (Gemini Flash 2.5) |
 | `REDIS_URL` | Opcional (solo si usás Celery legacy manualmente) |
 | `ONBOARDING_REMINDER_INTERVAL_MINUTES` | Recordatorios automáticos dentro de la API (0 = off; ej. `120` cada 2 h). También disponible el botón manual en Clientes |
-| `ONBOARDING_REMINDER_COOLDOWN_HOURS` | Mínimo entre recordatorios al mismo cliente (default `24`). Evita spam si hay varios procesos uvicorn |
 | `AWS_*` / `BUCKETEER_*` | Almacenamiento S3 |
 
 ## Recordatorios y tareas en background
 
 Todo corre **dentro del proceso de la API** (hilos daemon):
 
-- **Recordatorios de onboarding:** scheduler si `ONBOARDING_REMINDER_INTERVAL_MINUTES` > 0 (primer ciclo al arrancar; luego cada N min). Un solo ciclo a la vez entre procesos (lock en Postgres). Cooldown por cliente configurable.
+- **Recordatorios de onboarding:** scheduler si `ONBOARDING_REMINDER_INTERVAL_MINUTES` > 0 (primer ciclo al arrancar; luego cada N min). Un solo ciclo a la vez entre procesos (lock en Postgres).
 - **Verificación IA de documentos/adjuntos:** se lanza en background al subir archivos
-- **Disparo manual:** botón «Enviar recordatorios» en Clientes (admin / onboarding). Respeta cooldown; `POST .../run?force=true` para forzar.
+- **Disparo manual:** botón «Enviar recordatorios» en Clientes (admin / onboarding).
 
 No hace falta Celery, Redis ni terminales extra para desarrollo ni Heroku.
 

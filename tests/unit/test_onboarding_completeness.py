@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -17,7 +17,6 @@ from app.services.onboarding_completeness import (
     REMINDER_EXCLUDED_STATUSES,
     analyze_onboarding_gaps,
     client_needs_onboarding_reminder,
-    is_within_reminder_cooldown,
 )
 
 
@@ -225,16 +224,3 @@ def test_reminder_eligible_statuses_cover_onboarding_flow():
 def test_reminder_excluded_statuses_block_inactive_clients():
     assert ClientStatus.INACTIVO.value in REMINDER_EXCLUDED_STATUSES
     assert ClientStatus.RECHAZADO.value in REMINDER_EXCLUDED_STATUSES
-
-
-def test_is_within_reminder_cooldown():
-    client = _make_client(
-        last_onboarding_reminder_at=datetime.now(timezone.utc) - timedelta(hours=2),
-    )
-    assert is_within_reminder_cooldown(client, cooldown_hours=24) is True
-    assert is_within_reminder_cooldown(client, cooldown_hours=1) is False
-
-
-def test_is_within_reminder_cooldown_when_never_sent():
-    client = _make_client(last_onboarding_reminder_at=None)
-    assert is_within_reminder_cooldown(client, cooldown_hours=24) is False

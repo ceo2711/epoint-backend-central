@@ -28,7 +28,6 @@ def test_config_returns_interval(client, monkeypatch):
 
         result = get_onboarding_reminders_config(current_user=admin)
         assert result.interval_minutes == 15
-        assert result.cooldown_hours == 24
         assert result.automatic_enabled is True
         assert result.dry_run is True
 
@@ -41,7 +40,6 @@ def test_run_endpoint_delegates_to_service(client):
         "processed": 2,
         "sent": 1,
         "skipped": 1,
-        "skipped_cooldown": 0,
         "failed": 0,
         "dry_run": False,
     }
@@ -54,7 +52,7 @@ def test_run_endpoint_delegates_to_service(client):
 
         response = run_onboarding_reminders_now(db=mock_db, current_user=admin)
 
-    mock_run.assert_called_once_with(mock_db, respect_cooldown=True)
+    mock_run.assert_called_once_with(mock_db)
     assert response.processed == 2
     assert response.sent == 1
     assert response.dry_run is False

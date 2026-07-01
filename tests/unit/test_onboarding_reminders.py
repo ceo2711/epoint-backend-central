@@ -64,7 +64,6 @@ def test_run_onboarding_reminders_skips_complete_client(db_session, monkeypatch)
         "processed": 1,
         "sent": 0,
         "skipped": 1,
-        "skipped_cooldown": 0,
         "failed": 0,
         "dry_run": True,
     }
@@ -113,59 +112,10 @@ def test_run_onboarding_reminders_skips_clients_without_active_portal_user(db_se
         "processed": 0,
         "sent": 0,
         "skipped": 0,
-        "skipped_cooldown": 0,
         "failed": 0,
         "dry_run": True,
     }
     db_session.commit.assert_called_once()
-
-
-def test_run_onboarding_reminders_skips_cooldown(db_session, monkeypatch):
-    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
-    monkeypatch.setenv("ONBOARDING_REMINDER_COOLDOWN_HOURS", "24")
-    client = _sample_client(last_onboarding_reminder_at=datetime.now(timezone.utc))
-
-    gaps = MagicMock(
-        needs_reminder=True,
-        all_pending_labels=lambda: ["SSN / Seguro Social"],
-    )
-    with (
-        patch(
-            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
-            return_value=[(client, _sample_portal_user(client))],
-        ),
-        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
-        patch("app.services.onboarding_reminders.send_onboarding_reminder_email") as mock_email,
-    ):
-        summary = run_onboarding_reminders(db_session)
-
-    assert summary["sent"] == 0
-    assert summary["skipped_cooldown"] == 1
-    mock_email.assert_not_called()
-
-
-def test_run_onboarding_reminders_force_ignores_cooldown(db_session, monkeypatch):
-    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
-    client = _sample_client(last_onboarding_reminder_at=datetime.now(timezone.utc))
-
-    gaps = MagicMock(
-        needs_reminder=True,
-        all_pending_labels=lambda: ["SSN / Seguro Social"],
-    )
-    with (
-        patch(
-            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
-            return_value=[(client, _sample_portal_user(client))],
-        ),
-        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
-        patch("app.services.onboarding_reminders.send_onboarding_reminder_email", return_value=True),
-        patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
-        patch("app.services.onboarding_reminders.NotificationService"),
-    ):
-        summary = run_onboarding_reminders(db_session, respect_cooldown=False)
-
-    assert summary["sent"] == 1
-    assert summary["skipped_cooldown"] == 0
 
 
 def test_scheduler_disabled_when_interval_zero():

@@ -17,7 +17,6 @@ from app.services.notifications import NotificationService
 from app.services.onboarding_completeness import (
     analyze_onboarding_gaps,
     fetch_clients_with_active_portal_user,
-    is_within_reminder_cooldown,
 )
 from app.services.whatsapp.onboarding_reminder import (
     OnboardingReminderWhatsAppPayload,
@@ -27,16 +26,14 @@ from app.services.whatsapp.onboarding_reminder import (
 logger = logging.getLogger(__name__)
 
 
-def run_onboarding_reminders(db: Session, *, respect_cooldown: bool = True) -> dict:
+def run_onboarding_reminders(db: Session) -> dict:
     settings = get_settings()
-    cooldown_hours = settings.onboarding_reminder_cooldown_hours
 
     eligible_clients = fetch_clients_with_active_portal_user(db)
 
     processed = 0
     sent = 0
     skipped = 0
-    skipped_cooldown = 0
     failed = 0
     portal_login_url = settings.portal_login_url
 
@@ -45,12 +42,6 @@ def run_onboarding_reminders(db: Session, *, respect_cooldown: bool = True) -> d
         gaps = analyze_onboarding_gaps(db, client)
         if not gaps.needs_reminder:
             skipped += 1
-            continue
-
-        if respect_cooldown and is_within_reminder_cooldown(
-            client, cooldown_hours=cooldown_hours
-        ):
-            skipped_cooldown += 1
             continue
 
         pending_items = gaps.all_pending_labels()
@@ -109,7 +100,6 @@ def run_onboarding_reminders(db: Session, *, respect_cooldown: bool = True) -> d
         "processed": processed,
         "sent": sent,
         "skipped": skipped,
-        "skipped_cooldown": skipped_cooldown,
         "failed": failed,
         "dry_run": settings.notifications_dry_run,
     }

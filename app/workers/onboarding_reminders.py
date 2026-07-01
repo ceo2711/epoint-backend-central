@@ -41,7 +41,6 @@ def _skipped_summary(*, skipped_concurrent: bool) -> dict:
         "processed": 0,
         "sent": 0,
         "skipped": 0,
-        "skipped_cooldown": 0,
         "failed": 0,
         "dry_run": get_settings().notifications_dry_run,
         "skipped_concurrent": skipped_concurrent,

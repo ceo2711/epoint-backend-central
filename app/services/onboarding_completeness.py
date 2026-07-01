@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -116,21 +115,6 @@ def analyze_onboarding_gaps(db: Session, client: Client) -> OnboardingReminderGa
             )
 
     return gaps
-
-
-def is_within_reminder_cooldown(
-    client: Client,
-    *,
-    cooldown_hours: int,
-    now: datetime | None = None,
-) -> bool:
-    if cooldown_hours <= 0 or client.last_onboarding_reminder_at is None:
-        return False
-    reference = now or datetime.now(timezone.utc)
-    last_sent = client.last_onboarding_reminder_at
-    if last_sent.tzinfo is None:
-        last_sent = last_sent.replace(tzinfo=timezone.utc)
-    return reference - last_sent < timedelta(hours=cooldown_hours)
 
 
 def get_active_portal_user(db: Session, client_id: int) -> User | None:

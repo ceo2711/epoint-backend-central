@@ -33,7 +33,6 @@ def get_onboarding_reminders_config(
     interval = settings.onboarding_reminder_interval_minutes
     return OnboardingReminderConfigResponse(
         interval_minutes=interval,
-        cooldown_hours=settings.onboarding_reminder_cooldown_hours,
         automatic_enabled=interval > 0,
         dry_run=settings.notifications_dry_run,
     )
@@ -43,7 +42,6 @@ def get_onboarding_reminders_config(
 def run_onboarding_reminders_now(
     db: DbSession,
     current_user: Annotated[User, Depends(require_onboarding_reminder_staff)],
-    force: bool = False,
 ) -> OnboardingReminderRunResponse:
-    result = run_onboarding_reminders(db, respect_cooldown=not force)
+    result = run_onboarding_reminders(db)
     return OnboardingReminderRunResponse(**result)
