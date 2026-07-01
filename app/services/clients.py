@@ -773,10 +773,23 @@ class ClientService:
         self.db.commit()
 
     def delete_client(self, *, actor: User, client: Client) -> None:
-        portal_users = (
+        portal_users = list(
             self.db.execute(select(User).where(User.client_id == client.id)).scalars().all()
         )
-        for portal_user in portal_users:
+        email_matches = list(
+            self.db.execute(
+                select(User)
+                .join(Role)
+                .where(
+                    Role.code == "CLIENT",
+                    func.lower(User.email) == client.email.lower(),
+                    User.is_active.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for portal_user in {user.id: user for user in (*portal_users, *email_matches)}.values():
             portal_user.client_id = None
             portal_user.is_active = False
 

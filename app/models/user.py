@@ -8,6 +8,8 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.area import Area
+    from app.models.calendly_connection import CalendlyConnection
+    from app.models.calendly_event import CalendlyEvent
     from app.models.notification import Notification
     from app.models.role import Role
     from app.models.session import UserSession
@@ -44,6 +46,12 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     notifications: Mapped[List["Notification"]] = relationship(back_populates="user")
+    calendly_connection: Mapped["CalendlyConnection | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    calendly_events: Mapped[List["CalendlyEvent"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def full_name(self) -> str:

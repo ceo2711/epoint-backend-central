@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -9,11 +9,15 @@ from app.models.address import Address
 from app.models.client import Client
 from app.models.document import Document
 from app.models.enums import ClientStatus, DocumentVerificationStatus
+from app.models.role import Role
+from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.services.onboarding_completeness import (
     REMINDER_ELIGIBLE_STATUSES,
+    REMINDER_EXCLUDED_STATUSES,
     analyze_onboarding_gaps,
     client_needs_onboarding_reminder,
+    is_within_reminder_cooldown,
 )
 
 
@@ -25,6 +29,8 @@ def db_session():
         Address.__table__,
         Vehicle.__table__,
         Document.__table__,
+        Role.__table__,
+        User.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     session = sessionmaker(bind=engine)()
@@ -45,6 +51,24 @@ def _make_client(**kwargs) -> Client:
     }
     defaults.update(kwargs)
     return Client(**defaults)
+
+
+def _add_active_portal_user(db_session, client: Client) -> User:
+    role = Role(id=1, code="CLIENT", name="Cliente")
+    db_session.add(role)
+    db_session.flush()
+    user = User(
+        email=client.email,
+        password_hash="hash",
+        first_name=client.first_name,
+        last_name=client.last_name,
+        role_id=role.id,
+        client_id=client.id,
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
 
 
 def test_analyze_gaps_all_profile_and_documents_missing(db_session):
@@ -148,10 +172,69 @@ def test_client_needs_reminder_skips_wrong_status(db_session):
     client = _make_client(status=ClientStatus.LISTO_PARA_TABLERO.value)
     db_session.add(client)
     db_session.commit()
+    _add_active_portal_user(db_session, client)
 
     assert client_needs_onboarding_reminder(db_session, client) is False
+
+
+def test_client_needs_reminder_requires_active_portal_user(db_session):
+    client = _make_client()
+    db_session.add(client)
+    db_session.commit()
+
+    assert client_needs_onboarding_reminder(db_session, client) is False
+
+
+def test_client_needs_reminder_skips_inactive_portal_user(db_session):
+    client = _make_client()
+    db_session.add(client)
+    db_session.flush()
+    role = Role(id=1, code="CLIENT", name="Cliente")
+    db_session.add(role)
+    db_session.flush()
+    db_session.add(
+        User(
+            email=client.email,
+            password_hash="hash",
+            first_name=client.first_name,
+            last_name=client.last_name,
+            role_id=role.id,
+            client_id=client.id,
+            is_active=False,
+        )
+    )
+    db_session.commit()
+
+    assert client_needs_onboarding_reminder(db_session, client) is False
+
+
+def test_client_needs_reminder_when_active_portal_user_and_gaps(db_session):
+    client = _make_client()
+    db_session.add(client)
+    db_session.commit()
+    _add_active_portal_user(db_session, client)
+
+    assert client_needs_onboarding_reminder(db_session, client) is True
 
 
 def test_reminder_eligible_statuses_cover_onboarding_flow():
     assert ClientStatus.EN_CARGA_DATOS.value in REMINDER_ELIGIBLE_STATUSES
     assert ClientStatus.APROBADO_PARA_ONBOARDING.value in REMINDER_ELIGIBLE_STATUSES
+
+
+def test_reminder_excluded_statuses_block_inactive_clients():
+    assert ClientStatus.INACTIVO.value in REMINDER_EXCLUDED_STATUSES
+    assert ClientStatus.RECHAZADO.value in REMINDER_EXCLUDED_STATUSES
+
+
+def test_is_within_reminder_cooldown():
+    client = _make_client(
+        last_onboarding_reminder_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    assert is_within_reminder_cooldown(client, cooldown_hours=24) is True
+    assert is_within_reminder_cooldown(client, cooldown_hours=1) is False
+
+
+def test_is_within_reminder_cooldown_when_never_sent():
+    client = _make_client(last_onboarding_reminder_at=None)
+    assert is_within_reminder_cooldown(client, cooldown_hours=24) is False

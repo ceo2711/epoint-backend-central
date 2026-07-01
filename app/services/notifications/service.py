@@ -23,6 +23,7 @@ EVENT_CHANNELS: dict[str, list[str]] = {
     "CLIENT_ONBOARDING_INCOMPLETE": ["IN_APP", "EMAIL", "WHATSAPP"],
     "TASK_COMPLETED": ["IN_APP", "EMAIL"],
     "TASK_COMMENTED": ["IN_APP", "EMAIL"],
+    "CALENDLY_EVENT_SCHEDULED": ["IN_APP"],
 }
 
 
@@ -74,6 +75,11 @@ class NotificationService:
 
         if commit:
             self.db.commit()
+            from app.services.notifications.hub import notification_hub
+
+            notification_hub.publish_in_app(created)
+        else:
+            self.db.flush()
         return created
 
     def apply_in_app_scope(self, query, user: User):

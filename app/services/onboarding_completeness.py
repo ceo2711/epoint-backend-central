@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from app.models.address import Address
 from app.models.client import Client
 from app.models.document import Document
 from app.models.enums import ClientStatus, DocumentVerificationStatus
+from app.models.role import Role
+from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.services.document_requirements import (
     ADDRESS_GAP_KEY,
@@ -23,6 +26,14 @@ REMINDER_ELIGIBLE_STATUSES = frozenset(
         ClientStatus.APROBADO_PARA_ONBOARDING.value,
         ClientStatus.EN_CARGA_DATOS.value,
         ClientStatus.DOCUMENTOS_EN_REVISION.value,
+    }
+)
+
+REMINDER_EXCLUDED_STATUSES = frozenset(
+    {
+        ClientStatus.PENDIENTE_DE_REVISION.value,
+        ClientStatus.RECHAZADO.value,
+        ClientStatus.INACTIVO.value,
     }
 )
 
@@ -107,9 +118,57 @@ def analyze_onboarding_gaps(db: Session, client: Client) -> OnboardingReminderGa
     return gaps
 
 
+def is_within_reminder_cooldown(
+    client: Client,
+    *,
+    cooldown_hours: int,
+    now: datetime | None = None,
+) -> bool:
+    if cooldown_hours <= 0 or client.last_onboarding_reminder_at is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    last_sent = client.last_onboarding_reminder_at
+    if last_sent.tzinfo is None:
+        last_sent = last_sent.replace(tzinfo=timezone.utc)
+    return reference - last_sent < timedelta(hours=cooldown_hours)
+
+
+def get_active_portal_user(db: Session, client_id: int) -> User | None:
+    return db.execute(
+        select(User)
+        .join(Role)
+        .where(
+            User.client_id == client_id,
+            Role.code == "CLIENT",
+            User.is_active.is_(True),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def fetch_clients_with_active_portal_user(db: Session) -> list[tuple[Client, User]]:
+    rows = db.execute(
+        select(Client, User)
+        .join(User, (User.client_id == Client.id) & User.is_active.is_(True))
+        .join(Role, Role.id == User.role_id)
+        .where(
+            Client.status.in_(REMINDER_ELIGIBLE_STATUSES),
+            Client.status.not_in(REMINDER_EXCLUDED_STATUSES),
+            Client.approved_at.is_not(None),
+            Role.code == "CLIENT",
+        )
+        .order_by(Client.id)
+    ).unique().all()
+    return [(client, portal_user) for client, portal_user in rows]
+
+
 def client_needs_onboarding_reminder(db: Session, client: Client) -> bool:
+    if client.status in REMINDER_EXCLUDED_STATUSES:
+        return False
     if client.status not in REMINDER_ELIGIBLE_STATUSES:
         return False
     if not client.approved_at:
+        return False
+    if get_active_portal_user(db, client.id) is None:
         return False
     return analyze_onboarding_gaps(db, client).needs_reminder

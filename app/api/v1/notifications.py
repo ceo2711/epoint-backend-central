@@ -1,7 +1,10 @@
+import asyncio
+import json
 import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
@@ -9,8 +12,37 @@ from app.models.notification import Notification
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.notification import NotificationMarkRead, NotificationResponse
 from app.services.notifications import NotificationService
+from app.services.notifications.hub import notification_hub
 
 router = APIRouter(prefix="/notifications", tags=["Notificaciones"])
+
+STREAM_HEARTBEAT_SECONDS = 25
+
+
+@router.get("/stream")
+async def stream_notifications(current_user: CurrentUser) -> StreamingResponse:
+    async def event_generator():
+        queue = notification_hub.subscribe(current_user.id)
+        try:
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=STREAM_HEARTBEAT_SECONDS)
+                    yield f"data: {json.dumps(message, default=str)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        finally:
+            notification_hub.unsubscribe(current_user.id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("", response_model=PaginatedResponse[NotificationResponse])

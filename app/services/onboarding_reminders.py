@@ -3,65 +3,60 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from app.models.client import Client
+from app.core.config import get_settings
 from app.models.enums import NotificationEventType
-from app.models.role import Role
-from app.models.user import User
 from app.services.email.onboarding_reminder import (
     OnboardingReminderEmailPayload,
     send_onboarding_reminder_email,
 )
 from app.services.notifications import NotificationService
 from app.services.onboarding_completeness import (
-    REMINDER_ELIGIBLE_STATUSES,
     analyze_onboarding_gaps,
+    fetch_clients_with_active_portal_user,
+    is_within_reminder_cooldown,
 )
 from app.services.whatsapp.onboarding_reminder import (
     OnboardingReminderWhatsAppPayload,
     send_onboarding_reminder_whatsapp,
 )
-from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
-def run_onboarding_reminders(db: Session) -> dict:
+def run_onboarding_reminders(db: Session, *, respect_cooldown: bool = True) -> dict:
     settings = get_settings()
+    cooldown_hours = settings.onboarding_reminder_cooldown_hours
 
-    clients = (
-        db.execute(
-            select(Client)
-            .where(
-                Client.status.in_(REMINDER_ELIGIBLE_STATUSES),
-                Client.approved_at.is_not(None),
-            )
-            .order_by(Client.id)
-        )
-        .scalars()
-        .all()
-    )
+    eligible_clients = fetch_clients_with_active_portal_user(db)
 
     processed = 0
     sent = 0
     skipped = 0
+    skipped_cooldown = 0
     failed = 0
     portal_login_url = settings.portal_login_url
 
-    for client in clients:
+    for client, portal_user in eligible_clients:
         processed += 1
         gaps = analyze_onboarding_gaps(db, client)
         if not gaps.needs_reminder:
             skipped += 1
             continue
 
+        if respect_cooldown and is_within_reminder_cooldown(
+            client, cooldown_hours=cooldown_hours
+        ):
+            skipped_cooldown += 1
+            continue
+
         pending_items = gaps.all_pending_labels()
         email_ok = send_onboarding_reminder_email(
             OnboardingReminderEmailPayload(
-                recipient_email=client.email,
+                recipient_email=portal_user.email,
                 first_name=client.first_name,
                 pending_items=pending_items,
                 portal_login_url=portal_login_url,
@@ -78,28 +73,21 @@ def run_onboarding_reminders(db: Session) -> dict:
             )
         )
 
-        portal_user = db.execute(
-            select(User)
-            .options(joinedload(User.role))
-            .join(Role)
-            .where(User.client_id == client.id, Role.code == "CLIENT", User.is_active.is_(True))
-        ).scalar_one_or_none()
-
-        if portal_user:
-            body_lines = "\n".join(f"• {item}" for item in pending_items)
-            NotificationService(db).notify(
-                event_type=NotificationEventType.CLIENT_ONBOARDING_INCOMPLETE.value,
-                users=[portal_user],
-                title="Completá tu onboarding",
-                body=(
-                    f"Hola {client.first_name}, te recordamos ingresar al portal y completar:\n{body_lines}"
-                ),
-                payload={"client_id": client.id, "pending_items": pending_items},
-                channels=["IN_APP"],
-                commit=False,
-            )
+        body_lines = "\n".join(f"• {item}" for item in pending_items)
+        NotificationService(db).notify(
+            event_type=NotificationEventType.CLIENT_ONBOARDING_INCOMPLETE.value,
+            users=[portal_user],
+            title="Completá tu onboarding",
+            body=(
+                f"Hola {client.first_name}, te recordamos ingresar al portal y completar:\n{body_lines}"
+            ),
+            payload={"client_id": client.id, "pending_items": pending_items},
+            channels=["IN_APP"],
+            commit=False,
+        )
 
         if email_ok or whatsapp_ok:
+            client.last_onboarding_reminder_at = datetime.now(timezone.utc)
             sent += 1
             logger.info(
                 "Recordatorio onboarding enviado a cliente #%s (%s) — email=%s whatsapp=%s",
@@ -121,6 +109,7 @@ def run_onboarding_reminders(db: Session) -> dict:
         "processed": processed,
         "sent": sent,
         "skipped": skipped,
+        "skipped_cooldown": skipped_cooldown,
         "failed": failed,
         "dry_run": settings.notifications_dry_run,
     }

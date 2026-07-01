@@ -18,7 +18,7 @@ def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
     from app.workers.onboarding_reminders import run_onboarding_reminders_job
 
     logger.info(
-        "Recordatorios de onboarding activos — cada %s min (primer ciclo al iniciar)",
+        "Recordatorios de onboarding activos — primer ciclo al iniciar, luego cada %s min",
         interval_minutes,
     )
     while not stop_event.is_set():

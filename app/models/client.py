@@ -35,6 +35,9 @@ class Client(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    last_onboarding_reminder_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     ssn_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     portal_temp_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
