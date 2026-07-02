@@ -23,6 +23,7 @@ from app.schemas.docusign import (
     DocusignTemplateDetailResponse,
     DocusignTemplateResponse,
     DocusignTemplateRoleResponse,
+    DocusignWebhookUrlResponse,
 )
 from app.services.clients import ClientService
 from app.services.docusign.client import DocusignApiError, DocusignClient
