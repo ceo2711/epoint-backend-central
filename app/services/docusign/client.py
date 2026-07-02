@@ -274,11 +274,7 @@ class DocusignClient:
             f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}",
         )
 
-    def download_combined_document(self, envelope_id: str) -> bytes:
-        url = (
-            f"{self.base_uri}/v2.1/accounts/{self.account_id}"
-            f"/envelopes/{envelope_id}/documents/combined"
-        )
+    def _download_document_bytes(self, url: str) -> bytes:
         try:
             response = httpx.get(
                 url,
@@ -309,3 +305,39 @@ class DocusignClient:
             )
 
         return response.content
+
+    def list_envelope_documents(self, envelope_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}/documents",
+        )
+
+    def download_document(self, envelope_id: str, document_id: str) -> bytes:
+        url = (
+            f"{self.base_uri}/v2.1/accounts/{self.account_id}"
+            f"/envelopes/{envelope_id}/documents/{document_id}"
+        )
+        return self._download_document_bytes(url)
+
+    def download_primary_document(self, envelope_id: str) -> bytes:
+        """PDF del contrato (sin certificado de finalización)."""
+        payload = self.list_envelope_documents(envelope_id)
+        documents = payload.get("envelopeDocuments") or []
+        for item in documents:
+            document_id = item.get("documentId")
+            doc_type = str(item.get("type") or "").lower()
+            if not document_id or doc_type == "summary":
+                continue
+            return self.download_document(envelope_id, str(document_id))
+
+        raise DocusignApiError(
+            "DocuSign no devolvió documentos descargables para este contrato",
+            status_code=404,
+        )
+
+    def download_combined_document(self, envelope_id: str) -> bytes:
+        url = (
+            f"{self.base_uri}/v2.1/accounts/{self.account_id}"
+            f"/envelopes/{envelope_id}/documents/combined"
+        )
+        return self._download_document_bytes(url)

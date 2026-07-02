@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 DOCUSIGN_ROLES = frozenset({"ADMIN", "SALES_REP"})
 DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
+DOCUSIGN_SENT_DOCUMENT_STATUSES = frozenset({"sent", "delivered", "completed"})
 
 
 class DocusignService:
@@ -297,11 +298,19 @@ class DocusignService:
         ).unique().scalar_one_or_none()
 
     def _signed_filename(self, row: DocusignEnvelope) -> str:
-        safe_name = "".join(
+        safe_name = self._safe_signer_slug(row)
+        return f"contrato-{safe_name}-{row.id}.pdf"
+
+    def _sent_filename(self, row: DocusignEnvelope) -> str:
+        safe_name = self._safe_signer_slug(row)
+        return f"contrato-enviado-{safe_name}-{row.id}.pdf"
+
+    @staticmethod
+    def _safe_signer_slug(row: DocusignEnvelope) -> str:
+        return "".join(
             char if char.isalnum() or char in ("-", "_") else "-"
             for char in row.signer_name.strip().lower().replace(" ", "-")
         ) or "firmante"
-        return f"contrato-{safe_name}-{row.id}.pdf"
 
     def _signed_storage_key(self, row: DocusignEnvelope) -> str:
         storage = get_storage_provider()
@@ -332,7 +341,14 @@ class DocusignService:
         filename = self._signed_filename(row)
         storage_key = self._signed_storage_key(row)
         storage = get_storage_provider()
-        storage.put_object(storage_key, content, "application/pdf")
+        try:
+            storage.put_object(storage_key, content, "application/pdf")
+        except Exception:
+            logger.exception(
+                "No se pudo archivar PDF firmado en S3 para envelope %s",
+                row.docusign_envelope_id,
+            )
+            return
         row.signed_storage_key = storage_key
         row.signed_document_filename = filename
 
@@ -347,7 +363,6 @@ class DocusignService:
         if row.client:
             client_label = f"{row.client.first_name} {row.client.last_name}".strip()
 
-        row.completion_notified_at = datetime.now(timezone.utc)
         self.notifications.notify(
             event_type=NotificationEventType.DOCUSIGN_ENVELOPE_COMPLETED.value,
             users=[recipient],
@@ -361,6 +376,12 @@ class DocusignService:
             },
             commit=True,
         )
+        row.completion_notified_at = datetime.now(timezone.utc)
+
+    def _needs_completion_finalize(self, row: DocusignEnvelope) -> bool:
+        if row.status.lower() != "completed":
+            return False
+        return not row.signed_storage_key or row.completion_notified_at is None
 
     def _finalize_status_change(self, row: DocusignEnvelope, *, notify: bool) -> None:
         if row.status.lower() != "completed":
@@ -421,6 +442,12 @@ class DocusignService:
             return {"received": True, "processed": False}
 
         changed = self._apply_connect_event(row, event, notify=True)
+        if self._needs_completion_finalize(row):
+            self._finalize_status_change(
+                row,
+                notify=row.completion_notified_at is None,
+            )
+            changed = True
         if changed or row.status.lower() == "completed":
             self.db.commit()
         return {"received": True, "processed": changed, "envelope_id": event.envelope_id}
@@ -430,7 +457,9 @@ class DocusignService:
         query = self._envelopes_query(actor)
         rows = self.db.execute(query).unique().scalars().all()
         pending = [row for row in rows if row.status.lower() not in DOCUSIGN_TERMINAL_STATUSES]
-        if not pending:
+        needs_finalize = [row for row in rows if self._needs_completion_finalize(row)]
+
+        if not pending and not needs_finalize:
             return [self._map_envelope(row) for row in rows]
 
         api_client = self._client_from_settings()
@@ -442,15 +471,44 @@ class DocusignService:
                 continue
             if self._apply_remote_status(row, remote, notify=True):
                 changed = True
-            elif row.status.lower() == "completed" and not row.signed_storage_key:
-                self._finalize_status_change(row, notify=False)
+            elif self._needs_completion_finalize(row):
+                self._finalize_status_change(
+                    row,
+                    notify=row.completion_notified_at is None,
+                )
                 changed = True
+
+        for row in needs_finalize:
+            if row in pending:
+                continue
+            self._finalize_status_change(
+                row,
+                notify=row.completion_notified_at is None,
+            )
+            changed = True
 
         if changed:
             self.db.commit()
             rows = self.db.execute(query).unique().scalars().all()
 
         return [self._map_envelope(row) for row in rows]
+
+    def get_sent_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
+        row = self._get_envelope_row(actor, envelope_id)
+        envelope_status = row.status.lower()
+        if envelope_status not in DOCUSIGN_SENT_DOCUMENT_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El contrato enviado no está disponible en este estado",
+            )
+
+        api_client = self._client_from_settings()
+        try:
+            content = api_client.download_primary_document(row.docusign_envelope_id)
+        except DocusignApiError as exc:
+            raise self._docusign_http_error(exc) from exc
+
+        return content, self._sent_filename(row)
 
     def get_signed_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
         row = self._get_envelope_row(actor, envelope_id)
@@ -559,8 +617,11 @@ class DocusignService:
             raise self._docusign_http_error(exc) from exc
 
         self._apply_remote_status(row, remote, notify=True)
-        if row.status.lower() == "completed" and not row.signed_storage_key:
-            self._finalize_status_change(row, notify=False)
+        if self._needs_completion_finalize(row):
+            self._finalize_status_change(
+                row,
+                notify=row.completion_notified_at is None,
+            )
         self.db.commit()
         self.db.refresh(row)
         return self._map_envelope(row)

@@ -87,6 +87,20 @@ def sync_envelope_status(
     return DocusignService(db).sync_envelope_status(current_user, envelope_id)
 
 
+@router.get("/envelopes/{envelope_id}/document/sent")
+def download_sent_document(
+    envelope_id: int,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> StreamingResponse:
+    content, filename = DocusignService(db).get_sent_document(current_user, envelope_id)
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.get("/envelopes/{envelope_id}/document")
 def download_signed_document(
     envelope_id: int,
