@@ -273,3 +273,39 @@ class DocusignClient:
             "GET",
             f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}",
         )
+
+    def download_combined_document(self, envelope_id: str) -> bytes:
+        url = (
+            f"{self.base_uri}/v2.1/accounts/{self.account_id}"
+            f"/envelopes/{envelope_id}/documents/combined"
+        )
+        try:
+            response = httpx.get(
+                url,
+                headers={
+                    **self._headers(),
+                    "Accept": "application/pdf",
+                },
+                timeout=60.0,
+            )
+        except httpx.HTTPError as exc:
+            raise DocusignApiError(f"Error de red con DocuSign: {exc}") from exc
+
+        if response.status_code == 401:
+            self.get_access_token(force_refresh=True)
+            response = httpx.get(
+                url,
+                headers={
+                    **self._headers(),
+                    "Accept": "application/pdf",
+                },
+                timeout=60.0,
+            )
+
+        if response.status_code >= 400:
+            raise DocusignApiError(
+                f"DocuSign API {response.status_code}: {response.text[:400]}",
+                status_code=response.status_code,
+            )
+
+        return response.content

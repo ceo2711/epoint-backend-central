@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -6,27 +6,20 @@ from pydantic import BaseModel, EmailStr, Field
 class DocusignConnectionResponse(BaseModel):
     connected: bool
     account_id: str | None = None
-    account_name: str | None = None
-    impersonated_user_email: str | None = None
-    auth_server: str | None = None
     default_template_id: str | None = None
     default_template_role_name: str | None = None
-    connected_at: datetime | None = None
-
-
-class DocusignConnectRequest(BaseModel):
-    integration_key: str = Field(min_length=10, max_length=64)
-    impersonated_user_id: str = Field(min_length=10, max_length=64)
-    account_id: str = Field(min_length=10, max_length=64)
-    private_key: str = Field(min_length=100)
-    auth_server: str = Field(default="account-d.docusign.com", max_length=120)
-    default_template_id: str | None = Field(default=None, max_length=64)
-    default_template_role_name: str = Field(default="Signer", max_length=120)
+    auth_server: str | None = None
 
 
 class DocusignConsentUrlResponse(BaseModel):
     consent_url: str
     redirect_uri: str
+
+
+class DocusignWebhookUrlResponse(BaseModel):
+    webhook_url: str
+    connect_hmac_configured: bool
+    instructions: str
 
 
 class DocusignTemplateResponse(BaseModel):
@@ -69,6 +62,7 @@ class DocusignEnvelopeResponse(BaseModel):
     sent_by_name: str | None = None
     sent_at: datetime
     completed_at: datetime | None = None
+    has_signed_document: bool = False
 
     model_config = {"from_attributes": True}
 

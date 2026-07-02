@@ -1,22 +1,20 @@
-"""Integración DocuSign — conexión empresa y envío de contratos."""
+"""Integración DocuSign — cuenta empresa (env) y envío de contratos."""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.config import get_settings
-from app.core.encryption import decrypt_value, encrypt_value
+from app.core.config import Settings, get_settings
 from app.models.client import Client
-from app.models.docusign_connection import DocusignConnection
 from app.models.docusign_envelope import DocusignEnvelope
+from app.models.enums import NotificationEventType
 from app.models.user import User
-from app.schemas.common import MessageResponse
 from app.schemas.docusign import (
-    DocusignConnectRequest,
     DocusignConnectionResponse,
     DocusignConsentUrlResponse,
     DocusignEnvelopeResponse,
@@ -26,15 +24,27 @@ from app.schemas.docusign import (
     DocusignTemplateResponse,
     DocusignTemplateRoleResponse,
 )
+from app.services.clients import ClientService
 from app.services.docusign.client import DocusignApiError, DocusignClient
+from app.services.docusign.webhook import (
+    DocusignConnectEvent,
+    parse_connect_payload,
+    verify_connect_signature,
+)
+from app.services.notifications import NotificationService
+from app.services.storage import get_storage_provider
+
+logger = logging.getLogger(__name__)
 
 DOCUSIGN_ROLES = frozenset({"ADMIN", "SALES_REP"})
+DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
 
 
 class DocusignService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.settings = get_settings()
+        self.notifications = NotificationService(db)
 
     @staticmethod
     def ensure_access(actor: User) -> None:
@@ -45,146 +55,137 @@ class DocusignService:
             )
 
     @staticmethod
-    def ensure_admin(actor: User) -> None:
-        if actor.role.code != "ADMIN":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo administradores pueden configurar DocuSign",
-            )
-
-    def _get_connection_row(self) -> DocusignConnection | None:
-        return self.db.execute(select(DocusignConnection).limit(1)).scalar_one_or_none()
-
-    def _client_from_connection(self, connection: DocusignConnection) -> DocusignClient:
-        private_key = decrypt_value(connection.private_key_encrypted)
-        return DocusignClient(
-            integration_key=connection.integration_key,
-            impersonated_user_id=connection.impersonated_user_id,
-            account_id=connection.account_id,
-            private_key_pem=private_key,
-            base_uri=connection.base_uri,
-            auth_server=connection.auth_server,
+    def _map_connection(settings: Settings) -> DocusignConnectionResponse:
+        return DocusignConnectionResponse(
+            connected=settings.docusign_configured,
+            account_id=settings.docusign_account_id or None,
+            auth_server=settings.docusign_auth_server or None,
+            default_template_id=settings.docusign_default_template_id or None,
+            default_template_role_name=settings.docusign_default_template_role_name or None,
         )
 
-    def _require_client(self) -> tuple[DocusignClient, DocusignConnection]:
-        connection = self._get_connection_row()
-        if connection is None:
+    def _client_from_settings(self) -> DocusignClient:
+        settings = self.settings
+        if not settings.docusign_configured:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="DocuSign no está conectado. Un administrador debe vincular la cuenta.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "DocuSign no está configurado en el servidor. "
+                    "Definí DOCUSIGN_* en las variables de entorno."
+                ),
             )
-        return self._client_from_connection(connection), connection
-
-    @staticmethod
-    def _map_connection(connection: DocusignConnection | None) -> DocusignConnectionResponse:
-        if connection is None:
-            return DocusignConnectionResponse(connected=False)
-        return DocusignConnectionResponse(
-            connected=True,
-            account_id=connection.account_id,
-            account_name=connection.account_name,
-            impersonated_user_email=connection.impersonated_user_email,
-            auth_server=connection.auth_server,
-            default_template_id=connection.default_template_id,
-            default_template_role_name=connection.default_template_role_name,
-            connected_at=connection.connected_at,
+        return DocusignClient(
+            integration_key=settings.docusign_integration_key,
+            impersonated_user_id=settings.docusign_user_id,
+            account_id=settings.docusign_account_id,
+            private_key_pem=settings.docusign_private_key,
+            base_uri=settings.docusign_base_uri,
+            auth_server=settings.docusign_auth_server,
         )
 
     def get_connection(self, actor: User) -> DocusignConnectionResponse:
         self.ensure_access(actor)
-        return self._map_connection(self._get_connection_row())
+        return self._map_connection(self.settings)
 
     def get_consent_url(self, actor: User) -> DocusignConsentUrlResponse:
-        self.ensure_admin(actor)
-        connection = self._get_connection_row()
-        if connection is None:
+        self.ensure_access(actor)
+        if not self.settings.docusign_integration_key.strip():
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Conectá DocuSign primero para generar el enlace de consentimiento",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="DocuSign no está configurado en el servidor",
             )
         redirect_uri = f"{self.settings.portal_base_url}/contratos"
         consent_url = DocusignClient.consent_url(
-            integration_key=connection.integration_key,
-            auth_server=connection.auth_server,
+            integration_key=self.settings.docusign_integration_key,
+            auth_server=self.settings.docusign_auth_server,
             redirect_uri=redirect_uri,
         )
         return DocusignConsentUrlResponse(consent_url=consent_url, redirect_uri=redirect_uri)
 
-    def connect(self, actor: User, payload: DocusignConnectRequest) -> DocusignConnectionResponse:
-        self.ensure_admin(actor)
-        if not self.settings.encryption_key:
+    def get_webhook_url(self, actor: User) -> DocusignWebhookUrlResponse:
+        self.ensure_access(actor)
+        webhook_url = self.settings.docusign_webhook_url
+        if not webhook_url:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="ENCRYPTION_KEY no configurada — no se pueden guardar credenciales",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Definí BACKEND_PUBLIC_URL en el servidor (URL pública del backend para DocuSign Connect)",
             )
+        hmac_ok = bool(self.settings.docusign_connect_hmac_key.strip())
+        return DocusignWebhookUrlResponse(
+            webhook_url=webhook_url,
+            connect_hmac_configured=hmac_ok,
+            instructions=(
+                "DocuSign → Settings → Connect → Add Configuration. "
+                "Pegá esta URL, formato JSON, evento Envelope Completed. "
+                "Copiá el HMAC secret a DOCUSIGN_CONNECT_HMAC_KEY."
+            ),
+        )
 
-        try:
-            account_info = DocusignClient.resolve_account_from_userinfo(
-                integration_key=payload.integration_key.strip(),
-                impersonated_user_id=payload.impersonated_user_id.strip(),
-                private_key_pem=payload.private_key.strip(),
-                auth_server=payload.auth_server.strip(),
-                account_id=payload.account_id.strip(),
-            )
-        except DocusignApiError as exc:
-            raise HTTPException(
+    def _resolve_client_id(self, client_id: int | None, signer_email: str) -> int | None:
+        if client_id is not None:
+            return client_id
+        normalized = signer_email.strip().lower()
+        if not normalized:
+            return None
+        matched = self.db.execute(
+            select(Client.id).where(func.lower(Client.email) == normalized)
+        ).scalar_one_or_none()
+        return matched
+
+    def link_envelopes_to_clients_by_email(self) -> int:
+        """Vincula contratos existentes sin client_id cuando el email coincide con un cliente."""
+        rows = self.db.execute(
+            select(DocusignEnvelope).where(DocusignEnvelope.client_id.is_(None))
+        ).scalars().all()
+        linked = 0
+        for row in rows:
+            client_id = self._resolve_client_id(None, row.signer_email)
+            if client_id is not None:
+                row.client_id = client_id
+                linked += 1
+        if linked:
+            self.db.commit()
+        return linked
+
+    def sync_all_envelopes_from_docusign(self, *, notify: bool = False) -> dict[str, int]:
+        """Sincroniza todos los contratos con DocuSign y archiva PDFs firmados."""
+        api_client = self._client_from_settings()
+        rows = self.db.execute(select(DocusignEnvelope)).scalars().all()
+        stats = {"total": len(rows), "updated": 0, "completed": 0, "pdfs": 0, "linked": 0}
+        stats["linked"] = self.link_envelopes_to_clients_by_email()
+
+        for row in rows:
+            try:
+                remote = api_client.get_envelope(row.docusign_envelope_id)
+            except DocusignApiError:
+                continue
+            if self._apply_remote_status(row, remote, notify=notify):
+                stats["updated"] += 1
+            if row.status.lower() == "completed":
+                if not row.signed_storage_key:
+                    self._persist_signed_pdf(row)
+                    if row.signed_storage_key:
+                        stats["pdfs"] += 1
+
+        stats["completed"] = sum(1 for row in rows if row.status.lower() == "completed")
+        self.db.commit()
+        return stats
+
+    def _docusign_http_error(self, exc: DocusignApiError) -> HTTPException:
+        if exc.status_code == 400 and "consentimiento" in str(exc).lower():
+            return HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
-            ) from exc
-
-        encrypted_key = encrypt_value(payload.private_key.strip())
-        existing = self._get_connection_row()
-        if existing is None:
-            connection = DocusignConnection(
-                integration_key=payload.integration_key.strip(),
-                account_id=account_info["account_id"],
-                impersonated_user_id=payload.impersonated_user_id.strip(),
-                impersonated_user_email=account_info.get("impersonated_user_email"),
-                account_name=account_info.get("account_name"),
-                base_uri=account_info["base_uri"],
-                auth_server=payload.auth_server.strip(),
-                private_key_encrypted=encrypted_key,
-                default_template_id=payload.default_template_id,
-                default_template_role_name=payload.default_template_role_name.strip() or "Signer",
-                connected_by_user_id=actor.id,
             )
-            self.db.add(connection)
-        else:
-            connection = existing
-            connection.integration_key = payload.integration_key.strip()
-            connection.account_id = account_info["account_id"]
-            connection.impersonated_user_id = payload.impersonated_user_id.strip()
-            connection.impersonated_user_email = account_info.get("impersonated_user_email")
-            connection.account_name = account_info.get("account_name")
-            connection.base_uri = account_info["base_uri"]
-            connection.auth_server = payload.auth_server.strip()
-            connection.private_key_encrypted = encrypted_key
-            connection.default_template_id = payload.default_template_id
-            connection.default_template_role_name = (
-                payload.default_template_role_name.strip() or "Signer"
-            )
-            connection.connected_by_user_id = actor.id
-
-        self.db.commit()
-        self.db.refresh(connection)
-        return self._map_connection(connection)
-
-    def disconnect(self, actor: User) -> MessageResponse:
-        self.ensure_admin(actor)
-        connection = self._get_connection_row()
-        if connection is None:
-            return MessageResponse(message="DocuSign ya estaba desconectado")
-        self.db.delete(connection)
-        self.db.commit()
-        return MessageResponse(message="DocuSign desconectado")
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     def list_templates(self, actor: User) -> list[DocusignTemplateResponse]:
         self.ensure_access(actor)
-        client, _ = self._require_client()
+        client = self._client_from_settings()
         try:
             templates = client.list_templates()
         except DocusignApiError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise self._docusign_http_error(exc) from exc
 
         return [
             DocusignTemplateResponse(
@@ -198,11 +199,11 @@ class DocusignService:
 
     def get_template_detail(self, actor: User, template_id: str) -> DocusignTemplateDetailResponse:
         self.ensure_access(actor)
-        client, _ = self._require_client()
+        client = self._client_from_settings()
         try:
             detail = client.get_template(template_id)
         except DocusignApiError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise self._docusign_http_error(exc) from exc
 
         roles: list[DocusignTemplateRoleResponse] = []
         for recipient in detail.get("recipients", {}).get("signers") or []:
@@ -244,10 +245,10 @@ class DocusignService:
             sent_by_name=sent_by_name,
             sent_at=row.sent_at,
             completed_at=row.completed_at,
+            has_signed_document=bool(row.signed_storage_key),
         )
 
-    def list_envelopes(self, actor: User) -> list[DocusignEnvelopeResponse]:
-        self.ensure_access(actor)
+    def _envelopes_query(self, actor: User):
         query = (
             select(DocusignEnvelope)
             .options(
@@ -258,29 +259,251 @@ class DocusignService:
         )
         if actor.role.code == "SALES_REP":
             query = query.where(DocusignEnvelope.sent_by_user_id == actor.id)
+        return query
 
+    def list_envelopes(self, actor: User) -> list[DocusignEnvelopeResponse]:
+        self.ensure_access(actor)
+        rows = self.db.execute(self._envelopes_query(actor)).unique().scalars().all()
+        return [self._map_envelope(row) for row in rows]
+
+    def list_client_envelopes(self, actor: User, client_id: int) -> list[DocusignEnvelopeResponse]:
+        self.ensure_access(actor)
+        client = ClientService(self.db).get_client_for_user(actor, client_id)
+        if client is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
+
+        query = self._envelopes_query(actor).where(DocusignEnvelope.client_id == client_id)
         rows = self.db.execute(query).unique().scalars().all()
         return [self._map_envelope(row) for row in rows]
+
+    def _get_envelope_row(self, actor: User, envelope_id: int) -> DocusignEnvelope:
+        row = self.db.execute(
+            select(DocusignEnvelope)
+            .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
+            .where(DocusignEnvelope.id == envelope_id)
+        ).unique().scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
+        if actor.role.code == "SALES_REP" and row.sent_by_user_id != actor.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede acceder a este contrato")
+        return row
+
+    def _get_envelope_by_docusign_id(self, docusign_envelope_id: str) -> DocusignEnvelope | None:
+        return self.db.execute(
+            select(DocusignEnvelope)
+            .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
+            .where(DocusignEnvelope.docusign_envelope_id == docusign_envelope_id)
+        ).unique().scalar_one_or_none()
+
+    def _signed_filename(self, row: DocusignEnvelope) -> str:
+        safe_name = "".join(
+            char if char.isalnum() or char in ("-", "_") else "-"
+            for char in row.signer_name.strip().lower().replace(" ", "-")
+        ) or "firmante"
+        return f"contrato-{safe_name}-{row.id}.pdf"
+
+    def _signed_storage_key(self, row: DocusignEnvelope) -> str:
+        storage = get_storage_provider()
+        if row.client_id:
+            return storage.build_key(
+                "clients",
+                str(row.client_id),
+                "contracts",
+                str(row.id),
+                "signed.pdf",
+            )
+        return storage.build_key("docusign", "envelopes", str(row.id), "signed.pdf")
+
+    def _persist_signed_pdf(self, row: DocusignEnvelope) -> None:
+        if row.signed_storage_key:
+            return
+        api_client = self._client_from_settings()
+        try:
+            content = api_client.download_combined_document(row.docusign_envelope_id)
+        except DocusignApiError as exc:
+            logger.warning(
+                "No se pudo descargar PDF firmado para envelope %s: %s",
+                row.docusign_envelope_id,
+                exc,
+            )
+            return
+
+        filename = self._signed_filename(row)
+        storage_key = self._signed_storage_key(row)
+        storage = get_storage_provider()
+        storage.put_object(storage_key, content, "application/pdf")
+        row.signed_storage_key = storage_key
+        row.signed_document_filename = filename
+
+    def _notify_envelope_completed(self, row: DocusignEnvelope) -> None:
+        if row.completion_notified_at is not None:
+            return
+        recipient = row.sent_by
+        if recipient is None or recipient.id is None:
+            return
+
+        client_label = row.signer_name
+        if row.client:
+            client_label = f"{row.client.first_name} {row.client.last_name}".strip()
+
+        row.completion_notified_at = datetime.now(timezone.utc)
+        self.notifications.notify(
+            event_type=NotificationEventType.DOCUSIGN_ENVELOPE_COMPLETED.value,
+            users=[recipient],
+            title="Contrato firmado",
+            body=f"{client_label} firmó el contrato «{row.subject}».",
+            payload={
+                "client_id": row.client_id,
+                "envelope_id": row.id,
+                "signer_name": row.signer_name,
+                "signer_email": row.signer_email,
+            },
+            commit=True,
+        )
+
+    def _finalize_status_change(self, row: DocusignEnvelope, *, notify: bool) -> None:
+        if row.status.lower() != "completed":
+            return
+        if row.completed_at is None:
+            row.completed_at = datetime.now(timezone.utc)
+        self._persist_signed_pdf(row)
+        if notify:
+            self._notify_envelope_completed(row)
+
+    def _apply_remote_status(self, row: DocusignEnvelope, remote: dict, *, notify: bool) -> bool:
+        previous_status = row.status.lower()
+        row.status = remote.get("status") or row.status
+        row.last_status_sync_at = datetime.now(timezone.utc)
+        current_status = row.status.lower()
+        if current_status == "completed" and row.completed_at is None:
+            row.completed_at = row.last_status_sync_at
+        if current_status == "completed" and previous_status != "completed":
+            self._finalize_status_change(row, notify=notify)
+            return True
+        return previous_status != current_status
+
+    def _apply_connect_event(self, row: DocusignEnvelope, event: DocusignConnectEvent, *, notify: bool) -> bool:
+        previous_status = row.status.lower()
+        row.status = event.status
+        row.last_status_sync_at = datetime.now(timezone.utc)
+        if row.status.lower() == "completed" and row.completed_at is None:
+            row.completed_at = row.last_status_sync_at
+        if row.status.lower() == "completed" and previous_status != "completed":
+            self._finalize_status_change(row, notify=notify)
+            return True
+        return previous_status != row.status.lower()
+
+    def handle_connect_webhook(
+        self,
+        body: bytes,
+        *,
+        signature: str | None,
+        content_type: str | None,
+    ) -> dict[str, str | bool]:
+        allow_missing_hmac = self.settings.is_development and not self.settings.docusign_connect_hmac_key.strip()
+        if not verify_connect_signature(
+            body,
+            signature,
+            self.settings.docusign_connect_hmac_key,
+            allow_missing=allow_missing_hmac,
+        ):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Firma HMAC inválida")
+
+        event = parse_connect_payload(body, content_type)
+        if event is None:
+            logger.warning("DocuSign Connect: evento no parseable")
+            return {"received": True, "processed": False}
+
+        row = self._get_envelope_by_docusign_id(event.envelope_id)
+        if row is None:
+            logger.info("DocuSign Connect: envelope %s no registrado en CRM", event.envelope_id)
+            return {"received": True, "processed": False}
+
+        changed = self._apply_connect_event(row, event, notify=True)
+        if changed or row.status.lower() == "completed":
+            self.db.commit()
+        return {"received": True, "processed": changed, "envelope_id": event.envelope_id}
+
+    def sync_pending_envelopes(self, actor: User) -> list[DocusignEnvelopeResponse]:
+        self.ensure_access(actor)
+        query = self._envelopes_query(actor)
+        rows = self.db.execute(query).unique().scalars().all()
+        pending = [row for row in rows if row.status.lower() not in DOCUSIGN_TERMINAL_STATUSES]
+        if not pending:
+            return [self._map_envelope(row) for row in rows]
+
+        api_client = self._client_from_settings()
+        changed = False
+        for row in pending:
+            try:
+                remote = api_client.get_envelope(row.docusign_envelope_id)
+            except DocusignApiError:
+                continue
+            if self._apply_remote_status(row, remote, notify=True):
+                changed = True
+            elif row.status.lower() == "completed" and not row.signed_storage_key:
+                self._finalize_status_change(row, notify=False)
+                changed = True
+
+        if changed:
+            self.db.commit()
+            rows = self.db.execute(query).unique().scalars().all()
+
+        return [self._map_envelope(row) for row in rows]
+
+    def get_signed_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
+        row = self._get_envelope_row(actor, envelope_id)
+        if row.status.lower() != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El contrato aún no está firmado",
+            )
+
+        if row.signed_storage_key:
+            storage = get_storage_provider()
+            content, _ = storage.get_object_bytes(row.signed_storage_key)
+            filename = row.signed_document_filename or self._signed_filename(row)
+            return content, filename
+
+        api_client = self._client_from_settings()
+        try:
+            content = api_client.download_combined_document(row.docusign_envelope_id)
+        except DocusignApiError as exc:
+            raise self._docusign_http_error(exc) from exc
+
+        try:
+            self._persist_signed_pdf(row)
+            self.db.commit()
+        except Exception:
+            logger.exception("No se pudo persistir PDF firmado para envelope %s", row.id)
+
+        filename = row.signed_document_filename or self._signed_filename(row)
+        return content, filename
 
     def send_envelope(
         self, actor: User, payload: DocusignSendEnvelopeRequest
     ) -> DocusignSendEnvelopeResponse:
         self.ensure_access(actor)
-        client, connection = self._require_client()
+        client = self._client_from_settings()
+        settings = self.settings
 
-        template_id = payload.template_id or connection.default_template_id
-        role_name = payload.template_role_name or connection.default_template_role_name
+        template_id = payload.template_id or settings.docusign_default_template_id
+        role_name = payload.template_role_name or settings.docusign_default_template_role_name
         if not template_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Seleccioná una plantilla o configurá una plantilla por defecto",
+                detail="Seleccioná una plantilla o configurá DOCUSIGN_DEFAULT_TEMPLATE_ID",
             )
 
-        client_row: Client | None = None
         if payload.client_id is not None:
             client_row = self.db.get(Client, payload.client_id)
             if client_row is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
+
+        resolved_client_id = self._resolve_client_id(
+            payload.client_id,
+            str(payload.signer_email),
+        )
 
         try:
             result = client.create_envelope_from_template(
@@ -292,7 +515,7 @@ class DocusignService:
                 text_tabs=payload.text_tabs,
             )
         except DocusignApiError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise self._docusign_http_error(exc) from exc
 
         envelope_id = result.get("envelopeId")
         if not envelope_id:
@@ -304,7 +527,7 @@ class DocusignService:
         row = DocusignEnvelope(
             docusign_envelope_id=envelope_id,
             sent_by_user_id=actor.id,
-            client_id=payload.client_id,
+            client_id=resolved_client_id,
             signer_name=payload.signer_name.strip(),
             signer_email=str(payload.signer_email).strip().lower(),
             template_id=template_id,
@@ -326,26 +549,17 @@ class DocusignService:
 
     def sync_envelope_status(self, actor: User, envelope_id: int) -> DocusignEnvelopeResponse:
         self.ensure_access(actor)
-        row = self.db.execute(
-            select(DocusignEnvelope)
-            .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
-            .where(DocusignEnvelope.id == envelope_id)
-        ).unique().scalar_one_or_none()
-        if row is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
-        if actor.role.code == "SALES_REP" and row.sent_by_user_id != actor.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede sincronizar este contrato")
+        row = self._get_envelope_row(actor, envelope_id)
 
-        api_client, _ = self._require_client()
+        api_client = self._client_from_settings()
         try:
             remote = api_client.get_envelope(row.docusign_envelope_id)
         except DocusignApiError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise self._docusign_http_error(exc) from exc
 
-        row.status = remote.get("status") or row.status
-        row.last_status_sync_at = datetime.now(timezone.utc)
-        if row.status.lower() == "completed" and row.completed_at is None:
-            row.completed_at = row.last_status_sync_at
+        self._apply_remote_status(row, remote, notify=True)
+        if row.status.lower() == "completed" and not row.signed_storage_key:
+            self._finalize_status_change(row, notify=False)
         self.db.commit()
         self.db.refresh(row)
         return self._map_envelope(row)

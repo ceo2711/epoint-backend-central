@@ -24,6 +24,7 @@ EVENT_CHANNELS: dict[str, list[str]] = {
     "TASK_COMPLETED": ["IN_APP", "EMAIL"],
     "TASK_COMMENTED": ["IN_APP", "EMAIL"],
     "CALENDLY_EVENT_SCHEDULED": ["IN_APP"],
+    "DOCUSIGN_ENVELOPE_COMPLETED": ["IN_APP"],
 }
 
 
