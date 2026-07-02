@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 FRONTEND_ENV = Path(__file__).resolve().parents[2] / "frontend" / ".env.local"
 HEROKU_APP = "dev-epoint-crm-frontend"
+HEROKU_BIN = shutil.which("heroku") or r"C:\Program Files\heroku\bin\heroku.cmd"
 
 HEROKU_OVERRIDES: dict[str, str] = {
     "NEXT_PUBLIC_API_URL": "https://dev-epoint-crm-backend-3807e7e86dca.herokuapp.com/api/v1",
@@ -35,7 +37,7 @@ def main() -> int:
     env.update(HEROKU_OVERRIDES)
     pairs = [f"{k}={v}" for k, v in env.items() if v.strip()]
     print(f"Subiendo {len(pairs)} variables a {HEROKU_APP}...")
-    cmd = ["heroku", "config:set", *pairs, "-a", HEROKU_APP]
+    cmd = [HEROKU_BIN, "config:set", *pairs, "-a", HEROKU_APP]
     return subprocess.run(cmd, check=False).returncode
 
 

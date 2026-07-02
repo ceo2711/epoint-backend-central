@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 BACKEND_ENV = Path(__file__).resolve().parents[1] / ".env"
 HEROKU_APP = "dev-epoint-crm-backend"
+HEROKU_BIN = shutil.which("heroku") or r"C:\Program Files\heroku\bin\heroku.cmd"
 
 # Overrides para producción en Heroku dev
 HEROKU_OVERRIDES: dict[str, str] = {
@@ -57,7 +59,7 @@ def main() -> int:
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
         pairs = [f"{k}={v}" for k, v in batch]
-        cmd = ["heroku", "config:set", *pairs, "-a", HEROKU_APP]
+        cmd = [HEROKU_BIN, "config:set", *pairs, "-a", HEROKU_APP]
         result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
             return result.returncode
