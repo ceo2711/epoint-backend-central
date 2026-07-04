@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -273,6 +274,79 @@ class DocusignClient:
             "GET",
             f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}",
         )
+
+    def get_recipients(self, envelope_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}/recipients",
+        )
+
+    @staticmethod
+    def _parse_docusign_datetime(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        cleaned = value.strip().replace("Z", "+00:00")
+        if "." in cleaned:
+            base, remainder = cleaned.split(".", 1)
+            if "+" in remainder or "-" in remainder[6:]:
+                for sep in ("+", "-"):
+                    idx = remainder.find(sep, 1)
+                    if idx != -1:
+                        frac, tz = remainder[:idx], remainder[idx:]
+                        cleaned = f"{base}.{frac[:6]}{tz}"
+                        break
+                else:
+                    cleaned = f"{base}.{remainder[:6]}"
+            else:
+                cleaned = f"{base}.{remainder[:6]}"
+        try:
+            return datetime.fromisoformat(cleaned)
+        except ValueError:
+            return None
+
+    def get_signer_status(
+        self,
+        envelope_id: str,
+        *,
+        role_name: str,
+        signer_email: str,
+    ) -> dict[str, Any]:
+        """Estado del firmante objetivo (rol + email guardados en el CRM)."""
+        recipients = self.get_recipients(envelope_id)
+        signers = recipients.get("signers") or []
+        email_norm = signer_email.strip().lower()
+        role_norm = role_name.strip()
+
+        def pick(matcher) -> dict[str, Any] | None:
+            for signer in signers:
+                if not matcher(signer):
+                    continue
+                recipient_status = (signer.get("status") or "sent").lower()
+                return {
+                    "status": recipient_status,
+                    "signed_at": self._parse_docusign_datetime(signer.get("signedDateTime")),
+                    "role_name": signer.get("roleName"),
+                    "email": signer.get("email"),
+                }
+            return None
+
+        matchers = [
+            lambda signer: signer.get("roleName") == role_norm
+            and (signer.get("email") or "").strip().lower() == email_norm,
+            lambda signer: signer.get("roleName") == role_norm,
+            lambda signer: (signer.get("email") or "").strip().lower() == email_norm,
+        ]
+        for matcher in matchers:
+            result = pick(matcher)
+            if result is not None:
+                return result
+
+        return {
+            "status": "sent",
+            "signed_at": None,
+            "role_name": None,
+            "email": None,
+        }
 
     def _download_document_bytes(self, url: str) -> bytes:
         try:

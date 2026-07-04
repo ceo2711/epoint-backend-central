@@ -21,6 +21,7 @@ HEROKU_OVERRIDES: dict[str, str] = {
     "CORS_ORIGINS": "https://dev-epoint-crm-frontend-4985af85e0a2.herokuapp.com",
     "BACKEND_PUBLIC_URL": "https://dev-epoint-crm-backend-3807e7e86dca.herokuapp.com",
     "S3_STORAGE_PREFIX": "dev/",
+    "DOCUSIGN_DEFAULT_TEMPLATE_ROLE_NAME": "Signer",
 }
 
 

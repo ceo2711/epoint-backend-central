@@ -181,6 +181,46 @@ class DocusignService:
             )
         return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
+    def _resolve_effective_status(
+        self,
+        api_client: DocusignClient,
+        row: DocusignEnvelope,
+        remote: dict[str, Any],
+    ) -> tuple[str, datetime | None]:
+        envelope_status = (remote.get("status") or row.status or "sent").lower()
+        signed_at: datetime | None = None
+
+        try:
+            signer_info = api_client.get_signer_status(
+                row.docusign_envelope_id,
+                role_name=row.template_role_name,
+                signer_email=row.signer_email,
+            )
+        except DocusignApiError:
+            return envelope_status, None
+
+        recipient_status = (signer_info.get("status") or "").lower()
+        if recipient_status in {"completed", "signed"}:
+            signed_at = signer_info.get("signed_at")
+            return "completed", signed_at
+        if recipient_status == "declined":
+            return "declined", None
+        if recipient_status == "delivered":
+            return "delivered", None
+
+        return envelope_status, None
+
+    def _signer_has_completed(self, api_client: DocusignClient, row: DocusignEnvelope) -> bool:
+        try:
+            signer_info = api_client.get_signer_status(
+                row.docusign_envelope_id,
+                role_name=row.template_role_name,
+                signer_email=row.signer_email,
+            )
+        except DocusignApiError:
+            return False
+        return (signer_info.get("status") or "").lower() in {"completed", "signed"}
+
     def list_templates(self, actor: User) -> list[DocusignTemplateResponse]:
         self.ensure_access(actor)
         client = self._client_from_settings()
@@ -392,13 +432,23 @@ class DocusignService:
         if notify:
             self._notify_envelope_completed(row)
 
-    def _apply_remote_status(self, row: DocusignEnvelope, remote: dict, *, notify: bool) -> bool:
+    def _apply_remote_status(
+        self,
+        row: DocusignEnvelope,
+        remote: dict,
+        *,
+        notify: bool,
+        api_client: DocusignClient | None = None,
+    ) -> bool:
+        if api_client is None:
+            api_client = self._client_from_settings()
         previous_status = row.status.lower()
-        row.status = remote.get("status") or row.status
+        effective_status, signed_at = self._resolve_effective_status(api_client, row, remote)
+        row.status = effective_status
         row.last_status_sync_at = datetime.now(timezone.utc)
         current_status = row.status.lower()
-        if current_status == "completed" and row.completed_at is None:
-            row.completed_at = row.last_status_sync_at
+        if current_status == "completed":
+            row.completed_at = signed_at or row.completed_at or row.last_status_sync_at
         if current_status == "completed" and previous_status != "completed":
             self._finalize_status_change(row, notify=notify)
             return True
@@ -512,7 +562,9 @@ class DocusignService:
 
     def get_signed_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
         row = self._get_envelope_row(actor, envelope_id)
-        if row.status.lower() != "completed":
+        api_client = self._client_from_settings()
+        is_completed = row.status.lower() == "completed" or self._signer_has_completed(api_client, row)
+        if not is_completed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El contrato aún no está firmado",
@@ -552,6 +604,38 @@ class DocusignService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Seleccioná una plantilla o configurá DOCUSIGN_DEFAULT_TEMPLATE_ID",
+            )
+
+        try:
+            template_detail = client.get_template(template_id)
+        except DocusignApiError as exc:
+            raise self._docusign_http_error(exc) from exc
+
+        valid_roles = [
+            recipient.get("roleName")
+            for recipient in template_detail.get("recipients", {}).get("signers") or []
+            if recipient.get("roleName")
+        ]
+        if not valid_roles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La plantilla DocuSign no tiene roles de firmante configurados",
+            )
+        if role_name not in valid_roles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"El rol «{role_name}» no existe en la plantilla. "
+                    f"Roles válidos: {', '.join(valid_roles)}"
+                ),
+            )
+        if len(valid_roles) > 1:
+            logger.warning(
+                "Plantilla %s tiene %s roles (%s); se enviará solo «%s»",
+                template_id,
+                len(valid_roles),
+                ", ".join(valid_roles),
+                role_name,
             )
 
         if payload.client_id is not None:
