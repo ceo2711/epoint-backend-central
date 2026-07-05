@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession
@@ -7,6 +7,8 @@ from app.schemas.docusign import (
     DocusignConsentUrlResponse,
     DocusignWebhookUrlResponse,
     DocusignEnvelopeResponse,
+    DocusignRegisterClientRequest,
+    DocusignRegisterClientResponse,
     DocusignSendEnvelopeRequest,
     DocusignSendEnvelopeResponse,
     DocusignTemplateDetailResponse,
@@ -50,8 +52,12 @@ def get_template_detail(
 
 
 @router.get("/envelopes", response_model=list[DocusignEnvelopeResponse])
-def list_envelopes(current_user: CurrentUser, db: DbSession) -> list[DocusignEnvelopeResponse]:
-    return DocusignService(db).list_envelopes(current_user)
+def list_envelopes(
+    current_user: CurrentUser,
+    db: DbSession,
+    sent_by_user_id: int | None = Query(None, ge=1),
+) -> list[DocusignEnvelopeResponse]:
+    return DocusignService(db).list_envelopes(current_user, sent_by_user_id=sent_by_user_id)
 
 
 @router.get("/clients/{client_id}/envelopes", response_model=list[DocusignEnvelopeResponse])
@@ -64,9 +70,16 @@ def list_client_envelopes(
 
 
 @router.post("/envelopes/sync-pending", response_model=list[DocusignEnvelopeResponse])
-def sync_pending_envelopes(current_user: CurrentUser, db: DbSession) -> list[DocusignEnvelopeResponse]:
+def sync_pending_envelopes(
+    current_user: CurrentUser,
+    db: DbSession,
+    sent_by_user_id: int | None = Query(None, ge=1),
+) -> list[DocusignEnvelopeResponse]:
     """Actualiza estados pendientes consultando DocuSign."""
-    return DocusignService(db).sync_pending_envelopes(current_user)
+    return DocusignService(db).sync_pending_envelopes(
+        current_user,
+        sent_by_user_id=sent_by_user_id,
+    )
 
 
 @router.post("/envelopes", response_model=DocusignSendEnvelopeResponse)
@@ -85,6 +98,31 @@ def sync_envelope_status(
     db: DbSession,
 ) -> DocusignEnvelopeResponse:
     return DocusignService(db).sync_envelope_status(current_user, envelope_id)
+
+
+@router.post("/envelopes/{envelope_id}/register-client", response_model=DocusignRegisterClientResponse)
+def register_client_from_envelope(
+    envelope_id: int,
+    payload: DocusignRegisterClientRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> DocusignRegisterClientResponse:
+    """Registra al firmante como cliente CRM y lo envía a revisión de onboarding."""
+    service = DocusignService(db)
+    row, client = service.register_client_from_envelope(
+        current_user,
+        envelope_id,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        email=str(payload.email),
+        phone=payload.phone,
+        source=payload.source.value,
+        merchant_id=payload.merchant_id,
+    )
+    return DocusignRegisterClientResponse(
+        envelope=service._map_envelope(row),
+        client_id=client.id,
+    )
 
 
 @router.get("/envelopes/{envelope_id}/document/sent")

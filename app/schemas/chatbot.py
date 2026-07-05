@@ -87,7 +87,7 @@ class ChatCalendlySelection(BaseModel):
 
 
 class ChatbotRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=4000)
+    message: str = Field(..., min_length=1, max_length=6000)
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=20)
     client_id: int | None = None
     locale: str = "es"

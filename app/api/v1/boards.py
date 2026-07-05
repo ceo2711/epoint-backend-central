@@ -127,7 +127,7 @@ def _get_card_client(card: BoardCard, current_user: User, db) -> Client:
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         cs = ClientService(db)
-        if not cs.user_can_access_client(current_user, client.id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
             raise HTTPException(status_code=404)
     return client
 
@@ -204,7 +204,7 @@ def get_board(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         cs = ClientService(db)
-        if not cs.user_can_access_client(current_user, client_id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client_id):
             raise HTTPException(status_code=404)
     board_service = BoardService(db)
     board = board_service.get_board_for_client(client_id)
@@ -232,7 +232,7 @@ def list_mentionable_users(
         raise HTTPException(status_code=403)
     cs = ClientService(db)
     if current_user.role.code != "CLIENT":
-        if not cs.user_can_access_client(current_user, client_id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client_id):
             raise HTTPException(status_code=404)
         client = cs.get_client_detail(client_id)
     else:
@@ -274,7 +274,7 @@ def create_card(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         cs = ClientService(db)
-        if not cs.user_can_access_client(current_user, client.id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
             raise HTTPException(status_code=404)
     _require_board_staff(current_user)
 
@@ -352,7 +352,7 @@ def move_card(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         cs = ClientService(db)
-        if not cs.user_can_access_client(current_user, client.id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
             raise HTTPException(status_code=404)
     _require_board_staff(current_user)
 
@@ -491,7 +491,7 @@ async def add_comment(
         is_internal = False
     else:
         cs = ClientService(db)
-        if not cs.user_can_access_client(current_user, client.id):
+        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
             raise HTTPException(status_code=404)
 
     attachments: list[tuple[str, str, bytes]] = []

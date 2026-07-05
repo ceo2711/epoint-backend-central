@@ -2,6 +2,7 @@ import math
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 
 from app.api.deps import DbSession, require_permissions
@@ -25,6 +26,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.serializers.client import client_to_response
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
+from app.services.docusign.service import DocusignService
 
 router = APIRouter(prefix="/clients", tags=["Clientes"])
 
@@ -107,6 +109,24 @@ def get_client_stats(
     return ClientStatsResponse(**service.get_client_stats(current_user))
 
 
+@router.get("/{client_id}/signed-contract")
+def download_client_signed_contract(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+) -> StreamingResponse:
+    """Descarga el contrato DocuSign firmado vinculado al cliente (onboarding / ventas)."""
+    service = ClientService(db)
+    if not service.user_can_view_approved_client_workspace(current_user, client_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+    content, filename = DocusignService(db).get_client_signed_contract(current_user, client_id)
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.get("/{client_id}", response_model=ClientDetailResponse)
 def get_client(
     client_id: int,
@@ -134,13 +154,16 @@ def get_client(
                 last_name=active_advisor.last_name,
                 email=active_advisor.email,
             )
-    return ClientDetailResponse(
+    can_view_onboarding = service.user_can_view_approved_client_workspace(
+        current_user, client_id, client=client
+    )
+    response = ClientDetailResponse(
         **base.model_dump(),
         **portal,
         portal_temp_password=portal_temp_password,
         advisor=advisor_brief,
-        addresses=client.addresses,
-        vehicles=client.vehicles,
+        addresses=client.addresses if can_view_onboarding else [],
+        vehicles=client.vehicles if can_view_onboarding else [],
         documents=[
             doc_service.to_brief(
                 doc,
@@ -148,8 +171,21 @@ def get_client(
                 latest_verification=latest_verifications.get(doc.id),
             )
             for doc in client.documents
-        ],
+        ]
+        if can_view_onboarding
+        else [],
     )
+    if not can_view_onboarding:
+        response.date_of_birth = None
+        response.has_ssn = False
+        response.signed_contract = None
+        response.docusign_contract_signed_at = None
+        response.has_portal_access = False
+        response.portal_email = None
+        response.portal_login_url = None
+        response.portal_temp_password = None
+        response.advisor = None
+    return response
 
 
 @router.patch("/{client_id}", response_model=ClientResponse)

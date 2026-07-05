@@ -28,7 +28,7 @@ alembic upgrade head
 python scripts/seed.py
 
 # 5. Arrancar API (incluye recordatorios automáticos y verificación IA en background)
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 5
 ```
 
 - API: http://localhost:8000/api/v1/health

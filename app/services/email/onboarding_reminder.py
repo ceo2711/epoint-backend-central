@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass
 
-from app.core.config import get_settings
+from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import onboarding_reminder_email_body
 
 logger = logging.getLogger(__name__)
@@ -20,14 +20,7 @@ class OnboardingReminderEmailPayload:
     client_id: int | None = None
 
 
-def _format_from_address(*, email: str, name: str) -> str:
-    if name.strip():
-        return f"{name.strip()} <{email.strip()}>"
-    return email.strip()
-
-
 def send_onboarding_reminder_email(payload: OnboardingReminderEmailPayload) -> bool:
-    settings = get_settings()
     recipient = payload.recipient_email.strip().lower()
     if not recipient:
         logger.warning("Email recordatorio omitido: cliente_id=%s sin email", payload.client_id)
@@ -38,42 +31,9 @@ def send_onboarding_reminder_email(payload: OnboardingReminderEmailPayload) -> b
         pending_items=payload.pending_items,
         portal_login_url=payload.portal_login_url,
     )
-
-    if settings.notifications_dry_run:
-        logger.info(
-            "[DRY RUN] onboarding reminder email → %s (cliente_id=%s)\n%s",
-            recipient,
-            payload.client_id,
-            body,
-        )
-        return True
-
-    if not settings.resend_api_key:
-        logger.warning("RESEND_API_KEY no configurada — recordatorio no enviado a %s", recipient)
-        return False
-
-    try:
-        import resend
-
-        resend.api_key = settings.resend_api_key
-        response = resend.Emails.send(
-            {
-                "from": _format_from_address(
-                    email=settings.email_from,
-                    name=settings.email_from_name,
-                ),
-                "to": [recipient],
-                "subject": REMINDER_EMAIL_SUBJECT,
-                "text": body,
-            }
-        )
-        logger.info(
-            "Recordatorio onboarding email enviado a %s (cliente_id=%s, resend_id=%s)",
-            recipient,
-            payload.client_id,
-            response.get("id") if isinstance(response, dict) else response,
-        )
-        return True
-    except Exception:
-        logger.exception("Error enviando recordatorio onboarding a %s", recipient)
-        return False
+    return send_resend_text_email(
+        intended_recipient=recipient,
+        subject=REMINDER_EMAIL_SUBJECT,
+        text=body,
+        log_context=f"onboarding reminder cliente_id={payload.client_id}" if payload.client_id else "onboarding reminder",
+    )

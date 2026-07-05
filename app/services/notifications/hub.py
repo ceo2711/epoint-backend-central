@@ -61,5 +61,24 @@ class NotificationHub:
 
         loop.call_soon_threadsafe(_enqueue)
 
+    def close_all(self) -> None:
+        """Cierra todas las suscripciones SSE (p. ej. al apagar la API)."""
+        shutdown = {"type": "__shutdown__"}
+        loop = self._loop
+        if loop is None:
+            self._queues.clear()
+            return
+
+        def _close() -> None:
+            for user_id in list(self._queues.keys()):
+                for queue in list(self._queues[user_id]):
+                    try:
+                        queue.put_nowait(shutdown)
+                    except asyncio.QueueFull:
+                        pass
+            self._queues.clear()
+
+        loop.call_soon_threadsafe(_close)
+
 
 notification_hub = NotificationHub()

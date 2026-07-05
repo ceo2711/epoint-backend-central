@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.enums import ClientSource
+
 
 class DocusignConnectionResponse(BaseModel):
     connected: bool
@@ -63,6 +65,8 @@ class DocusignEnvelopeResponse(BaseModel):
     sent_at: datetime
     completed_at: datetime | None = None
     has_signed_document: bool = False
+    can_register_client: bool = False
+    client_registered: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -70,3 +74,18 @@ class DocusignEnvelopeResponse(BaseModel):
 class DocusignSendEnvelopeResponse(BaseModel):
     envelope: DocusignEnvelopeResponse
     message: str = "Contrato enviado correctamente"
+
+
+class DocusignRegisterClientRequest(BaseModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    phone: str = Field(min_length=5, max_length=30)
+    source: ClientSource
+    merchant_id: int
+
+
+class DocusignRegisterClientResponse(BaseModel):
+    envelope: DocusignEnvelopeResponse
+    client_id: int
+    message: str = "Cliente registrado y enviado a revisión de onboarding"

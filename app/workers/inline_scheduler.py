@@ -62,7 +62,11 @@ def stop_onboarding_reminder_scheduler() -> None:
     global _scheduler_thread, _scheduler_stop
 
     with _start_lock:
+        thread = _scheduler_thread
         if _scheduler_stop is not None:
             _scheduler_stop.set()
         _scheduler_thread = None
         _scheduler_stop = None
+
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=5)

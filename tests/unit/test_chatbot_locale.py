@@ -45,3 +45,15 @@ def test_resolve_infers_spanish_when_ui_is_english():
 def test_locale_switch_request():
     assert is_locale_switch_request("hablame en español")
     assert not is_locale_switch_request("registra un cliente llamado Juan")
+
+
+def test_castellanos_surname_is_not_locale_switch():
+    message = """
+Datos personales
+Nombre completo: Antonella Jazmín Castellanos Rivas
+Email: acastellanos.demo30@gmail.com
+Numero de telefono: 9545341928
+merchant: db-studio
+"""
+    assert detect_explicit_locale_switch(message) is None
+    assert not is_locale_switch_request(message)

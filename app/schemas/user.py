@@ -45,6 +45,7 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=8)
     first_name: str | None = Field(default=None, min_length=1, max_length=100)
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = None

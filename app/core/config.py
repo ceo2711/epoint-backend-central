@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
     email_from_name: str = "ePoint CRM"
+    # En sandbox de Resend, redirige todos los emails a esta dirección verificada.
+    email_dev_redirect_to: str = ""
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""

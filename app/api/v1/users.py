@@ -143,6 +143,11 @@ def update_user(
     if "role_id" in data and data["role_id"] is not None:
         _assert_staff_role(db, int(data["role_id"]))
 
+    password = data.pop("password", None)
+    if password:
+        user.password_hash = hash_password(password)
+        user.must_change_password = True
+
     for field, value in data.items():
         setattr(user, field, value)
 
