@@ -3,8 +3,8 @@ import re
 SPANISH_SWITCH_PATTERN = re.compile(
     r"(?:"
     r"(?:habl[aá]|respond[eé]|escrib[ií]|contest[aá]|hablame|háblame)"
-    r".{0,35}(?:en\s+)?(?:español|castellano)"
-    r"|(?:en\s+)?(?:español|castellano)(?:\s+por\s+favor)?"
+    r".{0,35}(?:en\s+)?(?:español|castellano)\b"
+    r"|\b(?:en\s+)?(?:español|castellano)\b(?:\s+por\s+favor)?"
     r"|quiero\s+(?:que\s+)?(?:hables|hable|respondas)\s+en\s+español"
     r")",
     re.IGNORECASE,
@@ -13,9 +13,9 @@ SPANISH_SWITCH_PATTERN = re.compile(
 ENGLISH_SWITCH_PATTERN = re.compile(
     r"(?:"
     r"(?:speak|talk|write|reply|respond)"
-    r".{0,25}english"
-    r"|in\s+english"
-    r"|english\s+please"
+    r".{0,25}\benglish\b"
+    r"|\bin\s+english\b"
+    r"|\benglish\s+please\b"
     r"|(?:i\s+)?want\s+english"
     r")",
     re.IGNORECASE,
@@ -23,10 +23,10 @@ ENGLISH_SWITCH_PATTERN = re.compile(
 
 LOCALE_ONLY_PATTERN = re.compile(
     r"^(?:"
-    r"(?:por\s+favor\s+)?(?:habl[aá]|respond[eé]|escrib[ií])\s+(?:en\s+)?(?:español|castellano|english)"
-    r"|(?:en\s+)?(?:español|castellano|english)\s+por\s+favor"
-    r"|(?:please\s+)?(?:speak|talk|write|reply)\s+(?:in\s+)?english"
-    r"|in\s+english\s+please"
+    r"(?:por\s+favor\s+)?(?:habl[aá]|respond[eé]|escrib[ií])\s+(?:en\s+)?(?:español|castellano|english)\b"
+    r"|\b(?:en\s+)?(?:español|castellano|english)\b\s+por\s+favor"
+    r"|(?:please\s+)?(?:speak|talk|write|reply)\s+(?:in\s+)?english\b"
+    r"|\bin\s+english\s+please\b"
     r")[.!?\s]*$",
     re.IGNORECASE,
 )
@@ -74,7 +74,10 @@ def is_locale_switch_request(message: str) -> bool:
     if not detect_explicit_locale_switch(message):
         return False
     from app.services.chatbot.actions import REGISTER_INTENT_PATTERN
+    from app.services.chatbot.registration_bulk import looks_like_structured_registration_block
 
+    if looks_like_structured_registration_block(message):
+        return False
     if REGISTER_INTENT_PATTERN.search(message):
         return False
     return True

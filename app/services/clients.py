@@ -281,6 +281,16 @@ class ClientService:
         client: Client,
         **fields,
     ) -> Client:
+        if actor.role.code == "SALES_REP" and client.status not in (
+            ClientStatus.PENDIENTE_DE_REVISION.value,
+            ClientStatus.RECHAZADO.value,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo puede editar clientes pendientes o rechazados",
+            )
+        ssn = fields.pop("ssn", None)
+        date_of_birth = fields.pop("date_of_birth", None)
         if "email" in fields and fields["email"] is not None:
             self.assert_email_available(fields["email"], exclude_client_id=client.id)
         if "phone" in fields and fields["phone"] is not None:
@@ -297,6 +307,16 @@ class ClientService:
                     setattr(client, key, value.strip())
                 else:
                     setattr(client, key, value)
+        if ssn:
+            client.ssn_encrypted = encrypt_value(ssn)
+            self.audit.log(
+                actor=actor,
+                action="SSN_UPDATED",
+                entity_type="client",
+                entity_id=client.id,
+            )
+        if date_of_birth is not None:
+            client.date_of_birth = date_of_birth
         self.audit.log(actor=actor, action="CLIENT_UPDATED", entity_type="client", entity_id=client.id)
         self.db.commit()
         self.db.refresh(client)
@@ -906,12 +926,34 @@ class ClientService:
             return assignment is not None
         return True
 
+    def user_can_view_client_onboarding_data(self, user: User, client_id: int) -> bool:
+        """Documentos, perfil extendido, portal, tablero: admin, onboarding y asesor asignado."""
+        if user.role.code in ("ADMIN", "ONBOARDING_MANAGER"):
+            return True
+        if user.role.code == "ADVISOR":
+            return self.user_can_access_client(user, client_id)
+        return False
+
+    def user_can_view_approved_client_workspace(
+        self,
+        user: User,
+        client_id: int,
+        *,
+        client: Client | None = None,
+    ) -> bool:
+        """Workspace completo post-aprobación: datos extendidos, documentos, tablero."""
+        row = client if client is not None else self.db.get(Client, client_id)
+        if row is None or row.approved_at is None:
+            return False
+        return self.user_can_view_client_onboarding_data(user, client_id)
+
     def get_client_detail(self, client_id: int) -> Client | None:
         return (
             self.db.execute(
                 select(Client)
                 .options(
                     joinedload(Client.merchant),
+                    joinedload(Client.docusign_envelope),
                     joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
                     joinedload(Client.addresses),
                     joinedload(Client.vehicles),

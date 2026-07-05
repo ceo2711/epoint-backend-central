@@ -23,6 +23,8 @@ def _get_client_for_docs(user: User, client_id: int | None, db) -> Client:
         client = db.get(Client, user.client_id)
     elif client_id:
         service = ClientService(db)
+        if not service.user_can_view_approved_client_workspace(user, client_id):
+            raise HTTPException(status_code=403, detail="No autorizado")
         client = service.get_client_for_user(user, client_id)
     else:
         raise HTTPException(status_code=400, detail="client_id requerido")

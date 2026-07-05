@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
     email_from_name: str = "ePoint CRM"
+    # En sandbox de Resend, redirige todos los emails a esta dirección verificada.
+    email_dev_redirect_to: str = ""
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""
@@ -85,6 +87,38 @@ class Settings(BaseSettings):
 
     # Calendly Scheduling API (crear/editar/cancelar). Requiere plan Standard+ en Calendly.
     calendly_write_enabled: bool = False
+
+    # DocuSign eSignature (JWT Grant — cuenta única de empresa vía variables de entorno)
+    docusign_integration_key: str = ""
+    docusign_user_id: str = ""
+    docusign_account_id: str = ""
+    docusign_private_key: str = ""
+    docusign_auth_server: str = "account-d.docusign.com"
+    docusign_base_uri: str = ""
+    docusign_default_template_id: str = ""
+    docusign_default_template_role_name: str = "Signer"
+    docusign_connect_hmac_key: str = ""
+    backend_public_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("BACKEND_PUBLIC_URL", "API_PUBLIC_URL"),
+    )
+
+    @field_validator("docusign_private_key", mode="after")
+    @classmethod
+    def normalize_docusign_private_key(cls, value: str) -> str:
+        if value and "\\n" in value:
+            return value.replace("\\n", "\n")
+        return value
+
+    @property
+    def docusign_configured(self) -> bool:
+        return bool(
+            self.docusign_integration_key.strip()
+            and self.docusign_user_id.strip()
+            and self.docusign_account_id.strip()
+            and self.docusign_private_key.strip()
+            and self.docusign_base_uri.strip()
+        )
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -121,6 +155,14 @@ class Settings(BaseSettings):
     @property
     def portal_login_url(self) -> str:
         return f"{self.portal_base_url}/login"
+
+    @property
+    def docusign_webhook_url(self) -> str | None:
+        base = self.backend_public_url.strip().rstrip("/")
+        if not base:
+            return None
+        prefix = self.api_prefix if self.api_prefix.startswith("/") else f"/{self.api_prefix}"
+        return f"{base}{prefix}/docusign/webhook"
 
 
 def get_settings() -> Settings:

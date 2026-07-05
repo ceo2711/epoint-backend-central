@@ -29,6 +29,28 @@ class ClientUpdate(BaseModel):
     phone: str | None = Field(default=None, min_length=5, max_length=30)
     source: ClientSource | None = None
     merchant_id: int | None = None
+    date_of_birth: date | None = None
+    ssn: str | None = Field(default=None, max_length=11)
+
+    @field_validator("ssn", mode="before")
+    @classmethod
+    def normalize_ssn(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return None if not stripped else stripped
+        return value
+
+    @field_validator("ssn")
+    @classmethod
+    def validate_ssn(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        digits = re.sub(r"\D", "", value)
+        if len(digits) != 9:
+            raise ValueError("El número de Seguro Social debe tener 9 dígitos (formato XXX-XX-XXXX).")
+        return digits
 
 
 class ClientReject(BaseModel):
@@ -62,6 +84,13 @@ class AdvisorBrief(BaseModel):
     email: str
 
 
+class ClientSignedContractBrief(BaseModel):
+    envelope_id: int
+    signed_at: datetime
+    subject: str
+    has_document: bool = False
+
+
 class ClientResponse(ORMBase):
     id: int
     status: str
@@ -78,6 +107,8 @@ class ClientResponse(ORMBase):
     has_ssn: bool = False
     registered_by_user_id: int
     created_at: datetime
+    docusign_contract_signed_at: datetime | None = None
+    signed_contract: ClientSignedContractBrief | None = None
 
 
 class ClientDetailResponse(ClientResponse):

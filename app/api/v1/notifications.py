@@ -3,7 +3,7 @@ import json
 import math
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
@@ -16,21 +16,36 @@ from app.services.notifications.hub import notification_hub
 
 router = APIRouter(prefix="/notifications", tags=["Notificaciones"])
 
+STREAM_POLL_SECONDS = 2
 STREAM_HEARTBEAT_SECONDS = 25
 
 
 @router.get("/stream")
-async def stream_notifications(current_user: CurrentUser) -> StreamingResponse:
+async def stream_notifications(request: Request, current_user: CurrentUser) -> StreamingResponse:
     async def event_generator():
         queue = notification_hub.subscribe(current_user.id)
+        heartbeat_ticks = 0
+        ticks_per_heartbeat = max(1, STREAM_HEARTBEAT_SECONDS // STREAM_POLL_SECONDS)
         try:
             yield f"data: {json.dumps({'type': 'connected'})}\n\n"
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
-                    message = await asyncio.wait_for(queue.get(), timeout=STREAM_HEARTBEAT_SECONDS)
-                    yield f"data: {json.dumps(message, default=str)}\n\n"
+                    message = await asyncio.wait_for(queue.get(), timeout=STREAM_POLL_SECONDS)
                 except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
+                    heartbeat_ticks += 1
+                    if heartbeat_ticks >= ticks_per_heartbeat:
+                        heartbeat_ticks = 0
+                        if await request.is_disconnected():
+                            break
+                        yield ": heartbeat\n\n"
+                    continue
+
+                heartbeat_ticks = 0
+                if message.get("type") == "__shutdown__":
+                    break
+                yield f"data: {json.dumps(message, default=str)}\n\n"
         finally:
             notification_hub.unsubscribe(current_user.id, queue)
 

@@ -35,6 +35,15 @@ class Client(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    docusign_contract_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    docusign_envelope_id: Mapped[int | None] = mapped_column(
+        ForeignKey("docusign_envelopes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
     last_onboarding_reminder_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -48,6 +57,9 @@ class Client(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    docusign_envelope: Mapped["DocusignEnvelope | None"] = relationship(  # noqa: F821
+        foreign_keys=[docusign_envelope_id],
+    )
     merchant: Mapped["Merchant | None"] = relationship(back_populates="clients")
     registered_by: Mapped["User"] = relationship(foreign_keys=[registered_by_user_id])
     approved_by: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])
