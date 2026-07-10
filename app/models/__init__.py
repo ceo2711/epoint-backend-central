@@ -19,6 +19,8 @@ from app.models.document_verification import DocumentVerification
 from app.models.merchant import Merchant
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
+from app.models.payment_link import PaymentLink
+from app.models.payment_settings import PaymentSettings
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.session import UserSession
@@ -50,6 +52,8 @@ __all__ = [
     "Merchant",
     "Notification",
     "PasswordResetToken",
+    "PaymentLink",
+    "PaymentSettings",
     "Permission",
     "Role",
     "RolePermission",

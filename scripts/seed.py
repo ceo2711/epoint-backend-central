@@ -48,6 +48,9 @@ PERMISSIONS = [
     ("merchants:delete", "Desactivar merchants"),
     ("calendly:read", "Ver calendario de reuniones"),
     ("calendly:manage", "Conectar y sincronizar Calendly"),
+    ("payments:read", "Ver links de pago"),
+    ("payments:create", "Crear links de pago"),
+    ("payments:manage", "Configurar proveedores de pago"),
 ]
 
 ROLES = {
@@ -72,7 +75,7 @@ ROLES = {
     "SALES_REP": {
         "name": "Vendedor",
         "description": "Registra clientes nuevos",
-        "permissions": ["clients:read", "clients:create", "clients:update", "calendly:read", "calendly:manage"],
+        "permissions": ["clients:read", "clients:create", "clients:update", "calendly:read", "calendly:manage", "payments:read", "payments:create"],
     },
     "ONBOARDING_MANAGER": {
         "name": "Encargado de Onboarding",

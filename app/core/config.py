@@ -103,6 +103,21 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("BACKEND_PUBLIC_URL", "API_PUBLIC_URL"),
     )
 
+    # Pagos — general
+    payments_enabled: bool = True
+    payments_default_provider: str = "stripe"
+
+    # Pagos — Stripe
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+
+    # Pagos — Authorize.net
+    authorize_api_login_id: str = ""
+    authorize_transaction_key: str = ""
+    authorize_signature_key: str = ""
+    authorize_environment: str = "sandbox"
+
     @field_validator("docusign_private_key", mode="after")
     @classmethod
     def normalize_docusign_private_key(cls, value: str) -> str:
@@ -119,6 +134,19 @@ class Settings(BaseSettings):
             and self.docusign_private_key.strip()
             and self.docusign_base_uri.strip()
         )
+
+    @property
+    def stripe_configured(self) -> bool:
+        return bool(self.stripe_secret_key.strip() and self.stripe_publishable_key.strip())
+
+    @property
+    def authorize_configured(self) -> bool:
+        return bool(self.authorize_api_login_id.strip() and self.authorize_transaction_key.strip())
+
+    @property
+    def payments_default_provider_normalized(self) -> str:
+        provider = self.payments_default_provider.strip().lower()
+        return provider if provider in ("stripe", "authorize") else "stripe"
 
     @field_validator("database_url", mode="before")
     @classmethod
