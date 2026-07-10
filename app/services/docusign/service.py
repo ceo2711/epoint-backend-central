@@ -584,19 +584,21 @@ class DocusignService:
 
     def _notify_envelope_completed(self, row: DocusignEnvelope) -> bool:
         """Notifica una sola vez por contrato firmado. Retorna True si creó la notificación."""
+        # FOR UPDATE solo sobre docusign_envelopes (PostgreSQL no permite locks con LEFT JOIN).
         locked = self.db.execute(
             select(DocusignEnvelope)
-            .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
             .where(DocusignEnvelope.id == row.id)
             .with_for_update()
-        ).unique().scalar_one_or_none()
+        ).scalar_one_or_none()
         if locked is None:
             return False
         if locked.completion_notified_at is not None:
             row.completion_notified_at = locked.completion_notified_at
             return False
 
-        recipient = locked.sent_by
+        recipient = row.sent_by
+        if recipient is None and locked.sent_by_user_id:
+            recipient = self.db.get(User, locked.sent_by_user_id)
         if recipient is None or recipient.id is None:
             return False
 
@@ -615,12 +617,16 @@ class DocusignService:
             self.db.flush()
             return False
 
+        client = row.client
+        if client is None and locked.client_id:
+            client = self.db.get(Client, locked.client_id)
+
         client_label = locked.signer_name
         notify_client_id = None
-        if locked.client_id and locked.client and self._client_matches_signer(
-            locked.client, locked.signer_name, locked.signer_email
+        if locked.client_id and client and self._client_matches_signer(
+            client, locked.signer_name, locked.signer_email
         ):
-            client_label = locked.client.full_name
+            client_label = client.full_name
             notify_client_id = locked.client_id
 
         notified_at = datetime.now(timezone.utc)

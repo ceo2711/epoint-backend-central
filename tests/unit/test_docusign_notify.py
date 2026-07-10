@@ -30,7 +30,7 @@ def _mock_execute_results(*results):
     for result in results:
         mock_result = MagicMock()
         if isinstance(result, DocusignEnvelope):
-            mock_result.unique.return_value.scalar_one_or_none.return_value = result
+            mock_result.scalar_one_or_none.return_value = result
         else:
             mock_result.scalar_one_or_none.return_value = result
         execute_results.append(mock_result)
