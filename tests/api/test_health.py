@@ -17,6 +17,7 @@ def test_health_check_returns_ok(client):
     assert "app" in data
     assert "environment" in data
     assert "llm" in data
+    assert data["version"] == "1.0.0"
 
 
 def test_health_check_llm_not_configured_by_default(client):

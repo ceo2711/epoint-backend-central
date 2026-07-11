@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import __version__
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.validation_errors import humanize_validation_errors
@@ -55,7 +56,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         description="API REST del CRM ePoint — onboarding de clientes",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
