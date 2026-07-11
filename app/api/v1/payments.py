@@ -1,0 +1,78 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
+
+from app.api.deps import CurrentUser, DbSession, require_permissions
+from app.models.user import User
+from app.schemas.payment import (
+    PaymentConfigResponse,
+    PaymentLinkCreate,
+    PaymentLinkCreateResponse,
+    PaymentLinkResponse,
+    PaymentRegisterClientRequest,
+    PaymentRegisterClientResponse,
+    PublicPaymentLinkResponse,
+)
+from app.services.payments.service import PaymentService
+
+router = APIRouter(prefix="/payments", tags=["Pagos"])
+
+
+@router.get("/config", response_model=PaymentConfigResponse)
+def get_payment_config(current_user: CurrentUser, db: DbSession) -> PaymentConfigResponse:
+    """Estado de proveedores (solo lectura; la configuración vive en variables de entorno)."""
+    return PaymentService(db).get_config(current_user)
+
+
+@router.get("/links", response_model=list[PaymentLinkResponse])
+def list_payment_links(
+    current_user: Annotated[User, Depends(require_permissions("payments:read"))],
+    db: DbSession,
+    created_by_user_id: int | None = Query(None, ge=1),
+) -> list[PaymentLinkResponse]:
+    return PaymentService(db).list_links(current_user, created_by_user_id=created_by_user_id)
+
+
+@router.post("/links", response_model=PaymentLinkCreateResponse)
+def create_payment_link(
+    payload: PaymentLinkCreate,
+    current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    db: DbSession,
+) -> PaymentLinkCreateResponse:
+    link = PaymentService(db).create_link(current_user, payload)
+    return PaymentLinkCreateResponse(
+        link=link,
+        message="Link de pago generado. Compartilo con el cliente para que complete el pago.",
+    )
+
+
+@router.post("/links/{link_id}/cancel", response_model=PaymentLinkResponse)
+def cancel_payment_link(
+    link_id: int,
+    current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    db: DbSession,
+) -> PaymentLinkResponse:
+    return PaymentService(db).cancel_link(current_user, link_id)
+
+
+@router.post("/links/{link_id}/register-client", response_model=PaymentRegisterClientResponse)
+def register_client_from_payment(
+    link_id: int,
+    payload: PaymentRegisterClientRequest,
+    current_user: Annotated[User, Depends(require_permissions("payments:create", "clients:create"))],
+    db: DbSession,
+) -> PaymentRegisterClientResponse:
+    client_id, message = PaymentService(db).register_client_from_link(current_user, link_id, payload)
+    return PaymentRegisterClientResponse(client_id=client_id, message=message)
+
+
+@router.get("/public/{token}", response_model=PublicPaymentLinkResponse)
+def get_public_payment_link(token: str, db: DbSession) -> PublicPaymentLinkResponse:
+    """Página pública de pago — sin autenticación."""
+    return PaymentService(db).get_public_link(token)
+
+
+@router.post("/public/{token}/complete", response_model=PublicPaymentLinkResponse)
+def complete_public_payment_stub(token: str, db: DbSession) -> PublicPaymentLinkResponse:
+    """Completa el pago en modo stub (sin credenciales de Stripe/Authorize)."""
+    return PaymentService(db).complete_public_payment(token)
