@@ -48,9 +48,10 @@ CLIENT_ROLE = "CLIENT"
 
 
 class ChatbotContextBuilder:
-    def __init__(self, db, user: User) -> None:
+    def __init__(self, db, user: User, *, merchant_id: int | None = None) -> None:
         self.db = db
         self.user = user
+        self.merchant_id = merchant_id
         self.clients = ClientService(db)
         self.documents = DocumentService(db)
         self.boards = BoardService(db)
@@ -74,7 +75,9 @@ class ChatbotContextBuilder:
 
     def resolve_client_id(self, message: str, client_id: int | None) -> int | None:
         if client_id is not None:
-            return client_id if self.clients.user_can_access_client(self.user, client_id) else None
+            return client_id if self.clients.user_can_access_client(
+                self.user, client_id, merchant_id=self.merchant_id
+            ) else None
 
         role = self.user.role.code
         if role == CLIENT_ROLE:
@@ -83,10 +86,12 @@ class ChatbotContextBuilder:
         id_match = re.search(r"(?:cliente\s*)?#?(\d{1,8})\b", message, flags=re.IGNORECASE)
         if id_match:
             candidate = int(id_match.group(1))
-            if self.clients.user_can_access_client(self.user, candidate):
+            if self.clients.user_can_access_client(
+                self.user, candidate, merchant_id=self.merchant_id
+            ):
                 return candidate
 
-        scoped_query = self.clients._scoped_clients_query(self.user)
+        scoped_query = self.clients._scoped_clients_query(self.user, self.merchant_id)
         clients = self.db.execute(scoped_query.order_by(Client.created_at.desc()).limit(200)).scalars().all()
         lowered = message.strip().lower()
         if not lowered:
@@ -139,7 +144,7 @@ class ChatbotContextBuilder:
 
     def _build_sales_payload(self, *, include_actions: bool, client_id: int | None = None) -> dict[str, Any]:
         clients = self.db.execute(
-            self.clients._scoped_clients_query(self.user).order_by(Client.created_at.desc()).limit(100)
+            self.clients._scoped_clients_query(self.user, self.merchant_id).order_by(Client.created_at.desc()).limit(100)
         ).scalars().all()
 
         approved: list[dict[str, Any]] = []
@@ -179,7 +184,9 @@ class ChatbotContextBuilder:
                 "informe completo de cliente (nombre, email o ID)",
             ]
 
-        if client_id is not None and self.clients.user_can_access_client(self.user, client_id):
+        if client_id is not None and self.clients.user_can_access_client(
+            self.user, client_id, merchant_id=self.merchant_id
+        ):
             payload["cliente_consultado"] = self._client_detail_payload(client_id)
 
         return payload
@@ -187,7 +194,7 @@ class ChatbotContextBuilder:
     def _build_staff_payload(self, client_id: int | None, *, include_approval_data: bool) -> dict[str, Any]:
         stats = self.clients.get_client_stats(self.user)
         clients = self.db.execute(
-            self.clients._scoped_clients_query(self.user).order_by(Client.created_at.desc()).limit(80)
+            self.clients._scoped_clients_query(self.user, self.merchant_id).order_by(Client.created_at.desc()).limit(80)
         ).scalars().all()
 
         complete_count = 0
@@ -235,7 +242,9 @@ class ChatbotContextBuilder:
             "clientes": client_summaries,
         }
 
-        if client_id is not None and self.clients.user_can_access_client(self.user, client_id):
+        if client_id is not None and self.clients.user_can_access_client(
+            self.user, client_id, merchant_id=self.merchant_id
+        ):
             payload["cliente_consultado"] = self._client_detail_payload(client_id)
 
         if include_approval_data:

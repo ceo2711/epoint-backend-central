@@ -25,6 +25,7 @@ from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.session import UserSession
 from app.models.user import User
+from app.models.user_merchant import UserMerchant
 from app.models.vehicle import Vehicle
 
 __all__ = [
@@ -58,6 +59,7 @@ __all__ = [
     "Role",
     "RolePermission",
     "User",
+    "UserMerchant",
     "UserSession",
     "Vehicle",
 ]

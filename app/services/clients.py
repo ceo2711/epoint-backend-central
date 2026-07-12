@@ -20,6 +20,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.audit import AuditService
 from app.services.boards import BoardService
+from app.services.merchant_context import MerchantContextService
 from app.core.config import get_settings
 from app.core.phone import phones_match
 from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_email
@@ -51,17 +52,33 @@ class ClientService:
             self._boards = BoardService(self.db)
         return self._boards
 
-    def find_client_with_email(self, email: str, exclude_client_id: int | None = None) -> Client | None:
+    def find_client_with_email(
+        self,
+        email: str,
+        *,
+        merchant_id: int | None = None,
+        exclude_client_id: int | None = None,
+    ) -> Client | None:
         normalized = email.lower().strip()
         query = select(Client).where(Client.email == normalized)
+        if merchant_id is not None:
+            query = query.where(Client.merchant_id == merchant_id)
         if exclude_client_id is not None:
             query = query.where(Client.id != exclude_client_id)
         return self.db.execute(query).scalar_one_or_none()
 
-    def find_client_with_phone(self, phone: str, exclude_client_id: int | None = None) -> Client | None:
+    def find_client_with_phone(
+        self,
+        phone: str,
+        *,
+        merchant_id: int | None = None,
+        exclude_client_id: int | None = None,
+    ) -> Client | None:
         settings = get_settings()
         country_code = settings.whatsapp_default_country_code
         query = select(Client)
+        if merchant_id is not None:
+            query = query.where(Client.merchant_id == merchant_id)
         if exclude_client_id is not None:
             query = query.where(Client.id != exclude_client_id)
         for client in self.db.execute(query).scalars().all():
@@ -76,8 +93,23 @@ class ClientService:
             "client_email": client.email,
         }
 
-    def _scoped_clients_query(self, user: User):
+    def _scoped_clients_query(
+        self,
+        user: User,
+        merchant_id: int | None = None,
+        *,
+        all_merchants: bool = False,
+    ):
         query = select(Client)
+        if all_merchants:
+            accessible = MerchantContextService(self.db).list_accessible_merchants(user)
+            merchant_ids = [merchant.id for merchant in accessible]
+            if merchant_ids:
+                query = query.where(Client.merchant_id.in_(merchant_ids))
+            else:
+                query = query.where(Client.id == -1)
+        elif merchant_id is not None:
+            query = query.where(Client.merchant_id == merchant_id)
         if user.role.code == "SALES_REP":
             query = query.where(Client.registered_by_user_id == user.id)
         elif user.role.code == "ADVISOR":
@@ -95,6 +127,8 @@ class ClientService:
         self,
         user: User,
         *,
+        merchant_id: int | None = None,
+        all_merchants: bool = False,
         page: int,
         page_size: int,
         status_filter: str | None = None,
@@ -103,7 +137,7 @@ class ClientService:
     ) -> tuple[list[Client], int]:
         from sqlalchemy import func, or_
 
-        query = self._scoped_clients_query(user)
+        query = self._scoped_clients_query(user, merchant_id, all_merchants=all_merchants)
         if onboarding_only:
             query = query.where(
                 or_(
@@ -133,7 +167,7 @@ class ClientService:
         )
         return list(clients), total
 
-    def get_client_stats(self, user: User) -> dict[str, int]:
+    def get_client_stats(self, user: User, *, merchant_id: int | None = None) -> dict[str, int]:
         from sqlalchemy import func
 
         pending = ClientStatus.PENDIENTE_DE_REVISION.value
@@ -147,7 +181,7 @@ class ClientService:
             ClientStatus.LISTO_PARA_TABLERO.value,
         }
 
-        scoped = self._scoped_clients_query(user).subquery()
+        scoped = self._scoped_clients_query(user, merchant_id).subquery()
         rows = self.db.execute(
             select(scoped.c.status, func.count()).group_by(scoped.c.status)
         ).all()
@@ -169,16 +203,36 @@ class ClientService:
             "total": total,
         }
 
-    def assert_email_available(self, email: str, *, exclude_client_id: int | None = None) -> None:
-        duplicate = self.find_client_with_email(email, exclude_client_id)
+    def assert_email_available(
+        self,
+        email: str,
+        *,
+        merchant_id: int | None = None,
+        exclude_client_id: int | None = None,
+    ) -> None:
+        duplicate = self.find_client_with_email(
+            email,
+            merchant_id=merchant_id,
+            exclude_client_id=exclude_client_id,
+        )
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"El email ya está registrado por {duplicate.full_name} (cliente #{duplicate.id})",
             )
 
-    def assert_phone_available(self, phone: str, *, exclude_client_id: int | None = None) -> None:
-        duplicate = self.find_client_with_phone(phone, exclude_client_id)
+    def assert_phone_available(
+        self,
+        phone: str,
+        *,
+        merchant_id: int | None = None,
+        exclude_client_id: int | None = None,
+    ) -> None:
+        duplicate = self.find_client_with_phone(
+            phone,
+            merchant_id=merchant_id,
+            exclude_client_id=exclude_client_id,
+        )
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -190,16 +244,25 @@ class ClientService:
         *,
         email: str | None = None,
         phone: str | None = None,
+        merchant_id: int | None = None,
         exclude_client_id: int | None = None,
     ) -> dict:
         result: dict = {"available": True, "email": None, "phone": None}
         if email and "@" in email:
-            duplicate = self.find_client_with_email(email, exclude_client_id)
+            duplicate = self.find_client_with_email(
+                email,
+                merchant_id=merchant_id,
+                exclude_client_id=exclude_client_id,
+            )
             if duplicate:
                 result["available"] = False
                 result["email"] = self._conflict_payload(duplicate)
         if phone and len(phone.strip()) >= 5:
-            duplicate = self.find_client_with_phone(phone, exclude_client_id)
+            duplicate = self.find_client_with_phone(
+                phone,
+                merchant_id=merchant_id,
+                exclude_client_id=exclude_client_id,
+            )
             if duplicate:
                 result["available"] = False
                 result["phone"] = self._conflict_payload(duplicate)
@@ -226,15 +289,27 @@ class ClientService:
         phone: str,
         source: str | None = None,
         merchant_id: int | None = None,
+        default_merchant_id: int | None = None,
     ) -> Client:
         normalized_email = email.lower().strip()
         normalized_phone = phone.strip()
-        self.assert_email_available(normalized_email)
-        self.assert_phone_available(normalized_phone)
 
         resolved_source = source or ClientSource.OTHER.value
+        merchant_ctx = MerchantContextService(self.db)
         if merchant_id is not None:
+            if not merchant_ctx.user_can_access_merchant(actor, merchant_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tenés acceso a ese comercio",
+                )
             merchant = self._get_active_merchant(merchant_id)
+        elif default_merchant_id is not None:
+            if not merchant_ctx.user_can_access_merchant(actor, default_merchant_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tenés acceso al comercio activo",
+                )
+            merchant = self._get_active_merchant(default_merchant_id)
         else:
             merchant = self._resolve_default_merchant()
             if merchant is None:
@@ -242,6 +317,9 @@ class ClientService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="No hay merchants activos configurados",
                 )
+
+        self.assert_email_available(normalized_email, merchant_id=merchant.id)
+        self.assert_phone_available(normalized_phone, merchant_id=merchant.id)
 
         client = Client(
             first_name=first_name.strip(),
@@ -292,9 +370,17 @@ class ClientService:
         ssn = fields.pop("ssn", None)
         date_of_birth = fields.pop("date_of_birth", None)
         if "email" in fields and fields["email"] is not None:
-            self.assert_email_available(fields["email"], exclude_client_id=client.id)
+            self.assert_email_available(
+                fields["email"],
+                merchant_id=client.merchant_id,
+                exclude_client_id=client.id,
+            )
         if "phone" in fields and fields["phone"] is not None:
-            self.assert_phone_available(fields["phone"], exclude_client_id=client.id)
+            self.assert_phone_available(
+                fields["phone"],
+                merchant_id=client.merchant_id,
+                exclude_client_id=client.id,
+            )
         if "merchant_id" in fields and fields["merchant_id"] is not None:
             self._get_active_merchant(fields["merchant_id"])
         if "source" in fields and fields["source"] is not None:
@@ -497,7 +583,10 @@ class ClientService:
 
         settings = get_settings()
         portal_login_url = settings.portal_login_url
-        welcome_title = "¡Bienvenido a ePoint!"
+        merchant_name: str | None = None
+        if client.merchant_id:
+            merchant_row = self.db.get(Merchant, client.merchant_id)
+            merchant_name = merchant_row.name if merchant_row else None
 
         if send_welcome_notifications:
             send_client_welcome_email(
@@ -507,6 +596,7 @@ class ClientService:
                     temp_password=temp_password,
                     portal_login_url=portal_login_url,
                     client_id=client.id,
+                    merchant_name=merchant_name,
                 )
             )
 
@@ -900,16 +990,32 @@ class ClientService:
                 mentioned.append(user)
         return mentioned
 
-    def get_client_for_user(self, user: User, client_id: int) -> Client | None:
-        if not self.user_can_access_client(user, client_id):
+    def get_client_for_user(
+        self,
+        user: User,
+        client_id: int,
+        *,
+        merchant_id: int | None = None,
+    ) -> Client | None:
+        if not self.user_can_access_client(user, client_id, merchant_id=merchant_id):
             return None
         return self.db.get(Client, client_id)
 
-    def user_can_access_client(self, user: User, client_id: int) -> bool:
+    def user_can_access_client(
+        self,
+        user: User,
+        client_id: int,
+        *,
+        merchant_id: int | None = None,
+    ) -> bool:
         row = self.db.execute(
-            select(Client.id, Client.registered_by_user_id).where(Client.id == client_id)
+            select(Client.id, Client.registered_by_user_id, Client.merchant_id).where(
+                Client.id == client_id
+            )
         ).one_or_none()
         if row is None:
+            return False
+        if merchant_id is not None and row.merchant_id != merchant_id:
             return False
         if user.role.code == "CLIENT":
             return user.client_id == client_id

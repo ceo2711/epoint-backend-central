@@ -17,6 +17,7 @@ class ClientWelcomeEmailPayload:
     temp_password: str
     portal_login_url: str
     client_id: int | None = None
+    merchant_name: str | None = None
 
 
 def send_client_welcome_email(payload: ClientWelcomeEmailPayload) -> bool:
@@ -28,6 +29,7 @@ def send_client_welcome_email(payload: ClientWelcomeEmailPayload) -> bool:
         email=recipient,
         temp_password=payload.temp_password,
         portal_login_url=payload.portal_login_url,
+        merchant_name=payload.merchant_name,
     )
     html_body = render_html_template(
         "welcome",
@@ -36,6 +38,11 @@ def send_client_welcome_email(payload: ClientWelcomeEmailPayload) -> bool:
         TEMP_PASSWORD=payload.temp_password,
         PORTAL_LOGIN_URL=payload.portal_login_url,
         LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        MERCHANT_LINE=(
+            f"Tu cuenta corresponde a {payload.merchant_name}."
+            if payload.merchant_name
+            else ""
+        ),
     )
     return send_resend_text_email(
         intended_recipient=recipient,

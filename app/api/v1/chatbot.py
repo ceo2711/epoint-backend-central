@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ActiveMerchantId, CurrentUser, DbSession
 from app.schemas.chatbot import ChatbotRequest, ChatbotResponse
 from app.services.chatbot import ChatbotService
 
@@ -11,6 +11,7 @@ router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 async def send_chat_message(
     body: ChatbotRequest,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> ChatbotResponse:
     service = ChatbotService(db)
@@ -20,6 +21,7 @@ async def send_chat_message(
         history=body.history,
         client_id=body.client_id,
         locale=body.locale,
+        merchant_id=merchant_id,
         chat_locale=body.chat_locale,
         pending_action=body.pending_action,
         calendly_selection=body.calendly_selection.model_dump(exclude_none=True) if body.calendly_selection else None,

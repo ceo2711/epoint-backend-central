@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import CurrentUser, DbSession, require_permissions
+from app.api.deps import ActiveMerchantId, CurrentUser, DbSession, require_permissions
 from app.models.user import User
 from app.schemas.payment import (
     PaymentConfigResponse,
@@ -27,19 +27,25 @@ def get_payment_config(current_user: CurrentUser, db: DbSession) -> PaymentConfi
 @router.get("/links", response_model=list[PaymentLinkResponse])
 def list_payment_links(
     current_user: Annotated[User, Depends(require_permissions("payments:read"))],
+    merchant_id: ActiveMerchantId,
     db: DbSession,
     created_by_user_id: int | None = Query(None, ge=1),
 ) -> list[PaymentLinkResponse]:
-    return PaymentService(db).list_links(current_user, created_by_user_id=created_by_user_id)
+    return PaymentService(db).list_links(
+        current_user,
+        merchant_id=merchant_id,
+        created_by_user_id=created_by_user_id,
+    )
 
 
 @router.post("/links", response_model=PaymentLinkCreateResponse)
 def create_payment_link(
     payload: PaymentLinkCreate,
     current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> PaymentLinkCreateResponse:
-    link = PaymentService(db).create_link(current_user, payload)
+    link = PaymentService(db).create_link(current_user, payload, merchant_id=merchant_id)
     return PaymentLinkCreateResponse(
         link=link,
         message="Link de pago generado. Compartilo con el cliente para que complete el pago.",
@@ -50,9 +56,10 @@ def create_payment_link(
 def cancel_payment_link(
     link_id: int,
     current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> PaymentLinkResponse:
-    return PaymentService(db).cancel_link(current_user, link_id)
+    return PaymentService(db).cancel_link(current_user, link_id, merchant_id=merchant_id)
 
 
 @router.post("/links/{link_id}/register-client", response_model=PaymentRegisterClientResponse)
@@ -60,9 +67,15 @@ def register_client_from_payment(
     link_id: int,
     payload: PaymentRegisterClientRequest,
     current_user: Annotated[User, Depends(require_permissions("payments:create", "clients:create"))],
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> PaymentRegisterClientResponse:
-    client_id, message = PaymentService(db).register_client_from_link(current_user, link_id, payload)
+    client_id, message = PaymentService(db).register_client_from_link(
+        current_user,
+        link_id,
+        payload,
+        merchant_id=merchant_id,
+    )
     return PaymentRegisterClientResponse(client_id=client_id, message=message)
 
 

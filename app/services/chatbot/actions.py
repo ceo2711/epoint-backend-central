@@ -10,6 +10,7 @@ from app.api.deps import get_user_permissions
 from app.models.client import Client
 from app.models.enums import ClientSource, ClientStatus
 from app.models.merchant import Merchant
+from app.services.merchant_context import MerchantContextService
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.chatbot import PendingChatAction, ClientApprovalResult, ChatUploadOptions
@@ -108,10 +109,11 @@ STAFF_UPLOAD_ROLES = STAFF_ROLES | {"ADMIN"}
 
 
 class ChatbotActionHandler:
-    def __init__(self, db: Session, user: User, *, locale: str = "es") -> None:
+    def __init__(self, db: Session, user: User, *, locale: str = "es", merchant_id: int | None = None) -> None:
         self.db = db
         self.user = user
         self.locale = locale
+        self.merchant_id = merchant_id
         self.clients = ClientService(db)
         self.permissions = set(get_user_permissions(db, user))
         if user.role.code == "ADMIN":
@@ -330,7 +332,7 @@ class ChatbotActionHandler:
             return self.user.client_id
         from app.services.chatbot.context import ChatbotContextBuilder
 
-        return ChatbotContextBuilder(self.db, self.user).resolve_client_id(message, None)
+        return ChatbotContextBuilder(self.db, self.user, merchant_id=self.merchant_id).resolve_client_id(message, None)
 
     def _document_upload_options(self, *, ready: bool) -> ChatUploadOptions:
         return ChatUploadOptions(
@@ -534,7 +536,7 @@ class ChatbotActionHandler:
     def _pending_clients(self) -> list[Client]:
         return list(
             self.db.execute(
-                self.clients._scoped_clients_query(self.user)
+                self.clients._scoped_clients_query(self.user, self.merchant_id)
                 .options(selectinload(Client.assignments))
                 .where(Client.status == ClientStatus.PENDIENTE_DE_REVISION.value)
                 .order_by(Client.created_at.asc())
@@ -561,7 +563,7 @@ class ChatbotActionHandler:
         )
 
     def _client_report(self, message: str, client_id: int | None) -> ActionResult:
-        builder = ChatbotContextBuilder(self.db, self.user)
+        builder = ChatbotContextBuilder(self.db, self.user, merchant_id=self.merchant_id)
         resolved = builder.resolve_client_id(message, client_id)
         if not resolved:
             return ActionResult(
@@ -719,11 +721,7 @@ class ChatbotActionHandler:
         return ActionResult(handled=True, reply="\n".join(parts))
 
     def _list_active_merchants(self) -> list[Merchant]:
-        return list(
-            self.db.execute(
-                select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.name)
-            ).scalars().all()
-        )
+        return MerchantContextService(self.db).list_accessible_merchants(self.user)
 
     async def _extract_registration_fields(self, message: str, draft: dict[str, Any]) -> dict[str, Any]:
         merged = {**draft}

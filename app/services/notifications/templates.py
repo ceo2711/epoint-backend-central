@@ -22,9 +22,13 @@ def client_approved_email_body(
     email: str,
     temp_password: str,
     portal_login_url: str,
+    merchant_name: str | None = None,
 ) -> str:
+    merchant_block = ""
+    if merchant_name:
+        merchant_block = f"\nTu cuenta corresponde a {merchant_name}.\n"
     return f"""Hola {first_name},
-
+{merchant_block}
 ¡Bienvenido/a a ePoint!
 
 Tu solicitud fue aprobada. Ya podés ingresar al portal del cliente para completar tus datos personales y subir la documentación requerida.

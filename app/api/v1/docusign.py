@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ActiveMerchantId, CurrentUser, DbSession
 from app.schemas.docusign import (
     DocusignConnectionResponse,
     DocusignConsentUrlResponse,
@@ -54,30 +54,42 @@ def get_template_detail(
 @router.get("/envelopes", response_model=list[DocusignEnvelopeResponse])
 def list_envelopes(
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
     sent_by_user_id: int | None = Query(None, ge=1),
 ) -> list[DocusignEnvelopeResponse]:
-    return DocusignService(db).list_envelopes(current_user, sent_by_user_id=sent_by_user_id)
+    return DocusignService(db).list_envelopes(
+        current_user,
+        merchant_id=merchant_id,
+        sent_by_user_id=sent_by_user_id,
+    )
 
 
 @router.get("/clients/{client_id}/envelopes", response_model=list[DocusignEnvelopeResponse])
 def list_client_envelopes(
     client_id: int,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> list[DocusignEnvelopeResponse]:
-    return DocusignService(db).list_client_envelopes(current_user, client_id)
+    return DocusignService(db).list_client_envelopes(
+        current_user,
+        client_id,
+        merchant_id=merchant_id,
+    )
 
 
 @router.post("/envelopes/sync-pending", response_model=list[DocusignEnvelopeResponse])
 def sync_pending_envelopes(
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
     sent_by_user_id: int | None = Query(None, ge=1),
 ) -> list[DocusignEnvelopeResponse]:
     """Actualiza estados pendientes consultando DocuSign."""
     return DocusignService(db).sync_pending_envelopes(
         current_user,
+        merchant_id=merchant_id,
         sent_by_user_id=sent_by_user_id,
     )
 
@@ -86,18 +98,24 @@ def sync_pending_envelopes(
 def send_envelope(
     payload: DocusignSendEnvelopeRequest,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> DocusignSendEnvelopeResponse:
-    return DocusignService(db).send_envelope(current_user, payload)
+    return DocusignService(db).send_envelope(current_user, payload, merchant_id=merchant_id)
 
 
 @router.post("/envelopes/{envelope_id}/sync", response_model=DocusignEnvelopeResponse)
 def sync_envelope_status(
     envelope_id: int,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> DocusignEnvelopeResponse:
-    return DocusignService(db).sync_envelope_status(current_user, envelope_id)
+    return DocusignService(db).sync_envelope_status(
+        current_user,
+        envelope_id,
+        merchant_id=merchant_id,
+    )
 
 
 @router.post("/envelopes/{envelope_id}/register-client", response_model=DocusignRegisterClientResponse)
@@ -105,6 +123,7 @@ def register_client_from_envelope(
     envelope_id: int,
     payload: DocusignRegisterClientRequest,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> DocusignRegisterClientResponse:
     """Registra al firmante como cliente CRM y lo envía a revisión de onboarding."""
@@ -118,6 +137,7 @@ def register_client_from_envelope(
         phone=payload.phone,
         source=payload.source.value,
         merchant_id=payload.merchant_id,
+        active_merchant_id=merchant_id,
     )
     return DocusignRegisterClientResponse(
         envelope=service._map_envelope(row),
@@ -129,9 +149,14 @@ def register_client_from_envelope(
 def download_sent_document(
     envelope_id: int,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> StreamingResponse:
-    content, filename = DocusignService(db).get_sent_document(current_user, envelope_id)
+    content, filename = DocusignService(db).get_sent_document(
+        current_user,
+        envelope_id,
+        merchant_id=merchant_id,
+    )
     return StreamingResponse(
         iter([content]),
         media_type="application/pdf",
@@ -143,9 +168,14 @@ def download_sent_document(
 def download_signed_document(
     envelope_id: int,
     current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> StreamingResponse:
-    content, filename = DocusignService(db).get_signed_document(current_user, envelope_id)
+    content, filename = DocusignService(db).get_signed_document(
+        current_user,
+        envelope_id,
+        merchant_id=merchant_id,
+    )
     return StreamingResponse(
         iter([content]),
         media_type="application/pdf",

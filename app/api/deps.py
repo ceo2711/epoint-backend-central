@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.security import safe_decode_token
 from app.models.permission import Permission, RolePermission
 from app.models.user import User
+from app.services.merchant_context import MerchantContextService
 
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -87,6 +88,43 @@ def require_permissions(*required: str):
         return current_user
 
     return checker
+
+
+def get_active_merchant_id(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    x_merchant_id: Annotated[int | None, Header(alias="X-Merchant-Id")] = None,
+) -> int:
+    """Comercio activo del usuario staff (header o preferencia guardada)."""
+    if current_user.role.code == "CLIENT":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Los clientes del portal no usan contexto de comercio",
+        )
+    return MerchantContextService(db).resolve_active_merchant_id(
+        current_user,
+        header_merchant_id=x_merchant_id,
+    )
+
+
+ActiveMerchantId = Annotated[int, Depends(get_active_merchant_id)]
+
+
+def get_optional_active_merchant_id(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    x_merchant_id: Annotated[int | None, Header(alias="X-Merchant-Id")] = None,
+) -> int | None:
+    """Comercio activo para staff; None para clientes del portal."""
+    if current_user.role.code == "CLIENT":
+        return None
+    return MerchantContextService(db).resolve_active_merchant_id(
+        current_user,
+        header_merchant_id=x_merchant_id,
+    )
+
+
+OptionalActiveMerchantId = Annotated[int | None, Depends(get_optional_active_merchant_id)]
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 
-from app.api.deps import DbSession, require_permissions
+from app.api.deps import ActiveMerchantId, DbSession, require_permissions
 from app.models.client import Client
 from app.models.user import User
 from app.schemas.client import (
@@ -25,6 +25,7 @@ from app.schemas.client import (
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.serializers.client import client_to_response
 from app.services.clients import ClientService
+from app.services.merchant_context import MerchantContextService
 from app.services.documents import DocumentService
 from app.services.docusign.service import DocusignService
 
@@ -39,15 +40,37 @@ def _to_response(client: Client) -> ClientResponse:
 def list_clients(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    active_merchant_id: ActiveMerchantId,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status_filter: str | None = None,
     search: str | None = None,
     onboarding_only: bool = Query(False),
+    merchant_id: int | None = Query(None, description="Filtrar por comercio específico"),
+    all_merchants: bool = Query(False, description="Incluir todos los comercios accesibles"),
 ) -> PaginatedResponse[ClientResponse]:
     service = ClientService(db)
+    merchant_context = MerchantContextService(db)
+
+    if merchant_id is not None:
+        if not merchant_context.user_can_access_merchant(current_user, merchant_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tenés acceso a ese comercio",
+            )
+        scope_merchant_id = merchant_id
+        scope_all_merchants = False
+    elif all_merchants:
+        scope_merchant_id = None
+        scope_all_merchants = True
+    else:
+        scope_merchant_id = active_merchant_id
+        scope_all_merchants = False
+
     clients, total = service.list_clients_for_user(
         current_user,
+        merchant_id=scope_merchant_id,
+        all_merchants=scope_all_merchants,
         page=page,
         page_size=page_size,
         status_filter=status_filter,
@@ -67,6 +90,7 @@ def list_clients(
 def check_client_availability(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:create"))],
+    merchant_id: ActiveMerchantId,
     email: str | None = Query(default=None),
     phone: str | None = Query(default=None),
     exclude_client_id: int | None = Query(default=None),
@@ -75,6 +99,7 @@ def check_client_availability(
     result = service.check_contact_availability(
         email=email,
         phone=phone,
+        merchant_id=merchant_id,
         exclude_client_id=exclude_client_id,
     )
     return ClientAvailabilityResponse(**result)
@@ -85,6 +110,7 @@ def create_client(
     payload: ClientCreate,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:create"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientResponse:
     service = ClientService(db)
     client = service.create_client(
@@ -94,7 +120,7 @@ def create_client(
         email=str(payload.email),
         phone=payload.phone,
         source=payload.source.value,
-        merchant_id=payload.merchant_id,
+        merchant_id=payload.merchant_id or merchant_id,
     )
     db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
@@ -104,9 +130,10 @@ def create_client(
 def get_client_stats(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientStatsResponse:
     service = ClientService(db)
-    return ClientStatsResponse(**service.get_client_stats(current_user))
+    return ClientStatsResponse(**service.get_client_stats(current_user, merchant_id=merchant_id))
 
 
 @router.get("/{client_id}/signed-contract")
@@ -114,11 +141,14 @@ def download_client_signed_contract(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
 ) -> StreamingResponse:
     """Descarga el contrato DocuSign firmado vinculado al cliente (onboarding / ventas)."""
     service = ClientService(db)
     if not service.user_can_view_approved_client_workspace(current_user, client_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
     content, filename = DocusignService(db).get_client_signed_contract(current_user, client_id)
     return StreamingResponse(
         iter([content]),
@@ -132,9 +162,10 @@ def get_client(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientDetailResponse:
     service = ClientService(db)
-    if not service.user_can_access_client(current_user, client_id):
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.get_client_detail(client_id)
     if client is None:
@@ -194,9 +225,10 @@ def update_client(
     payload: ClientUpdate,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:update"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientResponse:
     service = ClientService(db)
-    client = service.get_client_for_user(current_user, client_id)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.update_client(actor=current_user, client=client, **payload.model_dump(exclude_unset=True))
@@ -209,9 +241,10 @@ def resubmit_client(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:update"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientResponse:
     service = ClientService(db)
-    client = service.get_client_for_user(current_user, client_id)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.resubmit_for_review(actor=current_user, client=client)
@@ -224,8 +257,11 @@ def reject_client(
     payload: ClientReject,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientResponse:
     service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = db.get(Client, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -238,8 +274,9 @@ def delete_client(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:delete"))],
+    merchant_id: ActiveMerchantId,
 ) -> MessageResponse:
-    return _delete_client(db, current_user, client_id)
+    return _delete_client(db, current_user, client_id, merchant_id)
 
 
 @router.post("/{client_id}/delete", response_model=MessageResponse)
@@ -247,12 +284,20 @@ def delete_client_action(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:delete"))],
+    merchant_id: ActiveMerchantId,
 ) -> MessageResponse:
-    return _delete_client(db, current_user, client_id)
+    return _delete_client(db, current_user, client_id, merchant_id)
 
 
-def _delete_client(db: DbSession, current_user: User, client_id: int) -> MessageResponse:
+def _delete_client(
+    db: DbSession,
+    current_user: User,
+    client_id: int,
+    merchant_id: int,
+) -> MessageResponse:
     service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = db.get(Client, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -266,8 +311,11 @@ def approve_client(
     payload: ClientApprove,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientApproveResponse:
     service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = db.get(Client, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -283,15 +331,16 @@ def assign_client_advisor(
     payload: ClientAssignAdvisor,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+    merchant_id: ActiveMerchantId,
 ) -> AdvisorBrief:
     if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN"):
         raise HTTPException(status_code=403, detail="Solo onboarding puede gestionar el asesor asignado")
 
     service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client = service.get_client_detail(client_id)
     if client is None:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    if not service.user_can_access_client(current_user, client_id):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
     advisor = service.reassign_advisor(
@@ -312,9 +361,10 @@ def reset_portal_password(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+    merchant_id: ActiveMerchantId,
 ) -> ClientPortalPasswordResponse:
     service = ClientService(db)
-    client = service.get_client_for_user(current_user, client_id)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     email, temp_password, portal_login_url = service.reset_portal_password(

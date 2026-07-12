@@ -15,7 +15,7 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
 )
 from app.schemas.common import MessageResponse
-from app.schemas.user import UserMeResponse
+from app.schemas.user import SetActiveMerchantRequest, UserMeResponse, UserProfileUpdate
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
@@ -67,6 +67,24 @@ def logout(payload: RefreshTokenRequest, db: DbSession) -> MessageResponse:
 @router.get("/me", response_model=UserMeResponse)
 def get_me(current_user: CurrentUser, db: DbSession) -> UserMeResponse:
     return AuthService(db).get_me(current_user)
+
+
+@router.patch("/me", response_model=UserMeResponse)
+def update_me(
+    payload: UserProfileUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> UserMeResponse:
+    return AuthService(db).update_profile(current_user, payload)
+
+
+@router.put("/me/active-merchant", response_model=UserMeResponse)
+def set_active_merchant(
+    payload: SetActiveMerchantRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> UserMeResponse:
+    return AuthService(db).set_active_merchant(current_user, payload.merchant_id)
 
 
 @router.post("/change-password", response_model=MessageResponse)

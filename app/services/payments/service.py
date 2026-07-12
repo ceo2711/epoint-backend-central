@@ -93,9 +93,20 @@ class PaymentService:
             created_by_name=created_by_name,
         )
 
-    def list_links(self, user: User, *, created_by_user_id: int | None = None) -> list[PaymentLinkResponse]:
+    def list_links(
+        self,
+        user: User,
+        *,
+        merchant_id: int,
+        created_by_user_id: int | None = None,
+    ) -> list[PaymentLinkResponse]:
         self.ensure_access(user)
-        stmt = select(PaymentLink).options(joinedload(PaymentLink.created_by)).order_by(PaymentLink.created_at.desc())
+        stmt = (
+            select(PaymentLink)
+            .options(joinedload(PaymentLink.created_by))
+            .where(PaymentLink.merchant_id == merchant_id)
+            .order_by(PaymentLink.created_at.desc())
+        )
         if user.role.code == "SALES_REP":
             stmt = stmt.where(PaymentLink.created_by_user_id == user.id)
         elif created_by_user_id is not None:
@@ -103,7 +114,7 @@ class PaymentService:
         rows = self.db.execute(stmt).unique().scalars().all()
         return [self._to_response(row) for row in rows]
 
-    def create_link(self, user: User, payload: PaymentLinkCreate) -> PaymentLinkResponse:
+    def create_link(self, user: User, payload: PaymentLinkCreate, *, merchant_id: int) -> PaymentLinkResponse:
         self.ensure_access(user)
         if not self.settings.payments_enabled:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Los pagos están deshabilitados")
@@ -144,6 +155,7 @@ class PaymentService:
         link = PaymentLink(
             public_token=token,
             created_by_user_id=user.id,
+            merchant_id=merchant_id,
             customer_first_name=payload.customer_first_name.strip(),
             customer_last_name=payload.customer_last_name.strip(),
             customer_email=str(payload.customer_email).strip().lower(),
@@ -162,9 +174,9 @@ class PaymentService:
         self.db.refresh(link)
         return self._to_response(link)
 
-    def cancel_link(self, user: User, link_id: int) -> PaymentLinkResponse:
+    def cancel_link(self, user: User, link_id: int, *, merchant_id: int) -> PaymentLinkResponse:
         self.ensure_access(user)
-        link = self._get_link_for_user(user, link_id)
+        link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
         if link.status != PaymentLinkStatus.PENDING.value:
             raise HTTPException(status_code=400, detail="Solo se pueden cancelar links pendientes")
         link.status = PaymentLinkStatus.CANCELLED.value
@@ -206,9 +218,11 @@ class PaymentService:
         user: User,
         link_id: int,
         payload: PaymentRegisterClientRequest,
+        *,
+        merchant_id: int,
     ) -> tuple[int, str]:
         self.ensure_access(user)
-        link = self._get_link_for_user(user, link_id)
+        link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
         if link.status != PaymentLinkStatus.PAID.value:
             raise HTTPException(status_code=400, detail="El pago debe estar completado antes de registrar al cliente")
         if link.client_id is not None:
@@ -219,6 +233,7 @@ class PaymentService:
         except ValueError:
             source = ClientSource.OTHER.value
 
+        resolved_merchant_id = payload.merchant_id or link.merchant_id or merchant_id
         client_service = ClientService(self.db)
         client = client_service.create_client(
             actor=user,
@@ -227,7 +242,7 @@ class PaymentService:
             email=link.customer_email,
             phone=link.customer_phone,
             source=source,
-            merchant_id=payload.merchant_id,
+            merchant_id=resolved_merchant_id,
         )
         link.client_id = client.id
         link.client_registered_at = datetime.now(timezone.utc)
@@ -265,13 +280,13 @@ class PaymentService:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
         return link
 
-    def _get_link_for_user(self, user: User, link_id: int) -> PaymentLink:
+    def _get_link_for_user(self, user: User, link_id: int, *, merchant_id: int) -> PaymentLink:
         link = self.db.execute(
             select(PaymentLink)
             .options(joinedload(PaymentLink.created_by))
             .where(PaymentLink.id == link_id)
         ).unique().scalar_one_or_none()
-        if link is None:
+        if link is None or link.merchant_id != merchant_id:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
         if user.role.code == "SALES_REP" and link.created_by_user_id != user.id:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
