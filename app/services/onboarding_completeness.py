@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session
 from app.models.address import Address
 from app.models.client import Client
 from app.models.document import Document
-from app.models.enums import ClientStatus, DocumentVerificationStatus
+from app.models.enums import ClientStatus
 from app.models.role import Role
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.services.document_requirements import (
     ADDRESS_GAP_KEY,
     IDENTITY_GAP_KEY,
-    document_upload_gaps,
+    document_reminder_gaps,
 )
 
 REMINDER_ELIGIBLE_STATUSES = frozenset(
@@ -51,12 +51,37 @@ DOCUMENT_TYPE_LABELS_ES: dict[str, str] = {
     ADDRESS_GAP_KEY: "Comprobante de domicilio (Utility Bill o Bank Statement)",
 }
 
+DOCUMENT_TYPE_LABELS_EN: dict[str, str] = {
+    "SSN_CARD": "SSN card",
+    "DRIVERS_LICENSE_FRONT": "Driver's license (front)",
+    "DRIVERS_LICENSE_BACK": "Driver's license (back)",
+    "UTILITY_BILL": "Utility bill",
+    "BANK_STATEMENT": "Bank statement",
+    "PASSPORT": "Passport",
+    "GREEN_CARD": "Green card",
+    "WORK_PERMIT": "Work permit",
+    IDENTITY_GAP_KEY: (
+        "Identity document (driver's license front and back, passport, green card, or work permit)"
+    ),
+    ADDRESS_GAP_KEY: "Proof of address (utility bill or bank statement)",
+}
+
 PROFILE_FIELD_LABELS_ES: dict[str, str] = {
     "ssn": "SSN / Seguro Social",
     "date_of_birth": "Fecha de nacimiento",
     "address": "Dirección actual",
     "vehicle": "Datos del vehículo",
 }
+
+PROFILE_FIELD_LABELS_EN: dict[str, str] = {
+    "ssn": "SSN / Social Security Number",
+    "date_of_birth": "Date of birth",
+    "address": "Current address",
+    "vehicle": "Vehicle information",
+}
+
+REJECTED_SUFFIX_ES = " (rechazado — volver a subir)"
+REJECTED_SUFFIX_EN = " (rejected — please re-upload)"
 
 
 @dataclass(slots=True)
@@ -69,50 +94,73 @@ class OnboardingReminderGaps:
     def needs_reminder(self) -> bool:
         return bool(self.profile_items or self.missing_documents or self.rejected_documents)
 
-    def all_pending_labels(self) -> list[str]:
+    def all_pending_labels(self, *, locale: str = "es") -> list[str]:
         items = list(self.profile_items)
         items.extend(self.missing_documents)
         items.extend(self.rejected_documents)
         return items
 
 
-def _document_label(doc_type: str) -> str:
-    return DOCUMENT_TYPE_LABELS_ES.get(doc_type, doc_type.replace("_", " ").title())
+def _normalize_locale(locale: str | None) -> str:
+    if locale and locale.lower().startswith("en"):
+        return "en"
+    return "es"
 
 
-def analyze_onboarding_gaps(db: Session, client: Client) -> OnboardingReminderGaps:
+def _document_labels(locale: str) -> dict[str, str]:
+    if locale == "en":
+        return DOCUMENT_TYPE_LABELS_EN
+    return DOCUMENT_TYPE_LABELS_ES
+
+
+def _profile_labels(locale: str) -> dict[str, str]:
+    if locale == "en":
+        return PROFILE_FIELD_LABELS_EN
+    return PROFILE_FIELD_LABELS_ES
+
+
+def _document_label(doc_type: str, locale: str = "es") -> str:
+    labels = _document_labels(locale)
+    return labels.get(doc_type, doc_type.replace("_", " ").title())
+
+
+def _rejected_label(doc_type: str, locale: str = "es") -> str:
+    suffix = REJECTED_SUFFIX_EN if locale == "en" else REJECTED_SUFFIX_ES
+    return f"{_document_label(doc_type, locale)}{suffix}"
+
+
+def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") -> OnboardingReminderGaps:
+    locale = _normalize_locale(locale)
+    profile_labels = _profile_labels(locale)
     gaps = OnboardingReminderGaps()
 
     if not client.ssn_encrypted:
-        gaps.profile_items.append(PROFILE_FIELD_LABELS_ES["ssn"])
+        gaps.profile_items.append(profile_labels["ssn"])
     if not client.date_of_birth:
-        gaps.profile_items.append(PROFILE_FIELD_LABELS_ES["date_of_birth"])
+        gaps.profile_items.append(profile_labels["date_of_birth"])
 
     current_addr = db.execute(
         select(Address).where(Address.client_id == client.id, Address.type == "CURRENT")
     ).scalar_one_or_none()
     if current_addr is None:
-        gaps.profile_items.append(PROFILE_FIELD_LABELS_ES["address"])
+        gaps.profile_items.append(profile_labels["address"])
 
     vehicle = db.execute(
         select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
     ).scalar_one_or_none()
     if vehicle is None:
-        gaps.profile_items.append(PROFILE_FIELD_LABELS_ES["vehicle"])
+        gaps.profile_items.append(profile_labels["vehicle"])
 
     documents = list(
         db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
     )
-    uploaded_types = {doc.type for doc in documents}
+    missing_types, rejected_types = document_reminder_gaps(documents)
 
-    for gap_type in document_upload_gaps(uploaded_types):
-        gaps.missing_documents.append(_document_label(gap_type))
+    for gap_type in missing_types:
+        gaps.missing_documents.append(_document_label(gap_type, locale))
 
-    for doc in documents:
-        if doc.verification_status == DocumentVerificationStatus.RECHAZADO.value:
-            gaps.rejected_documents.append(
-                f"{_document_label(doc.type)} (rechazado — volver a subir)"
-            )
+    for doc_type in rejected_types:
+        gaps.rejected_documents.append(_rejected_label(doc_type, locale))
 
     return gaps
 

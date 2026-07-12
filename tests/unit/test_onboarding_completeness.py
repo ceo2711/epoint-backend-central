@@ -85,14 +85,7 @@ def test_analyze_gaps_all_profile_and_documents_missing(db_session):
     assert gaps.needs_reminder is True
 
 
-def test_analyze_gaps_complete_client(db_session):
-    client = _make_client(
-        ssn_encrypted="enc",
-        date_of_birth=date(1990, 5, 10),
-    )
-    db_session.add(client)
-    db_session.flush()
-
+def _seed_complete_profile(db_session, client: Client) -> None:
     db_session.add(
         Address(
             client_id=client.id,
@@ -106,27 +99,111 @@ def test_analyze_gaps_complete_client(db_session):
     db_session.add(
         Vehicle(client_id=client.id, order=1, model="Toyota", year=2020, color="Blue")
     )
+
+
+def _add_document(db_session, client: Client, doc_type: str, status: str) -> None:
+    db_session.add(
+        Document(
+            client_id=client.id,
+            type=doc_type,
+            storage_key=f"key/{doc_type}",
+            original_filename=f"{doc_type}.pdf",
+            mime_type="application/pdf",
+            verification_status=status,
+        )
+    )
+
+
+def test_analyze_gaps_complete_client(db_session):
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    _seed_complete_profile(db_session, client)
     for doc_type in (
         "SSN_CARD",
         "DRIVERS_LICENSE_FRONT",
         "DRIVERS_LICENSE_BACK",
         "UTILITY_BILL",
     ):
-        db_session.add(
-            Document(
-                client_id=client.id,
-                type=doc_type,
-                storage_key=f"key/{doc_type}",
-                original_filename=f"{doc_type}.pdf",
-                mime_type="application/pdf",
-                verification_status=DocumentVerificationStatus.APROBADO.value,
-            )
-        )
+        _add_document(db_session, client, doc_type, DocumentVerificationStatus.APROBADO.value)
     db_session.commit()
 
     gaps = analyze_onboarding_gaps(db_session, client)
 
     assert gaps.needs_reminder is False
+
+
+def test_analyze_gaps_ignores_rejected_license_when_passport_uploaded(db_session):
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    _seed_complete_profile(db_session, client)
+    _add_document(db_session, client, "SSN_CARD", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "DRIVERS_LICENSE_FRONT", DocumentVerificationStatus.RECHAZADO.value)
+    _add_document(db_session, client, "DRIVERS_LICENSE_BACK", DocumentVerificationStatus.RECHAZADO.value)
+    _add_document(db_session, client, "PASSPORT", DocumentVerificationStatus.PENDIENTE.value)
+    _add_document(db_session, client, "UTILITY_BILL", DocumentVerificationStatus.APROBADO.value)
+    db_session.commit()
+
+    gaps = analyze_onboarding_gaps(db_session, client)
+
+    assert gaps.needs_reminder is False
+    assert gaps.rejected_documents == []
+    assert not any("Licencia" in item for item in gaps.all_pending_labels())
+
+
+def test_analyze_gaps_passport_path_complete_with_bank_statement(db_session):
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    _seed_complete_profile(db_session, client)
+    _add_document(db_session, client, "SSN_CARD", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "PASSPORT", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "BANK_STATEMENT", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "UTILITY_BILL", DocumentVerificationStatus.PENDIENTE.value)
+    db_session.commit()
+
+    gaps = analyze_onboarding_gaps(db_session, client)
+
+    assert gaps.needs_reminder is False
+
+
+def test_analyze_gaps_pending_address_does_not_trigger_reminder(db_session):
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    _seed_complete_profile(db_session, client)
+    _add_document(db_session, client, "SSN_CARD", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "PASSPORT", DocumentVerificationStatus.APROBADO.value)
+    _add_document(db_session, client, "UTILITY_BILL", DocumentVerificationStatus.PENDIENTE.value)
+    db_session.commit()
+
+    gaps = analyze_onboarding_gaps(db_session, client)
+
+    assert gaps.needs_reminder is False
+
+
+def test_analyze_gaps_english_labels(db_session):
+    client = _make_client()
+    db_session.add(client)
+    db_session.commit()
+
+    gaps = analyze_onboarding_gaps(db_session, client, locale="en")
+
+    assert "SSN / Social Security Number" in gaps.profile_items
+    assert any("SSN card" in item for item in gaps.missing_documents)
 
 
 def test_analyze_gaps_rejected_document(db_session):
@@ -224,3 +301,27 @@ def test_reminder_eligible_statuses_cover_onboarding_flow():
 def test_reminder_excluded_statuses_block_inactive_clients():
     assert ClientStatus.INACTIVO.value in REMINDER_EXCLUDED_STATUSES
     assert ClientStatus.RECHAZADO.value in REMINDER_EXCLUDED_STATUSES
+
+
+def test_onboarding_reminder_templates_support_english():
+    from app.services.notifications.templates import (
+        onboarding_reminder_email_body,
+        onboarding_reminder_whatsapp_body,
+    )
+
+    email = onboarding_reminder_email_body(
+        first_name="John",
+        pending_items=["SSN card"],
+        portal_login_url="https://portal.example.com",
+        locale="en",
+    )
+    whatsapp = onboarding_reminder_whatsapp_body(
+        first_name="John",
+        pending_items=["SSN card"],
+        portal_login_url="https://portal.example.com",
+        locale="en",
+    )
+
+    assert "Hi John" in email
+    assert "SSN card" in email
+    assert "Hi John" in whatsapp

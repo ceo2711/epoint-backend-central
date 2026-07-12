@@ -82,8 +82,27 @@ def onboarding_reminder_email_body(
     first_name: str,
     pending_items: list[str],
     portal_login_url: str,
+    locale: str = "es",
 ) -> str:
     items_block = "\n".join(f"  • {item}" for item in pending_items)
+    if locale.lower().startswith("en"):
+        return f"""Hi {first_name},
+
+We're writing from ePoint to remind you that you still have pending items to complete your onboarding.
+
+To continue, sign in to the portal and complete the following:
+
+{items_block}
+
+Client portal: {portal_login_url}
+
+If you already uploaded a document, it may be under review. If it was rejected, please upload it again from the documents section.
+
+If you have any questions, reply to this email or contact your ePoint advisor.
+
+Best regards,
+ePoint Team
+"""
     return f"""Hola {first_name},
 
 Te escribimos desde ePoint para recordarte amablemente que aún tenés pendiente completar tu onboarding en la plataforma.
@@ -108,8 +127,16 @@ def onboarding_reminder_whatsapp_body(
     first_name: str,
     pending_items: list[str],
     portal_login_url: str,
+    locale: str = "es",
 ) -> str:
     items_block = "\n".join(f"• {item}" for item in pending_items)
+    if locale.lower().startswith("en"):
+        return (
+            f"Hi {first_name}, this is a reminder from ePoint that you still have pending onboarding items.\n\n"
+            f"Pending:\n{items_block}\n\n"
+            f"Sign in to the portal:\n{portal_login_url}\n\n"
+            "If a document was rejected, please upload it again from the platform."
+        )
     return (
         f"Hola {first_name}, te recordamos desde ePoint que aún tenés pendiente completar tu onboarding.\n\n"
         f"Pendiente:\n{items_block}\n\n"
