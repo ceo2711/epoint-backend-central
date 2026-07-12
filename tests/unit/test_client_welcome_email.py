@@ -39,3 +39,6 @@ def test_send_client_welcome_email_via_resend(mock_send: MagicMock, monkeypatch)
     assert call_args["to"] == ["cliente@ejemplo.com"]
     assert call_args["subject"] == "¡Bienvenido a ePoint!"
     assert "Juan" in call_args["text"]
+    assert "html" in call_args
+    assert "Juan" in call_args["html"]
+    assert "Ingresar al portal" in call_args["html"]

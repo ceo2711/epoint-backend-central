@@ -44,10 +44,11 @@ def send_resend_text_email(
     intended_recipient: str,
     subject: str,
     text: str,
+    html: str | None = None,
     settings: Settings | None = None,
     log_context: str = "",
 ) -> bool:
-    """Envía un email de texto plano. No lanza excepciones."""
+    """Envía email vía Resend (texto plano y HTML opcional). No lanza excepciones."""
     settings = settings or get_settings()
     recipient, body_prefix, original = resolve_email_recipient(intended_recipient, settings)
 
@@ -72,17 +73,19 @@ def send_resend_text_email(
         import resend
 
         resend.api_key = settings.resend_api_key
-        response: Any = resend.Emails.send(
-            {
-                "from": format_from_address(
-                    email=settings.email_from,
-                    name=settings.email_from_name,
-                ),
-                "to": [recipient],
-                "subject": subject,
-                "text": body_prefix + text,
-            }
-        )
+        payload: dict[str, Any] = {
+            "from": format_from_address(
+                email=settings.email_from,
+                name=settings.email_from_name,
+            ),
+            "to": [recipient],
+            "subject": subject,
+            "text": body_prefix + text,
+        }
+        if html:
+            payload["html"] = body_prefix + html
+
+        response: Any = resend.Emails.send(payload)
         logger.info(
             "Email enviado a %s (destino original=%s%s, resend_id=%s)",
             recipient,
