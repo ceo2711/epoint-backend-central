@@ -8,6 +8,7 @@ from app.services.document_requirements import (
     SSN_CARD,
     UTILITY_BILL,
     all_required_documents_approved,
+    document_reminder_gaps,
     document_upload_gaps,
     is_upload_requirement_met,
     resolve_required_upload_types,
@@ -62,3 +63,92 @@ def test_approval_only_for_active_required_set():
         SimpleNamespace(type=UTILITY_BILL, verification_status="PENDIENTE"),
     ]
     assert all_required_documents_approved(docs) is True
+
+
+def _doc(doc_type: str, status: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(type=doc_type, verification_status=status)
+
+
+def test_reminder_gaps_ignore_rejected_license_when_passport_pending():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "RECHAZADO"),
+        _doc(LICENSE_BACK, "RECHAZADO"),
+        _doc(PASSPORT, "PENDIENTE"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+
+
+def test_reminder_gaps_ignore_rejected_license_when_passport_approved():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "RECHAZADO"),
+        _doc(LICENSE_BACK, "RECHAZADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(BANK_STATEMENT, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+
+
+def test_reminder_gaps_ignore_pending_utility_when_bank_approved():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "PENDIENTE"),
+        _doc(BANK_STATEMENT, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+
+
+def test_reminder_gaps_show_identity_group_when_license_rejected_without_alternative():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "RECHAZADO"),
+        _doc(LICENSE_BACK, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == [IDENTITY_GAP_KEY]
+    assert rejected == []
+
+
+def test_reminder_gaps_show_rejected_passport_when_only_identity_upload():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(PASSPORT, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == [PASSPORT]
+
+
+def test_reminder_gaps_show_missing_license_back_when_front_pending():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "PENDIENTE"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == [LICENSE_BACK]
+    assert rejected == []
+
+
+def test_reminder_gaps_show_identity_group_when_license_front_rejected_and_back_missing():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected = document_reminder_gaps(docs)
+    assert missing == [IDENTITY_GAP_KEY]
+    assert rejected == []
