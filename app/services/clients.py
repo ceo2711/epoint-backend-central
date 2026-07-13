@@ -26,7 +26,7 @@ from app.core.phone import phones_match
 from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_email
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
-from app.services.notifications.templates import client_approved_in_app_body
+from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
 
 if TYPE_CHECKING:
     from app.models.board import Board, BoardTemplate
@@ -620,7 +620,7 @@ class ClientService:
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_APPROVED.value,
             users=[portal_user],
-            title=welcome_title,
+            title=client_approved_in_app_title(),
             body=client_approved_in_app_body(first_name=client.first_name),
             payload={
                 "client_id": client.id,
@@ -914,6 +914,30 @@ class ClientService:
         self.db.delete(client)
         self.db.commit()
 
+    def bulk_delete_clients(self, *, actor: User, client_ids: list[int]) -> dict[str, list]:
+        deleted_ids: list[int] = []
+        failures: list[dict[str, int | str]] = []
+        unique_ids = list(dict.fromkeys(client_ids))
+
+        for client_id in unique_ids:
+            if not self.user_can_access_client(actor, client_id, merchant_id=None):
+                failures.append({"client_id": client_id, "reason": "No autorizado"})
+                continue
+            client = self.db.get(Client, client_id)
+            if client is None:
+                failures.append({"client_id": client_id, "reason": "Cliente no encontrado"})
+                continue
+            try:
+                self.delete_client(actor=actor, client=client)
+                deleted_ids.append(client_id)
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+                failures.append({"client_id": client_id, "reason": detail})
+            except Exception:
+                failures.append({"client_id": client_id, "reason": "No se pudo eliminar el cliente"})
+
+        return {"deleted_ids": deleted_ids, "failures": failures}
+
     def _get_onboarding_team(self) -> list[User]:
         return list(
             self.db.execute(
@@ -1015,7 +1039,12 @@ class ClientService:
         ).one_or_none()
         if row is None:
             return False
-        if merchant_id is not None and row.merchant_id != merchant_id:
+        client_merchant_id = row.merchant_id
+        merchant_ctx = MerchantContextService(self.db)
+        if client_merchant_id is not None:
+            if not merchant_ctx.user_can_access_merchant(user, client_merchant_id):
+                return False
+        elif merchant_id is not None and not merchant_ctx.user_can_access_merchant(user, merchant_id):
             return False
         if user.role.code == "CLIENT":
             return user.client_id == client_id

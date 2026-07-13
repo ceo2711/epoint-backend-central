@@ -8,6 +8,10 @@ El WhatsApp de bienvenida se envía vía
 """
 
 
+def client_approved_in_app_title() -> str:
+    return "Tu cuenta fue aprobada"
+
+
 def client_approved_in_app_body(*, first_name: str) -> str:
     return (
         f"Hola {first_name}, tu cuenta fue aprobada. "

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -64,3 +64,33 @@ class TestUserCanViewApprovedClientWorkspace:
             )
             is True
         )
+
+
+class TestUserCanAccessClientMerchantScope:
+    def _client_row(self, *, client_id: int = 314, merchant_id: int = 2, registered_by: int = 99):
+        row = MagicMock()
+        row.id = client_id
+        row.merchant_id = merchant_id
+        row.registered_by_user_id = registered_by
+        return row
+
+    def test_onboarding_manager_can_access_client_when_active_merchant_differs(self):
+        db = MagicMock()
+        db.execute.return_value.one_or_none.return_value = self._client_row()
+        service = ClientService(db)
+        user = _user("ONBOARDING_MANAGER")
+
+        with patch("app.services.clients.MerchantContextService") as merchant_ctx_cls:
+            merchant_ctx_cls.return_value.user_can_access_merchant.return_value = True
+            assert service.user_can_access_client(user, 314, merchant_id=1) is True
+            merchant_ctx_cls.return_value.user_can_access_merchant.assert_called_once_with(user, 2)
+
+    def test_denies_when_user_cannot_access_client_merchant(self):
+        db = MagicMock()
+        db.execute.return_value.one_or_none.return_value = self._client_row()
+        service = ClientService(db)
+        user = _user("ONBOARDING_MANAGER")
+
+        with patch("app.services.clients.MerchantContextService") as merchant_ctx_cls:
+            merchant_ctx_cls.return_value.user_can_access_merchant.return_value = False
+            assert service.user_can_access_client(user, 314, merchant_id=1) is False

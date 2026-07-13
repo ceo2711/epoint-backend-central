@@ -13,6 +13,8 @@ from app.schemas.client import (
     ClientApproveResponse,
     ClientAssignAdvisor,
     ClientAvailabilityResponse,
+    ClientBulkDeleteRequest,
+    ClientBulkDeleteResponse,
     ClientCreate,
     ClientDetailResponse,
     ClientPortalPasswordResponse,
@@ -134,6 +136,17 @@ def get_client_stats(
 ) -> ClientStatsResponse:
     service = ClientService(db)
     return ClientStatsResponse(**service.get_client_stats(current_user, merchant_id=merchant_id))
+
+
+@router.post("/bulk-delete", response_model=ClientBulkDeleteResponse)
+def bulk_delete_clients(
+    payload: ClientBulkDeleteRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:delete"))],
+) -> ClientBulkDeleteResponse:
+    service = ClientService(db)
+    result = service.bulk_delete_clients(actor=current_user, client_ids=payload.client_ids)
+    return ClientBulkDeleteResponse(**result)
 
 
 @router.get("/{client_id}/signed-contract")

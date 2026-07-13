@@ -76,6 +76,32 @@ merchant: db-studio
     assert blocks[0].draft["email"] == "juan@mail.com"
 
 
+INLINE_BULK_MESSAGE = """
+Esta es la informacion:
+
+Cliente 1 Datos personales Nombre completo: Alexis Antonio Guanique Diaz Email: guaniqued@gmail.com Numero de telefono: 8132957406 merchant: epoint-credits
+
+Cliente 2 Datos personales Nombre completo: Valentina Sofía Herrera Campos Email: vherrera.pruebas28@gmail.com Numero de telefono: 6893724150 merchant: epoint-credits
+
+Cliente 3 Datos personales Nombre completo: Matías Emanuel Correa Delgado Email: mcorrea.demo53@gmail.com Numero de telefono: 9546218374 merchant: epoint-credits
+"""
+
+
+def test_parse_inline_cliente_blocks(merchant):
+    merchant.code = "epoint-credits"
+    merchant.name = "Epoint Credits"
+    blocks = parse_bulk_registration_blocks(INLINE_BULK_MESSAGE, [merchant])
+    assert len(blocks) == 3
+    assert blocks[0].draft["first_name"] == "Alexis"
+    assert blocks[0].draft["last_name"] == "Antonio Guanique Diaz"
+    assert blocks[0].draft["email"] == "guaniqued@gmail.com"
+    assert blocks[0].draft["phone"] == "8132957406"
+    assert blocks[0].draft["merchant_id"] == 3
+    assert blocks[1].draft["email"] == "vherrera.pruebas28@gmail.com"
+    assert blocks[2].draft["phone"] == "9546218374"
+    assert blocks[0].errors == []
+
+
 def test_bulk_register_saves_first_and_reports_duplicate_failures(merchant):
     from fastapi import HTTPException
 

@@ -223,3 +223,17 @@ class ClientStatsResponse(BaseModel):
     onboarding_in_progress: int
     completed: int
     total: int
+
+
+class ClientBulkDeleteRequest(BaseModel):
+    client_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class ClientBulkDeleteFailure(BaseModel):
+    client_id: int
+    reason: str
+
+
+class ClientBulkDeleteResponse(BaseModel):
+    deleted_ids: list[int]
+    failures: list[ClientBulkDeleteFailure] = Field(default_factory=list)
