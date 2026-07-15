@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class PaymentProvider(str, enum.Enum):
     STRIPE = "stripe"
     AUTHORIZE = "authorize"
+    PAYPAL = "paypal"
 
 
 class PaymentLinkStatus(str, enum.Enum):

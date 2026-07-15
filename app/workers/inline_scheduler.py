@@ -12,19 +12,27 @@ logger = logging.getLogger(__name__)
 _start_lock = threading.Lock()
 _scheduler_thread: threading.Thread | None = None
 _scheduler_stop: threading.Event | None = None
+STARTUP_DELAY_SECONDS = 90
 
 
 def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
     from app.workers.onboarding_reminders import run_onboarding_reminders_job
 
     logger.info(
-        "Recordatorios de onboarding activos — primer ciclo al iniciar, luego cada %s min",
+        "Recordatorios de onboarding activos — primer ciclo en %s s, luego cada %s min",
+        STARTUP_DELAY_SECONDS,
         interval_minutes,
     )
+    if stop_event.wait(STARTUP_DELAY_SECONDS):
+        return
     while not stop_event.is_set():
+        if stop_event.is_set():
+            break
         try:
-            run_onboarding_reminders_job()
+            run_onboarding_reminders_job(stop_event=stop_event)
         except Exception:
+            if stop_event.is_set():
+                break
             logger.exception("Error en ciclo de recordatorios onboarding")
 
         if stop_event.wait(interval_minutes * 60):
@@ -69,4 +77,9 @@ def stop_onboarding_reminder_scheduler() -> None:
         _scheduler_stop = None
 
     if thread is not None and thread.is_alive():
-        thread.join(timeout=5)
+        thread.join(timeout=2)
+        if thread.is_alive():
+            logger.warning(
+                "El scheduler de recordatorios sigue activo (p. ej. esperando la BD); "
+                "se abortará al cerrar el proceso."
+            )

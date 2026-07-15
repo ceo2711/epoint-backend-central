@@ -105,9 +105,9 @@ class Settings(BaseSettings):
 
     # Pagos — general
     payments_enabled: bool = True
-    payments_default_provider: str = "stripe"
+    payments_default_provider: str = "authorize"
 
-    # Pagos — Stripe
+    # Pagos — Stripe (legacy, no expuesto en UI)
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
@@ -117,6 +117,12 @@ class Settings(BaseSettings):
     authorize_transaction_key: str = ""
     authorize_signature_key: str = ""
     authorize_environment: str = "sandbox"
+
+    # Pagos — PayPal
+    paypal_client_id: str = ""
+    paypal_client_secret: str = ""
+    paypal_webhook_id: str = ""
+    paypal_environment: str = "sandbox"
 
     @field_validator("docusign_private_key", mode="after")
     @classmethod
@@ -144,9 +150,32 @@ class Settings(BaseSettings):
         return bool(self.authorize_api_login_id.strip() and self.authorize_transaction_key.strip())
 
     @property
+    def paypal_configured(self) -> bool:
+        return bool(self.paypal_client_id.strip() and self.paypal_client_secret.strip())
+
+    @property
+    def authorize_environment_normalized(self) -> str:
+        env = self.authorize_environment.strip().lower()
+        return "production" if env in {"production", "prod", "live"} else "sandbox"
+
+    @property
+    def paypal_environment_normalized(self) -> str:
+        env = self.paypal_environment.strip().lower()
+        return "production" if env in {"production", "prod", "live"} else "sandbox"
+
+    @property
     def payments_default_provider_normalized(self) -> str:
         provider = self.payments_default_provider.strip().lower()
-        return provider if provider in ("stripe", "authorize") else "stripe"
+        if provider in ("authorize", "paypal"):
+            return provider
+        return "authorize"
+
+    @property
+    def payments_webhook_base_url(self) -> str | None:
+        base = (self.backend_public_url or "").strip().rstrip("/")
+        if not base:
+            return None
+        return f"{base}{self.api_prefix}/payments/webhooks"
 
     @field_validator("database_url", mode="before")
     @classmethod

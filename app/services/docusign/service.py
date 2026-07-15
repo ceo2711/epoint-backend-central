@@ -49,6 +49,7 @@ class DocusignService:
         self.db = db
         self.settings = get_settings()
         self.notifications = NotificationService(db)
+        self._pending_in_app_notifications: list[Notification] = []
 
     @staticmethod
     def ensure_access(actor: User) -> None:
@@ -654,7 +655,7 @@ class DocusignService:
         row.completion_notified_at = notified_at
         self.db.flush()
 
-        self.notifications.notify(
+        created = self.notifications.notify(
             event_type=NotificationEventType.DOCUSIGN_ENVELOPE_COMPLETED.value,
             users=[recipient],
             title="Contrato firmado",
@@ -667,6 +668,7 @@ class DocusignService:
             },
             commit=False,
         )
+        self._pending_in_app_notifications.extend(created)
         return True
 
     def _process_completed_envelope(self, row: DocusignEnvelope, *, allow_notify: bool = True) -> bool:
@@ -722,11 +724,12 @@ class DocusignService:
     def _commit_docusign_changes(self) -> None:
         from app.services.notifications.hub import notification_hub
 
-        pending_in_app = [
-            obj
-            for obj in list(self.db.new)
-            if isinstance(obj, Notification) and obj.channel == "IN_APP" and obj.user_id is not None
-        ]
+        pending_in_app = list(self._pending_in_app_notifications)
+        self._pending_in_app_notifications.clear()
+        for obj in list(self.db.new):
+            if isinstance(obj, Notification) and obj.channel == "IN_APP" and obj.user_id is not None:
+                if obj not in pending_in_app:
+                    pending_in_app.append(obj)
         self.db.commit()
         for notification in pending_in_app:
             if notification.id is None:

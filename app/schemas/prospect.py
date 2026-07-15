@@ -137,6 +137,17 @@ class ProspectDetailResponse(ProspectResponse):
     payment_link: ProspectPaymentBrief | None = None
 
 
+class ProspectPipelineSummary(BaseModel):
+    """Pipeline de ventas para mostrar en detalle de cliente convertido."""
+
+    prospect_id: int
+    status: str
+    history: list[ProspectHistoryResponse] = Field(default_factory=list)
+    calendly_event: ProspectCalendlyBrief | None = None
+    docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)
+    payment_link: ProspectPaymentBrief | None = None
+
+
 class ProspectConvertResponse(BaseModel):
     prospect_id: int
     client_id: int

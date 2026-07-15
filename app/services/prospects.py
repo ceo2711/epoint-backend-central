@@ -56,6 +56,12 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ProspectStatus.LEAD_CERRADO.value: set(),
 }
 
+MEETING_COMPLETE_STATUSES = frozenset({
+    ProspectStatus.LEAD_CONTACTADO.value,
+    ProspectStatus.CONTRATO_ENVIADO.value,
+    ProspectStatus.PAGO_COMPLETADO.value,
+})
+
 
 class ProspectService:
     def __init__(self, db: Session) -> None:
@@ -319,6 +325,7 @@ class ProspectService:
         )
         self.db.commit()
         self.db.refresh(prospect)
+        self.try_auto_convert(prospect.id, actor=actor)
         return prospect
 
     def add_note(self, *, actor: User, prospect: Prospect, note: str) -> ProspectHistory:
@@ -581,7 +588,7 @@ class ProspectService:
         if not self._ready_for_conversion(prospect):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El prospecto debe tener contrato firmado y pago completado antes de convertirse",
+                detail="El prospecto debe tener reunión concretada, contrato firmado y pago completado antes de convertirse",
             )
 
         client_service = ClientService(self.db)
@@ -633,13 +640,17 @@ class ProspectService:
     def _ready_for_conversion(self, prospect: Prospect) -> bool:
         if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
             return False
-        if prospect.docusign_envelope_id is None or prospect.payment_link_id is None:
+        if prospect.calendly_event_id is None:
             return False
-        envelope = self.db.get(DocusignEnvelope, prospect.docusign_envelope_id)
+        if prospect.status not in MEETING_COMPLETE_STATUSES:
+            return False
+        if prospect.payment_link_id is None:
+            return False
         link = self.db.get(PaymentLink, prospect.payment_link_id)
-        if envelope is None or link is None:
+        if link is None or link.status != PaymentLinkStatus.PAID.value:
             return False
-        return envelope.status.lower() == "completed" and link.status == PaymentLinkStatus.PAID.value
+        envelopes = self.list_linked_envelopes(prospect)
+        return any(envelope.status.lower() == "completed" for envelope in envelopes)
 
     def _scoped_query(self, user: User, merchant_id: int | None, *, all_merchants: bool = False):
         query = select(Prospect)
@@ -655,6 +666,34 @@ class ProspectService:
         if user.role.code == "SALES_REP":
             query = query.where(Prospect.assigned_to_user_id == user.id)
         return query
+
+    def get_pipeline_for_client(
+        self,
+        user: User,
+        client_id: int,
+        *,
+        merchant_id: int,
+    ):
+        from app.serializers.prospect_pipeline import load_prospect_pipeline_for_client
+
+        prospect = self.db.execute(
+            select(Prospect)
+            .options(
+                joinedload(Prospect.calendly_event),
+                joinedload(Prospect.docusign_envelope),
+                joinedload(Prospect.payment_link),
+                joinedload(Prospect.history).joinedload(ProspectHistory.changed_by),
+            )
+            .where(Prospect.converted_client_id == client_id)
+            .limit(1)
+        ).unique().scalar_one_or_none()
+        if prospect is None:
+            return None
+        try:
+            self._get_prospect_for_user(user, prospect.id, merchant_id=merchant_id)
+        except HTTPException:
+            return None
+        return load_prospect_pipeline_for_client(self, prospect)
 
     def _get_prospect_for_user(
         self,

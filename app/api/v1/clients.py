@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 
-from app.api.deps import ActiveMerchantId, DbSession, require_permissions
+from app.api.deps import ActiveMerchantId, DbSession, get_user_permissions, require_permissions
 from app.models.client import Client
 from app.models.user import User
 from app.schemas.client import (
@@ -28,6 +28,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.serializers.client import client_to_response
 from app.services.clients import ClientService
 from app.services.merchant_context import MerchantContextService
+from app.services.prospects import ProspectService
 from app.services.documents import DocumentService
 from app.services.docusign.service import DocusignService
 
@@ -219,6 +220,13 @@ def get_client(
         if can_view_onboarding
         else [],
     )
+    user_perms = set(get_user_permissions(db, current_user))
+    if current_user.role.code == "ADMIN" or "prospects:read" in user_perms:
+        response.source_prospect = ProspectService(db).get_pipeline_for_client(
+            current_user,
+            client_id,
+            merchant_id=merchant_id,
+        )
     if not can_view_onboarding:
         response.date_of_birth = None
         response.has_ssn = False

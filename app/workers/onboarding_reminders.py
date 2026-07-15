@@ -13,9 +13,16 @@ logger = logging.getLogger(__name__)
 _job_lock = threading.Lock()
 
 
-def run_onboarding_reminders_job() -> dict:
+def run_onboarding_reminders_job(stop_event: threading.Event | None = None) -> dict:
+    if stop_event is not None and stop_event.is_set():
+        return _skipped_summary(skipped_concurrent=True)
+
     if not _job_lock.acquire(blocking=False):
         logger.info("Ciclo de recordatorios omitido: ya hay uno en ejecución en este proceso")
+        return _skipped_summary(skipped_concurrent=True)
+
+    if stop_event is not None and stop_event.is_set():
+        _job_lock.release()
         return _skipped_summary(skipped_concurrent=True)
 
     db = SessionLocal()

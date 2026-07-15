@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models.enums import ClientSource
 from app.schemas.common import ORMBase
+from app.schemas.prospect import ProspectPipelineSummary
 
 
 class MerchantBrief(ORMBase):
@@ -120,6 +121,7 @@ class ClientDetailResponse(ClientResponse):
     addresses: list["AddressResponse"] = []
     vehicles: list["VehicleResponse"] = []
     documents: list["DocumentBrief"] = []
+    source_prospect: ProspectPipelineSummary | None = None
 
 
 class ClientPortalPasswordResponse(BaseModel):

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from app.models.docusign_envelope import DocusignEnvelope
+from app.models.notification import Notification
 from app.models.user import User
 from app.services.docusign.service import DocusignService
 
@@ -45,10 +46,11 @@ class TestDocusignEnvelopeNotify:
         service = DocusignService(db)
         row = _envelope_row()
 
-        with patch.object(service.notifications, "notify") as notify_mock:
+        with patch.object(service.notifications, "notify", return_value=[MagicMock()]) as notify_mock:
             created = service._notify_envelope_completed(row)
 
         assert created is True
+        assert len(service._pending_in_app_notifications) == 1
         assert locked.completion_notified_at is not None
         assert row.completion_notified_at is not None
         db.flush.assert_called()
@@ -81,3 +83,25 @@ class TestDocusignEnvelopeNotify:
         notify_mock.assert_not_called()
         assert created is False
         assert locked.completion_notified_at is not None
+
+    def test_commit_publishes_notifications_after_flush(self):
+        db = MagicMock()
+        service = DocusignService(db)
+        notification = Notification(
+            id=None,
+            user_id=7,
+            event_type="DOCUSIGN_ENVELOPE_COMPLETED",
+            channel="IN_APP",
+            title="Contrato firmado",
+            body="Firmado",
+            payload={"envelope_id": 42},
+            status="SENT",
+        )
+        service._pending_in_app_notifications.append(notification)
+
+        with patch("app.services.notifications.hub.notification_hub.publish_in_app") as publish_mock:
+            service._commit_docusign_changes()
+
+        db.commit.assert_called_once()
+        db.refresh.assert_called_once_with(notification)
+        publish_mock.assert_called_once_with([notification])

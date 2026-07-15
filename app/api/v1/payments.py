@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import ActiveMerchantId, CurrentUser, DbSession, require_permissions
 from app.models.user import User
@@ -45,10 +45,20 @@ def create_payment_link(
     merchant_id: ActiveMerchantId,
     db: DbSession,
 ) -> PaymentLinkCreateResponse:
-    link = PaymentService(db).create_link(current_user, payload, merchant_id=merchant_id)
+    result = PaymentService(db).create_link(current_user, payload, merchant_id=merchant_id)
+    if result.email_sent:
+        message = "Link de pago generado y enviado por email al cliente."
+    elif payload.send_email:
+        message = (
+            "Link de pago generado. No se pudo enviar el email — "
+            "compartilo manualmente con el cliente."
+        )
+    else:
+        message = "Link de pago generado. Compartilo con el cliente para que complete el pago."
     return PaymentLinkCreateResponse(
-        link=link,
-        message="Link de pago generado. Compartilo con el cliente para que complete el pago.",
+        link=result.link,
+        message=message,
+        email_sent=result.email_sent,
     )
 
 
@@ -87,5 +97,27 @@ def get_public_payment_link(token: str, db: DbSession) -> PublicPaymentLinkRespo
 
 @router.post("/public/{token}/complete", response_model=PublicPaymentLinkResponse)
 def complete_public_payment_stub(token: str, db: DbSession) -> PublicPaymentLinkResponse:
-    """Completa el pago en modo stub (sin credenciales de Stripe/Authorize)."""
+    """Completa el pago en modo stub o confirma retorno PayPal."""
     return PaymentService(db).complete_public_payment(token)
+
+
+@router.post("/public/{token}/confirm-return", response_model=PublicPaymentLinkResponse)
+def confirm_payment_return(
+    token: str,
+    db: DbSession,
+    order_id: str | None = Query(None),
+) -> PublicPaymentLinkResponse:
+    """Confirma el pago al volver del checkout externo (PayPal)."""
+    return PaymentService(db).confirm_paypal_return(token, order_id=order_id)
+
+
+@router.post("/webhooks/paypal")
+async def paypal_webhook(request: Request, db: DbSession) -> dict[str, Any]:
+    payload = await request.json()
+    return PaymentService(db).handle_paypal_webhook(payload)
+
+
+@router.post("/webhooks/authorize")
+async def authorize_webhook(request: Request, db: DbSession) -> dict[str, Any]:
+    payload = await request.json()
+    return PaymentService(db).handle_authorize_webhook(payload)

@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
-PaymentProviderLiteral = Literal["stripe", "authorize"]
+PaymentProviderLiteral = Literal["authorize", "paypal", "stripe"]
 PaymentLinkStatusLiteral = Literal["pending", "paid", "expired", "cancelled"]
 
 
@@ -20,6 +20,7 @@ class PaymentConfigResponse(BaseModel):
     default_provider: PaymentProviderLiteral
     stub_mode: bool
     providers: list[PaymentProviderStatus]
+    webhook_base_url: str | None = None
 
 
 class PaymentConfigUpdate(BaseModel):
@@ -37,6 +38,7 @@ class PaymentLinkCreate(BaseModel):
     provider: PaymentProviderLiteral
     description: str | None = Field(default=None, max_length=2000)
     prospect_id: int | None = None
+    send_email: bool = True
 
 
 class PaymentLinkResponse(BaseModel):
@@ -67,6 +69,7 @@ class PaymentLinkResponse(BaseModel):
 class PaymentLinkCreateResponse(BaseModel):
     link: PaymentLinkResponse
     message: str
+    email_sent: bool = False
 
 
 class PublicPaymentLinkResponse(BaseModel):
@@ -80,6 +83,8 @@ class PublicPaymentLinkResponse(BaseModel):
     description: str | None
     stub_mode: bool
     can_pay: bool
+    checkout_url: str | None = None
+    provider_label: str | None = None
 
 
 class PaymentRegisterClientRequest(BaseModel):

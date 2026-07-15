@@ -153,6 +153,38 @@ def onboarding_reminder_whatsapp_body(
     )
 
 
+def payment_link_email_body(
+    *,
+    first_name: str,
+    amount_formatted: str,
+    payment_url: str,
+    description: str | None = None,
+    merchant_name: str | None = None,
+    provider_label: str | None = None,
+) -> str:
+    merchant_block = ""
+    if merchant_name:
+        merchant_block = f"\nTu pago corresponde a {merchant_name}.\n"
+    description_block = ""
+    if description and description.strip():
+        description_block = f"\nConcepto: {description.strip()}\n"
+    provider_name = provider_label or "nuestro proveedor de pagos"
+    return f"""Hola {first_name},
+{merchant_block}
+Te compartimos tu link de pago personalizado para completar el cobro de forma segura a través de {provider_name}.
+
+Monto a pagar: {amount_formatted}
+{description_block}
+Completá tu pago en el siguiente enlace:
+{payment_url}
+
+Si tenés alguna consulta sobre este pago, respondé a este correo o contactá a tu asesor ePoint.
+
+Saludos,
+Equipo ePoint
+"""
+
+
 def password_reset_email_body(
     *,
     first_name: str,

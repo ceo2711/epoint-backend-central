@@ -25,6 +25,25 @@ def test_render_welcome_template_substitutes_placeholders():
     assert "{{FIRST_NAME}}" not in html
 
 
+def test_render_payment_link_template_substitutes_placeholders():
+    html = render_html_template(
+        "payment_link",
+        FIRST_NAME="Juan",
+        AMOUNT_FORMATTED="USD 99.00",
+        PAYMENT_URL="https://app.example.com/pagar/token123",
+        PROVIDER_LABEL="PayPal",
+        LOGO_URL="https://app.example.com/epoint-logo.png",
+        MERCHANT_LINE="Tu pago corresponde a Acme Corp.",
+        DESCRIPTION_BLOCK='<p><strong>Concepto:</strong> Consultoría</p>',
+    )
+    assert "Juan" in html
+    assert "USD 99.00" in html
+    assert "https://app.example.com/pagar/token123" in html
+    assert "PayPal" in html
+    assert "Completar pago" in html
+    assert "{{PAYMENT_URL}}" not in html
+
+
 def test_pending_items_html_escapes_special_chars():
     html = pending_items_html(['Item <script> & "test"'])
     assert "&lt;script&gt;" in html

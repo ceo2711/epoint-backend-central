@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
             settings.onboarding_reminder_interval_minutes,
         )
     yield
+    from app.core.database import engine
     from app.services.notifications.hub import notification_hub
 
     notification_hub.close_all()
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
         from app.workers.inline_scheduler import stop_onboarding_reminder_scheduler
 
         stop_onboarding_reminder_scheduler()
+    engine.dispose()
 
 
 def create_app() -> FastAPI:
