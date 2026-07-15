@@ -36,6 +36,7 @@ class PaymentLinkCreate(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
     provider: PaymentProviderLiteral
     description: str | None = Field(default=None, max_length=2000)
+    prospect_id: int | None = None
 
 
 class PaymentLinkResponse(BaseModel):
@@ -43,6 +44,7 @@ class PaymentLinkResponse(BaseModel):
     public_token: str
     created_by_user_id: int
     client_id: int | None
+    prospect_id: int | None = None
     customer_first_name: str
     customer_last_name: str
     customer_email: str

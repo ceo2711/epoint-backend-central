@@ -23,6 +23,11 @@ class CalendlyEvent(Base):
     invitee_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     location: Mapped[str | None] = mapped_column(Text, nullable=True)
     meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    prospect_id: Mapped[int | None] = mapped_column(
+        ForeignKey("prospects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

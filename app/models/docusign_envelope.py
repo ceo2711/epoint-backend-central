@@ -15,6 +15,7 @@ class DocusignEnvelope(Base):
     docusign_envelope_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     sent_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    prospect_id: Mapped[int | None] = mapped_column(ForeignKey("prospects.id", ondelete="SET NULL"), nullable=True, index=True)
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True, index=True)
     signer_name: Mapped[str] = mapped_column(String(255))
     signer_email: Mapped[str] = mapped_column(String(255))

@@ -39,6 +39,7 @@ class CalendlyEventResponse(BaseModel):
     invitee_comment: str | None = None
     location: str | None = None
     meeting_url: str | None = None
+    prospect_id: int | None = None
 
     model_config = {"from_attributes": True}
 

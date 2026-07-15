@@ -22,6 +22,8 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.payment_link import PaymentLink
 from app.models.payment_settings import PaymentSettings
 from app.models.permission import Permission, RolePermission
+from app.models.prospect import Prospect
+from app.models.prospect_history import ProspectHistory
 from app.models.role import Role
 from app.models.session import UserSession
 from app.models.user import User
@@ -55,6 +57,8 @@ __all__ = [
     "PasswordResetToken",
     "PaymentLink",
     "PaymentSettings",
+    "Prospect",
+    "ProspectHistory",
     "Permission",
     "Role",
     "RolePermission",

@@ -681,6 +681,11 @@ class DocusignService:
                 changed = True
         if allow_notify and self._notify_envelope_completed(row):
             changed = True
+        if row.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            ProspectService(self.db).on_envelope_completed(row)
+            changed = True
         return changed
 
     def _apply_remote_status(
@@ -921,6 +926,24 @@ class DocusignService:
                 )
 
         resolved_client_id = payload.client_id
+        prospect_row = None
+        if payload.prospect_id is not None:
+            from app.models.prospect import Prospect
+            from app.services.prospects import ProspectService
+
+            prospect_service = ProspectService(self.db)
+            prospect_row = prospect_service._get_prospect_for_user(actor, payload.prospect_id, merchant_id=merchant_id)
+            if not (
+                prospect_row.email.lower() == str(payload.signer_email).strip().lower()
+                and prospect_row.first_name.lower() in payload.signer_name.lower()
+            ):
+                # Relaxed match: email must match
+                if prospect_row.email.lower() != str(payload.signer_email).strip().lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="El prospecto no coincide con el email del firmante",
+                    )
+
         sent_by_user_id = self._resolve_sent_by_user_id(actor, client_row)
 
         try:
@@ -947,6 +970,7 @@ class DocusignService:
             sent_by_user_id=sent_by_user_id,
             merchant_id=client_row.merchant_id if client_row is not None else merchant_id,
             client_id=resolved_client_id,
+            prospect_id=payload.prospect_id,
             signer_name=payload.signer_name.strip(),
             signer_email=str(payload.signer_email).strip().lower(),
             template_id=template_id,
@@ -956,6 +980,11 @@ class DocusignService:
             sent_at=datetime.now(timezone.utc),
         )
         self.db.add(row)
+        self.db.flush()
+        if prospect_row is not None:
+            from app.services.prospects import ProspectService
+
+            ProspectService(self.db).attach_envelope(actor=actor, prospect=prospect_row, envelope=row)
         self.db.commit()
         self.db.refresh(row)
         row = self.db.execute(

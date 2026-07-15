@@ -156,6 +156,7 @@ class PaymentService:
             public_token=token,
             created_by_user_id=user.id,
             merchant_id=merchant_id,
+            prospect_id=payload.prospect_id,
             customer_first_name=payload.customer_first_name.strip(),
             customer_last_name=payload.customer_last_name.strip(),
             customer_email=str(payload.customer_email).strip().lower(),
@@ -170,6 +171,14 @@ class PaymentService:
             external_checkout_url=external_url,
         )
         self.db.add(link)
+        self.db.flush()
+        if payload.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            prospect = ProspectService(self.db)._get_prospect_for_user(
+                user, payload.prospect_id, merchant_id=merchant_id
+            )
+            ProspectService(self.db).attach_payment_link(actor=user, prospect=prospect, link=link)
         self.db.commit()
         self.db.refresh(link)
         return self._to_response(link)
@@ -271,6 +280,10 @@ class PaymentService:
                 },
                 commit=False,
             )
+        if link.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            ProspectService(self.db).on_payment_completed(link)
 
     def _get_link_by_token(self, token: str) -> PaymentLink:
         link = self.db.execute(

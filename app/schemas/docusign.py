@@ -46,6 +46,7 @@ class DocusignSendEnvelopeRequest(BaseModel):
     template_role_name: str | None = Field(default=None, max_length=120)
     subject: str = Field(default="Contrato ePoint — Firma requerida", max_length=255)
     client_id: int | None = None
+    prospect_id: int | None = None
     text_tabs: dict[str, str] | None = None
 
 
@@ -60,6 +61,7 @@ class DocusignEnvelopeResponse(BaseModel):
     status: str
     client_id: int | None = None
     client_name: str | None = None
+    prospect_id: int | None = None
     sent_by_user_id: int
     sent_by_name: str | None = None
     sent_at: datetime

@@ -37,6 +37,9 @@ PERMISSIONS = [
     ("clients:update", "Editar clientes"),
     ("clients:approve", "Aprobar/rechazar clientes"),
     ("clients:delete", "Eliminar clientes"),
+    ("prospects:read", "Ver prospectos"),
+    ("prospects:create", "Registrar prospectos"),
+    ("prospects:update", "Gestionar prospectos"),
     ("documents:read", "Ver documentos"),
     ("documents:upload", "Subir documentos"),
     ("boards:read", "Ver tableros"),
@@ -75,7 +78,7 @@ ROLES = {
     "SALES_REP": {
         "name": "Vendedor",
         "description": "Registra clientes nuevos",
-        "permissions": ["clients:read", "clients:create", "clients:update", "calendly:read", "calendly:manage", "payments:read", "payments:create"],
+        "permissions": ["clients:read", "clients:create", "clients:update", "prospects:read", "prospects:create", "prospects:update", "calendly:read", "calendly:manage", "payments:read", "payments:create"],
     },
     "ONBOARDING_MANAGER": {
         "name": "Encargado de Onboarding",
