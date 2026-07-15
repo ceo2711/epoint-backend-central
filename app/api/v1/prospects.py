@@ -17,6 +17,7 @@ from app.schemas.prospect import (
     ProspectLinkCalendlyEvent,
     ProspectLinkEnvelope,
     ProspectLinkPaymentLink,
+    ProspectMarkContacted,
     ProspectPaymentBrief,
     ProspectResponse,
     ProspectStatusUpdate,
@@ -61,7 +62,19 @@ def _to_response(prospect) -> ProspectResponse:
     )
 
 
-def _to_detail(prospect) -> ProspectDetailResponse:
+def _envelope_brief(env) -> ProspectEnvelopeBrief:
+    return ProspectEnvelopeBrief(
+        id=env.id,
+        subject=env.subject,
+        status=env.status,
+        signer_name=env.signer_name,
+        signer_email=env.signer_email,
+        sent_at=env.sent_at,
+        completed_at=env.completed_at,
+    )
+
+
+def _to_detail(prospect, *, linked_envelopes: list | None = None) -> ProspectDetailResponse:
     base = _to_response(prospect).model_dump()
     history = [
         ProspectHistoryResponse(
@@ -96,16 +109,10 @@ def _to_detail(prospect) -> ProspectDetailResponse:
         )
     envelope = None
     if prospect.docusign_envelope:
-        env = prospect.docusign_envelope
-        envelope = ProspectEnvelopeBrief(
-            id=env.id,
-            subject=env.subject,
-            status=env.status,
-            signer_name=env.signer_name,
-            signer_email=env.signer_email,
-            sent_at=env.sent_at,
-            completed_at=env.completed_at,
-        )
+        envelope = _envelope_brief(prospect.docusign_envelope)
+    envelopes = [_envelope_brief(env) for env in (linked_envelopes or [])]
+    if not envelopes and envelope is not None:
+        envelopes = [envelope]
     payment = None
     if prospect.payment_link:
         link = prospect.payment_link
@@ -123,6 +130,7 @@ def _to_detail(prospect) -> ProspectDetailResponse:
         history=history,
         calendly_event=calendly,
         docusign_envelope=envelope,
+        docusign_envelopes=envelopes,
         payment_link=payment,
     )
 
@@ -200,7 +208,8 @@ def get_prospect(
 ) -> ProspectDetailResponse:
     service = ProspectService(db)
     prospect = service.get_prospect_detail(current_user, prospect_id, merchant_id=active_merchant_id)
-    return _to_detail(prospect)
+    linked_envelopes = service.list_linked_envelopes(prospect)
+    return _to_detail(prospect, linked_envelopes=linked_envelopes)
 
 
 @router.patch("/{prospect_id}", response_model=ProspectResponse)
@@ -237,6 +246,21 @@ def update_prospect_status(
         new_status=payload.status.value,
         note=payload.note,
     )
+    detail = service.get_prospect_detail(current_user, prospect.id, merchant_id=active_merchant_id)
+    return _to_response(detail)
+
+
+@router.post("/{prospect_id}/mark-contacted", response_model=ProspectResponse)
+def mark_prospect_contacted(
+    prospect_id: int,
+    payload: ProspectMarkContacted,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("prospects:update"))],
+    active_merchant_id: ActiveMerchantId,
+) -> ProspectResponse:
+    service = ProspectService(db)
+    prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
+    prospect = service.mark_contacted(actor=current_user, prospect=prospect, note=payload.note)
     detail = service.get_prospect_detail(current_user, prospect.id, merchant_id=active_merchant_id)
     return _to_response(detail)
 

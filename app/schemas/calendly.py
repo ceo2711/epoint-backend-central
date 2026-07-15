@@ -26,6 +26,13 @@ class CalendlySalesRepItem(BaseModel):
     last_synced_at: datetime | None = None
 
 
+class CalendlyLinkedProspectBrief(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    converted_client_id: int | None = None
+
+
 class CalendlyEventResponse(BaseModel):
     id: int
     name: str
@@ -40,6 +47,7 @@ class CalendlyEventResponse(BaseModel):
     location: str | None = None
     meeting_url: str | None = None
     prospect_id: int | None = None
+    linked_prospect: CalendlyLinkedProspectBrief | None = None
 
     model_config = {"from_attributes": True}
 

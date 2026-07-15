@@ -28,6 +28,8 @@ INITIAL_STATUSES = {
     ProspectStatus.LEAD_NO_CALIFICADO.value,
 }
 
+SALES_REP_MANUAL_STATUSES = {ProspectStatus.LEAD_CERRADO.value}
+
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ProspectStatus.LEAD_CALIFICADO.value: {
         ProspectStatus.PENDIENTE_CONTACTAR.value,
@@ -42,6 +44,7 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         ProspectStatus.LEAD_CERRADO.value,
     },
     ProspectStatus.LEAD_CONTACTADO.value: {
+        ProspectStatus.PENDIENTE_CONTACTAR.value,
         ProspectStatus.CONTRATO_ENVIADO.value,
         ProspectStatus.LEAD_CERRADO.value,
     },
@@ -83,14 +86,18 @@ class ProspectService:
         if status_filter:
             query = query.where(Prospect.status == status_filter)
         if search:
-            term = f"%{search.strip()}%"
-            query = query.where(
-                or_(
-                    Prospect.first_name.ilike(term),
-                    Prospect.last_name.ilike(term),
-                    Prospect.email.ilike(term),
+            words = [part.strip() for part in search.strip().split() if part.strip()]
+            for word in words:
+                term = f"%{word}%"
+                full_name = func.concat(Prospect.first_name, " ", Prospect.last_name)
+                query = query.where(
+                    or_(
+                        Prospect.first_name.ilike(term),
+                        Prospect.last_name.ilike(term),
+                        Prospect.email.ilike(term),
+                        full_name.ilike(term),
+                    )
                 )
-            )
         total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
         rows = (
             self.db.execute(
@@ -126,6 +133,22 @@ class ProspectService:
             .unique()
             .scalar_one()
         )
+
+    def list_linked_envelopes(self, prospect: Prospect) -> list[DocusignEnvelope]:
+        rows = list(
+            self.db.execute(
+                select(DocusignEnvelope)
+                .where(DocusignEnvelope.prospect_id == prospect.id)
+                .order_by(DocusignEnvelope.sent_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        if prospect.docusign_envelope_id and not any(row.id == prospect.docusign_envelope_id for row in rows):
+            linked = prospect.docusign_envelope or self.db.get(DocusignEnvelope, prospect.docusign_envelope_id)
+            if linked is not None:
+                rows.insert(0, linked)
+        return rows
 
     def create_prospect(
         self,
@@ -240,6 +263,11 @@ class ProspectService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No se puede pasar de {current} a {new_status}",
             )
+        if actor.role.code == "SALES_REP" and new_status not in SALES_REP_MANUAL_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El estado se actualiza automáticamente al realizar acciones en el prospecto",
+            )
         prospect.status = new_status
         self._add_history(
             prospect,
@@ -253,6 +281,44 @@ class ProspectService:
         self.db.refresh(prospect)
         if new_status == ProspectStatus.PAGO_COMPLETADO.value:
             self.try_auto_convert(prospect.id, actor=actor)
+        return prospect
+
+    def mark_contacted(
+        self,
+        *,
+        actor: User,
+        prospect: Prospect,
+        note: str | None = None,
+    ) -> Prospect:
+        if prospect.converted_client_id is not None:
+            raise HTTPException(status_code=400, detail="El prospecto ya fue convertido a cliente")
+        current = prospect.status
+        target = ProspectStatus.LEAD_CONTACTADO.value
+        if current not in {
+            ProspectStatus.PENDIENTE_CONTACTAR.value,
+            ProspectStatus.LEAD_CALIFICADO.value,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo se puede marcar contactado desde pendiente de contactar o lead calificado",
+            )
+        allowed = ALLOWED_TRANSITIONS.get(current, set())
+        if target not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede pasar de {current} a {target}",
+            )
+        prospect.status = target
+        self._add_history(
+            prospect,
+            actor=actor,
+            event_type=ProspectHistoryEventType.STATUS_CHANGE.value,
+            from_status=current,
+            to_status=target,
+            note=note,
+        )
+        self.db.commit()
+        self.db.refresh(prospect)
         return prospect
 
     def add_note(self, *, actor: User, prospect: Prospect, note: str) -> ProspectHistory:
@@ -281,9 +347,43 @@ class ProspectService:
             raise HTTPException(status_code=404, detail="Reunión no encontrada")
         if actor.role.code == "SALES_REP" and event.user_id != actor.id:
             raise HTTPException(status_code=404, detail="Reunión no encontrada")
+
+        previous_event_id = prospect.calendly_event_id
+        is_reschedule = previous_event_id is not None and previous_event_id != calendly_event_id
+
+        if previous_event_id and previous_event_id != calendly_event_id:
+            previous_event = self.db.get(CalendlyEvent, previous_event_id)
+            if previous_event is not None:
+                previous_event.prospect_id = None
+
+        if event.prospect_id and event.prospect_id != prospect.id:
+            other_prospect = self.db.get(Prospect, event.prospect_id)
+            if other_prospect is not None:
+                other_prospect.calendly_event_id = None
+
         prospect.calendly_event_id = event.id
         event.prospect_id = prospect.id
-        if prospect.status == ProspectStatus.LEAD_CALIFICADO.value:
+
+        if is_reschedule:
+            reschedule_note = f"Nueva reunión agendada: {event.name}"
+            if prospect.status == ProspectStatus.LEAD_CONTACTADO.value:
+                self._transition_status(
+                    prospect,
+                    actor=actor,
+                    new_status=ProspectStatus.PENDIENTE_CONTACTAR.value,
+                    note=reschedule_note,
+                    event_type=ProspectHistoryEventType.CALENDLY_RESCHEDULED.value,
+                )
+            else:
+                self._add_history(
+                    prospect,
+                    actor=actor,
+                    event_type=ProspectHistoryEventType.CALENDLY_RESCHEDULED.value,
+                    from_status=prospect.status,
+                    to_status=prospect.status,
+                    note=reschedule_note,
+                )
+        elif prospect.status == ProspectStatus.LEAD_CALIFICADO.value:
             self._transition_status(
                 prospect,
                 actor=actor,
@@ -309,12 +409,13 @@ class ProspectService:
             return prospect
         prospect.docusign_envelope_id = envelope.id
         envelope.prospect_id = prospect.id
+        contract_note = f"Contrato enviado: {envelope.subject}"
         if prospect.status == ProspectStatus.LEAD_CONTACTADO.value:
             self._transition_status(
                 prospect,
                 actor=actor,
                 new_status=ProspectStatus.CONTRATO_ENVIADO.value,
-                note="Contrato enviado",
+                note=contract_note,
                 event_type=ProspectHistoryEventType.CONTRACT_SENT.value,
             )
         else:
@@ -324,7 +425,7 @@ class ProspectService:
                 event_type=ProspectHistoryEventType.CONTRACT_SENT.value,
                 from_status=prospect.status,
                 to_status=prospect.status,
-                note="Contrato enviado",
+                note=contract_note,
             )
         self.db.flush()
         return prospect
@@ -338,16 +439,36 @@ class ProspectService:
         actor = envelope.sent_by
         if actor is None:
             return
+        if self._contract_signed_history_exists(prospect.id, envelope.id):
+            self.try_auto_convert(prospect.id, actor=actor)
+            return
         self._add_history(
             prospect,
             actor=actor,
             event_type=ProspectHistoryEventType.CONTRACT_SIGNED.value,
             from_status=prospect.status,
             to_status=prospect.status,
-            note="Contrato firmado",
+            note=self._contract_signed_history_note(envelope),
         )
         self.db.flush()
         self.try_auto_convert(prospect.id, actor=actor)
+
+    @staticmethod
+    def _contract_signed_history_note(envelope: DocusignEnvelope) -> str:
+        return f"Contrato firmado: {envelope.subject} (envelope_id={envelope.id})"
+
+    def _contract_signed_history_exists(self, prospect_id: int, envelope_id: int) -> bool:
+        marker = f"envelope_id={envelope_id}"
+        existing = self.db.execute(
+            select(ProspectHistory.id)
+            .where(
+                ProspectHistory.prospect_id == prospect_id,
+                ProspectHistory.event_type == ProspectHistoryEventType.CONTRACT_SIGNED.value,
+                ProspectHistory.note.contains(marker),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        return existing is not None
 
     def attach_payment_link(self, *, actor: User, prospect: Prospect, link: PaymentLink) -> Prospect:
         if prospect.converted_client_id is not None:

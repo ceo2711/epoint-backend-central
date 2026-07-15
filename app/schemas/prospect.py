@@ -6,7 +6,6 @@ from pydantic import BaseModel, EmailStr, Field
 from app.models.enums import ClientSource, ProspectStatus
 from app.schemas.common import ORMBase
 
-
 class ProspectCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
@@ -36,6 +35,10 @@ class ProspectStatusUpdate(BaseModel):
 
 class ProspectHistoryNote(BaseModel):
     note: str = Field(min_length=1, max_length=2000)
+
+
+class ProspectMarkContacted(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class ProspectLinkCalendlyEvent(BaseModel):
@@ -130,6 +133,7 @@ class ProspectDetailResponse(ProspectResponse):
     history: list[ProspectHistoryResponse] = Field(default_factory=list)
     calendly_event: ProspectCalendlyBrief | None = None
     docusign_envelope: ProspectEnvelopeBrief | None = None
+    docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)
     payment_link: ProspectPaymentBrief | None = None
 
 

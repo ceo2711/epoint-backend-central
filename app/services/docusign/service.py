@@ -316,6 +316,11 @@ class DocusignService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             )
+        if exc.status_code == 429:
+            return HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="DocuSign limitó las consultas de estado. El contrato se actualizará por webhook o podés reintentar más tarde.",
+            )
         return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     def _resolve_effective_status(

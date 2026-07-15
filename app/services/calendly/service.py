@@ -24,6 +24,7 @@ from app.schemas.calendly import (
     CalendlyEventResponse,
     CalendlyEventTypeResponse,
     CalendlyEventUpdateRequest,
+    CalendlyLinkedProspectBrief,
     CalendlyQuestionAnswerRequest,
     CalendlySalesRepItem,
     CalendlySyncResponse,
@@ -41,6 +42,20 @@ AUTO_SYNC_STALE_MINUTES = 3
 class CalendlyService:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    @staticmethod
+    def _event_response(row: CalendlyEvent) -> CalendlyEventResponse:
+        linked = None
+        prospect = getattr(row, "prospect", None)
+        if prospect is not None:
+            linked = CalendlyLinkedProspectBrief(
+                id=prospect.id,
+                full_name=prospect.full_name,
+                email=prospect.email,
+                converted_client_id=prospect.converted_client_id,
+            )
+        base = CalendlyEventResponse.model_validate(row)
+        return base.model_copy(update={"linked_prospect": linked})
 
     @staticmethod
     def ensure_calendar_access(actor: User) -> None:
@@ -355,7 +370,7 @@ class CalendlyService:
             if row is not None:
                 row.invitee_comment = stored_comment
                 self.db.commit()
-                return CalendlyEventResponse.model_validate(row)
+                return self._event_response(row)
         return response
 
     def _find_event_after_booking(
@@ -375,11 +390,9 @@ class CalendlyService:
         for row in rows:
             row_start = row.start_time if row.start_time.tzinfo else row.start_time.replace(tzinfo=timezone.utc)
             if abs((row_start - target_start).total_seconds()) < 90:
-                return CalendlyEventResponse.model_validate(row)
+                return self._event_response(row)
         if rows:
-            return CalendlyEventResponse.model_validate(
-                max(rows, key=lambda item: item.start_time),
-            )
+            return self._event_response(max(rows, key=lambda item: item.start_time))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Evento creado en Calendly pero no se pudo sincronizar",
@@ -414,7 +427,7 @@ class CalendlyService:
             and stored_comment == invitee_comment
         )
         if same_slot:
-            return CalendlyEventResponse.model_validate(row)
+            return self._event_response(row)
 
         try:
             client.cancel_scheduled_event(
@@ -443,7 +456,7 @@ class CalendlyService:
             if new_row is not None:
                 new_row.invitee_comment = stored_comment
                 self.db.commit()
-                return CalendlyEventResponse.model_validate(new_row)
+                return self._event_response(new_row)
         return response
 
     def cancel_event(self, actor: User, event_id: int, payload: CalendlyEventCancelRequest) -> MessageResponse:
@@ -758,5 +771,12 @@ class CalendlyService:
             query = query.where(CalendlyEvent.start_time >= start)
         if end is not None:
             query = query.where(CalendlyEvent.start_time <= end)
-        rows = self.db.execute(query.order_by(CalendlyEvent.start_time.asc())).scalars().all()
-        return [CalendlyEventResponse.model_validate(row) for row in rows]
+        rows = (
+            self.db.execute(
+                query.options(joinedload(CalendlyEvent.prospect)).order_by(CalendlyEvent.start_time.asc())
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        return [self._event_response(row) for row in rows]

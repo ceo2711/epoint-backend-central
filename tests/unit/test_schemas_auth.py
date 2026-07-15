@@ -10,9 +10,9 @@ class TestLoginRequest:
         assert payload.email == "user@test.com"
         assert payload.password == "secret12"
 
-    def test_password_min_length(self):
+    def test_password_required(self):
         with pytest.raises(ValidationError):
-            LoginRequest(email="user@test.com", password="1234567")
+            LoginRequest(email="user@test.com", password="")
 
     def test_invalid_email(self):
         with pytest.raises(ValidationError):

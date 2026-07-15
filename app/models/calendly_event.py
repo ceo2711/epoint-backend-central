@@ -34,3 +34,4 @@ class CalendlyEvent(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="calendly_events")  # noqa: F821
+    prospect: Mapped["Prospect | None"] = relationship(foreign_keys=[prospect_id])  # noqa: F821
