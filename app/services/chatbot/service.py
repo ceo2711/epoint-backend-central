@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.merchant import Merchant
+from app.services.merchant_context import MerchantContextService
 from app.models.user import User
 from app.core.config import get_settings
 from app.schemas.chatbot import ChatHistoryMessage, ChatbotResponse, PendingChatAction
@@ -117,6 +117,7 @@ class ChatbotService:
         history: list[ChatHistoryMessage],
         client_id: int | None,
         locale: str,
+        merchant_id: int,
         chat_locale: str | None = None,
         pending_action: PendingChatAction | None = None,
         calendly_selection: dict | None = None,
@@ -130,11 +131,7 @@ class ChatbotService:
         if is_locale_switch_request(message):
             reply = friendly_locale_switch(effective_locale)
             if pending_action and pending_action.action == "register_client":
-                merchants = list(
-                    self.db.execute(
-                        select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.name)
-                    ).scalars().all()
-                )
+                merchants = MerchantContextService(self.db).list_accessible_merchants(user)
                 reply = f"{reply}\n\n{friendly_register_missing(effective_locale, pending_action.draft, merchants)}"
             return ChatbotResponse(
                 reply=reply,
@@ -144,7 +141,12 @@ class ChatbotService:
             )
 
         lang = effective_locale
-        action_handler = ChatbotActionHandler(self.db, user, locale=effective_locale)
+        action_handler = ChatbotActionHandler(
+            self.db,
+            user,
+            locale=effective_locale,
+            merchant_id=merchant_id,
+        )
         action_result = await action_handler.handle(
             message=message,
             pending_action=pending_action,
@@ -167,11 +169,7 @@ class ChatbotService:
             )
 
         if pending_action and pending_action.action == "register_client":
-            merchants = list(
-                self.db.execute(
-                    select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.name)
-                ).scalars().all()
-            )
+            merchants = MerchantContextService(self.db).list_accessible_merchants(user)
             return ChatbotResponse(
                 reply=friendly_register_missing(effective_locale, pending_action.draft, merchants),
                 client_id=client_id,
@@ -180,7 +178,7 @@ class ChatbotService:
             )
 
         if pending_action and pending_action.action == "approve_client":
-            handler = ChatbotActionHandler(self.db, user, locale=effective_locale)
+            handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
             return ChatbotResponse(
                 reply=f"{friendly_approve_need_advisor(effective_locale)}\n\n{handler._advisor_prompt()}",
                 client_id=pending_action.client_id or client_id,
@@ -189,7 +187,7 @@ class ChatbotService:
             )
 
         if pending_action and pending_action.action == "approve_all":
-            handler = ChatbotActionHandler(self.db, user, locale=effective_locale)
+            handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
             return ChatbotResponse(
                 reply=f"{friendly_approve_need_advisor(effective_locale)}\n\n{handler._advisor_prompt()}",
                 client_id=client_id,
@@ -214,10 +212,10 @@ class ChatbotService:
             )
 
         if pending_action and pending_action.action == "upload_document":
-            handler = ChatbotActionHandler(self.db, user, locale=effective_locale)
+            handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
             resolved = pending_action.client_id or client_id
             if not resolved and user.role.code != CLIENT_ROLE:
-                resolved = ChatbotContextBuilder(self.db, user).resolve_client_id(message, None)
+                resolved = ChatbotContextBuilder(self.db, user, merchant_id=merchant_id).resolve_client_id(message, None)
             if not resolved and user.role.code != CLIENT_ROLE:
                 return ChatbotResponse(
                     reply=friendly_upload_document_need_client(effective_locale),
@@ -248,10 +246,10 @@ class ChatbotService:
             )
 
         if pending_action and pending_action.action == "upload_board_attachment":
-            handler = ChatbotActionHandler(self.db, user, locale=effective_locale)
+            handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
             resolved = pending_action.client_id or client_id
             if not resolved and user.role.code != CLIENT_ROLE:
-                resolved = ChatbotContextBuilder(self.db, user).resolve_client_id(message, None)
+                resolved = ChatbotContextBuilder(self.db, user, merchant_id=merchant_id).resolve_client_id(message, None)
             if not resolved and user.role.code != CLIENT_ROLE:
                 return ChatbotResponse(
                     reply=friendly_upload_board_need_client(effective_locale),
@@ -289,7 +287,7 @@ class ChatbotService:
                 detail="El asistente no está disponible. Configure GEMINI_API_KEY.",
             )
 
-        builder = ChatbotContextBuilder(self.db, user)
+        builder = ChatbotContextBuilder(self.db, user, merchant_id=merchant_id)
         context_json, resolved_client_id = builder.build(message=message, client_id=client_id)
         system_prompt = self._system_prompt(
             user,

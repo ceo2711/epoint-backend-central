@@ -33,7 +33,9 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
 )
 from app.schemas.common import MessageResponse
-from app.schemas.user import UserMeResponse, UserResponse
+from app.schemas.client import MerchantBrief
+from app.schemas.user import UserMeResponse, UserProfileUpdate, UserResponse
+from app.services.merchant_context import MerchantContextService
 from app.services.email.password_reset import (
     PasswordResetEmailPayload,
     send_password_reset_email,
@@ -59,7 +61,33 @@ class AuthService:
     def _build_user_me(self, user: User) -> UserMeResponse:
         permissions = get_user_permissions(self.db, user)
         base = UserResponse.model_validate(user)
-        return UserMeResponse(**base.model_dump(), permissions=permissions)
+        ctx = MerchantContextService(self.db)
+        merchants = ctx.list_accessible_merchants(user) if ctx.is_staff(user) else []
+        merchant_briefs = [MerchantBrief.model_validate(m) for m in merchants]
+        active_merchant = None
+        active_merchant_id = user.active_merchant_id
+        if merchants:
+            if active_merchant_id is not None:
+                active_merchant = next((m for m in merchants if m.id == active_merchant_id), None)
+            if active_merchant is None and len(merchants) == 1:
+                active_merchant = merchants[0]
+                active_merchant_id = active_merchant.id
+        return UserMeResponse(
+            **base.model_dump(),
+            permissions=permissions,
+            merchants=merchant_briefs,
+            active_merchant_id=active_merchant_id,
+            active_merchant=MerchantBrief.model_validate(active_merchant) if active_merchant else None,
+        )
+
+    def set_active_merchant(self, user: User, merchant_id: int) -> UserMeResponse:
+        MerchantContextService(self.db).set_active_merchant(user, merchant_id)
+        refreshed = self.db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area))
+            .where(User.id == user.id)
+        ).unique().scalar_one()
+        return self._build_user_me(refreshed)
 
     def _issue_session_tokens(self, user: User) -> tuple[str, str]:
         access_token = create_access_token(
@@ -249,6 +277,36 @@ class AuthService:
 
     def get_me(self, user: User) -> UserMeResponse:
         return self._build_user_me(user)
+
+    def update_profile(self, user: User, payload: UserProfileUpdate) -> UserMeResponse:
+        if user.role.code == CLIENT_ROLE_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Los clientes del portal no pueden editar estos datos desde aquí",
+            )
+
+        normalized_email = payload.email.lower().strip()
+        if normalized_email != user.email:
+            existing = self.db.execute(
+                select(User).where(User.email == normalized_email, User.id != user.id)
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El email ya está registrado",
+                )
+
+        user.first_name = payload.first_name.strip()
+        user.last_name = payload.last_name.strip()
+        user.email = normalized_email
+        self.db.commit()
+
+        refreshed = self.db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area))
+            .where(User.id == user.id)
+        ).unique().scalar_one()
+        return self._build_user_me(refreshed)
 
     def change_password(self, user: User, payload: ChangePasswordRequest) -> MessageResponse:
         if not verify_password(payload.current_password, user.password_hash):

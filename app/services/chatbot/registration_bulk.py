@@ -13,13 +13,23 @@ BLOCK_HEADER_PATTERN = re.compile(
     r"(?:^|\n)\s*(?:datos\s+personales|personal\s+data)\s*:?\s*(?:\n|$)",
     re.IGNORECASE,
 )
+CLIENT_MARKER_PATTERN = re.compile(r"(?:^|\n)\s*Cliente\s+\d+\b", re.IGNORECASE)
+NAME_LABEL_PATTERN = re.compile(r"(?:nombre\s+completo|full\s+name)\s*:", re.IGNORECASE)
+
+# Corta el valor antes del siguiente campo conocido (soporta todo en una línea).
+_FIELD_BOUNDARY = (
+    r"(?=\s+(?:email|merchant|comercio|empresa|fuente|source|"
+    r"n[uú]mero|numero|tel[eé]fono|telefono|phone|datos\s+personales|"
+    r"nombre\s+completo|full\s+name|Cliente\s+\d+)\b|\n|$)"
+)
+
 FULL_NAME_PATTERN = re.compile(
-    r"(?:nombre\s+completo|full\s+name)\s*:\s*(.+?)(?:\n|$)",
+    rf"(?:nombre\s+completo|full\s+name)\s*:\s*(.+?){_FIELD_BOUNDARY}",
     re.IGNORECASE,
 )
 EMAIL_LABEL_PATTERN = re.compile(r"email\s*:\s*(\S+)", re.IGNORECASE)
 PHONE_LABEL_PATTERN = re.compile(
-    r"(?:n[uú]mero\s+de\s+(?:tel[eé]fono|telefono)|phone(?:\s+number)?|tel[eé]fono|telefono)\s*:\s*(.+?)(?:\n|$)",
+    rf"(?:n[uú]mero\s+de\s+(?:tel[eé]fono|telefono)|phone(?:\s+number)?|tel[eé]fono|telefono)\s*:\s*(.+?){_FIELD_BOUNDARY}",
     re.IGNORECASE,
 )
 MERCHANT_LABEL_PATTERN = re.compile(
@@ -43,10 +53,21 @@ def _has_registration_fields(text: str) -> bool:
     return bool(FULL_NAME_PATTERN.search(text) or EMAIL_LABEL_PATTERN.search(text))
 
 
+def _clean_blocks(parts: list[str]) -> list[str]:
+    return [part.strip() for part in parts if part.strip() and _has_registration_fields(part)]
+
+
 def _split_blocks(message: str) -> list[str]:
     text = message.strip()
     if not text:
         return []
+
+    client_marker_count = len(CLIENT_MARKER_PATTERN.findall(text))
+    if client_marker_count >= 2:
+        parts = re.split(r"(?=(?:^|\n)\s*Cliente\s+\d+\b)", text, flags=re.IGNORECASE)
+        blocks = _clean_blocks(parts)
+        if len(blocks) >= 2:
+            return blocks
 
     if BLOCK_HEADER_PATTERN.search(text):
         parts = re.split(
@@ -54,19 +75,28 @@ def _split_blocks(message: str) -> list[str]:
             text,
             flags=re.IGNORECASE,
         )
-        blocks = [part.strip() for part in parts if part.strip() and _has_registration_fields(part)]
+        blocks = _clean_blocks(parts)
         if blocks:
             return blocks
 
-    name_label_count = len(re.findall(r"(?:nombre\s+completo|full\s+name)\s*:", text, re.IGNORECASE))
+    name_label_count = len(NAME_LABEL_PATTERN.findall(text))
     if name_label_count >= 2:
+        parts = re.split(
+            r"(?=(?:nombre\s+completo|full\s+name)\s*:)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        blocks = _clean_blocks(parts)
+        if len(blocks) >= 2:
+            return blocks
+
         parts = re.split(
             r"(?=(?:^|\n)\s*(?:nombre\s+completo|full\s+name)\s*:)",
             text,
             flags=re.IGNORECASE,
         )
-        blocks = [part.strip() for part in parts if part.strip() and _has_registration_fields(part)]
-        if blocks:
+        blocks = _clean_blocks(parts)
+        if len(blocks) >= 2:
             return blocks
 
     if name_label_count == 1 and _has_registration_fields(text):
@@ -106,7 +136,7 @@ def _parse_block(text: str, merchants: list) -> ParsedRegistrationBlock:
 
     phone_match = PHONE_LABEL_PATTERN.search(text)
     if phone_match:
-        draft["phone"] = re.sub(r"\s+", "", phone_match.group(1).strip())
+        draft["phone"] = re.sub(r"[^\d+]", "", phone_match.group(1).strip())
 
     source_match = SOURCE_LABEL_PATTERN.search(text)
     if source_match:

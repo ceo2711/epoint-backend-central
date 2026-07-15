@@ -191,9 +191,10 @@ class DocusignService:
         phone: str,
         source: str,
         merchant_id: int,
+        active_merchant_id: int,
     ) -> tuple[DocusignEnvelope, Client]:
         self.ensure_access(actor)
-        row = self._get_envelope_row(actor, envelope_id)
+        row = self._get_envelope_row(actor, envelope_id, merchant_id=active_merchant_id)
         if row.status.lower() != "completed":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -206,6 +207,7 @@ class DocusignService:
             )
 
         client_service = ClientService(self.db)
+        resolved_merchant_id = merchant_id or row.merchant_id or active_merchant_id
         new_client = client_service.create_client(
             actor=actor,
             first_name=first_name,
@@ -213,7 +215,7 @@ class DocusignService:
             email=email,
             phone=phone,
             source=source,
-            merchant_id=merchant_id,
+            merchant_id=resolved_merchant_id,
         )
         signed_at = row.completed_at or datetime.now(timezone.utc)
         new_client.docusign_contract_signed_at = signed_at
@@ -442,13 +444,14 @@ class DocusignService:
             return client_row.registered_by_user_id
         return actor.id
 
-    def _envelopes_query(self, actor: User, sent_by_user_id: int | None = None):
+    def _envelopes_query(self, actor: User, merchant_id: int, sent_by_user_id: int | None = None):
         query = (
             select(DocusignEnvelope)
             .options(
                 joinedload(DocusignEnvelope.client),
                 joinedload(DocusignEnvelope.sent_by),
             )
+            .where(DocusignEnvelope.merchant_id == merchant_id)
             .order_by(DocusignEnvelope.sent_at.desc())
         )
         if actor.role.code == "SALES_REP":
@@ -465,12 +468,16 @@ class DocusignService:
     def list_envelopes(
         self,
         actor: User,
+        *,
+        merchant_id: int,
         sent_by_user_id: int | None = None,
     ) -> list[DocusignEnvelopeResponse]:
         self.ensure_access(actor)
         if sent_by_user_id is not None and actor.role.code == "ADMIN":
             self._assert_sales_rep_user(sent_by_user_id)
-        rows = self.db.execute(self._envelopes_query(actor, sent_by_user_id)).unique().scalars().all()
+        rows = self.db.execute(
+            self._envelopes_query(actor, merchant_id, sent_by_user_id)
+        ).unique().scalars().all()
         return [self._map_envelope(row) for row in rows]
 
     def _assert_sales_rep_user(self, user_id: int) -> None:
@@ -485,10 +492,16 @@ class DocusignService:
                 detail="Vendedor no encontrado",
             )
 
-    def list_client_envelopes(self, actor: User, client_id: int) -> list[DocusignEnvelopeResponse]:
+    def list_client_envelopes(
+        self,
+        actor: User,
+        client_id: int,
+        *,
+        merchant_id: int,
+    ) -> list[DocusignEnvelopeResponse]:
         self.ensure_access(actor)
         client_service = ClientService(self.db)
-        client = client_service.get_client_for_user(actor, client_id)
+        client = client_service.get_client_for_user(actor, client_id, merchant_id=merchant_id)
         if client is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
         if actor.role.code != "CLIENT" and not client_service.user_can_view_approved_client_workspace(
@@ -508,13 +521,15 @@ class DocusignService:
         rows = self.db.execute(query).unique().scalars().all()
         return [self._map_envelope(row) for row in rows]
 
-    def _get_envelope_row(self, actor: User, envelope_id: int) -> DocusignEnvelope:
+    def _get_envelope_row(self, actor: User, envelope_id: int, *, merchant_id: int | None = None) -> DocusignEnvelope:
         row = self.db.execute(
             select(DocusignEnvelope)
             .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
             .where(DocusignEnvelope.id == envelope_id)
         ).unique().scalar_one_or_none()
         if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
+        if merchant_id is not None and row.merchant_id != merchant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
         if actor.role.code == "SALES_REP" and row.sent_by_user_id != actor.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede acceder a este contrato")
@@ -745,12 +760,14 @@ class DocusignService:
     def sync_pending_envelopes(
         self,
         actor: User,
+        *,
+        merchant_id: int,
         sent_by_user_id: int | None = None,
     ) -> list[DocusignEnvelopeResponse]:
         self.ensure_access(actor)
         if sent_by_user_id is not None and actor.role.code == "ADMIN":
             self._assert_sales_rep_user(sent_by_user_id)
-        query = self._envelopes_query(actor, sent_by_user_id)
+        query = self._envelopes_query(actor, merchant_id, sent_by_user_id)
         rows = self.db.execute(query).unique().scalars().all()
 
         api_client = self._client_from_settings()
@@ -781,8 +798,8 @@ class DocusignService:
 
         return [self._map_envelope(row) for row in rows]
 
-    def get_sent_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
-        row = self._get_envelope_row(actor, envelope_id)
+    def get_sent_document(self, actor: User, envelope_id: int, *, merchant_id: int) -> tuple[bytes, str]:
+        row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
         envelope_status = row.status.lower()
         if envelope_status not in DOCUSIGN_SENT_DOCUMENT_STATUSES:
             raise HTTPException(
@@ -798,8 +815,8 @@ class DocusignService:
 
         return content, self._sent_filename(row)
 
-    def get_signed_document(self, actor: User, envelope_id: int) -> tuple[bytes, str]:
-        row = self._get_envelope_row(actor, envelope_id)
+    def get_signed_document(self, actor: User, envelope_id: int, *, merchant_id: int) -> tuple[bytes, str]:
+        row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
         api_client = self._client_from_settings()
         is_completed = row.status.lower() == "completed" or self._signer_has_completed(api_client, row)
         if not is_completed:
@@ -830,7 +847,11 @@ class DocusignService:
         return content, filename
 
     def send_envelope(
-        self, actor: User, payload: DocusignSendEnvelopeRequest
+        self,
+        actor: User,
+        payload: DocusignSendEnvelopeRequest,
+        *,
+        merchant_id: int,
     ) -> DocusignSendEnvelopeResponse:
         self.ensure_access(actor)
         client = self._client_from_settings()
@@ -881,6 +902,8 @@ class DocusignService:
             client_row = self.db.get(Client, payload.client_id)
             if client_row is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
+            if client_row.merchant_id != merchant_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
             if actor.role.code in ("ONBOARDING_MANAGER", "ADMIN"):
                 client_service = ClientService(self.db)
                 if not client_service.user_can_view_approved_client_workspace(
@@ -922,6 +945,7 @@ class DocusignService:
         row = DocusignEnvelope(
             docusign_envelope_id=envelope_id,
             sent_by_user_id=sent_by_user_id,
+            merchant_id=client_row.merchant_id if client_row is not None else merchant_id,
             client_id=resolved_client_id,
             signer_name=payload.signer_name.strip(),
             signer_email=str(payload.signer_email).strip().lower(),
@@ -942,9 +966,15 @@ class DocusignService:
 
         return DocusignSendEnvelopeResponse(envelope=self._map_envelope(row))
 
-    def sync_envelope_status(self, actor: User, envelope_id: int) -> DocusignEnvelopeResponse:
+    def sync_envelope_status(
+        self,
+        actor: User,
+        envelope_id: int,
+        *,
+        merchant_id: int,
+    ) -> DocusignEnvelopeResponse:
         self.ensure_access(actor)
-        row = self._get_envelope_row(actor, envelope_id)
+        row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
 
         api_client = self._client_from_settings()
         try:

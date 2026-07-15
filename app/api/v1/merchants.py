@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import DbSession, require_any_permissions, require_permissions
+from app.api.deps import ActiveMerchantId, CurrentUser, DbSession, require_any_permissions, require_permissions
 from app.models.merchant import Merchant
 from app.models.user import User
 from app.schemas.client import MerchantBrief
 from app.schemas.common import MessageResponse
 from app.schemas.merchant import MerchantCreate, MerchantResponse, MerchantUpdate
+from app.services.merchant_context import MerchantContextService
+from app.services.merchants import MerchantService
 
 router = APIRouter(prefix="/merchants", tags=["Merchants"])
 
@@ -17,11 +19,9 @@ router = APIRouter(prefix="/merchants", tags=["Merchants"])
 @router.get("/options", response_model=list[MerchantBrief])
 def list_merchant_options(
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_any_permissions("clients:create", "clients:update"))],
+    current_user: Annotated[User, Depends(require_any_permissions("clients:create", "clients:update"))],
 ) -> list[MerchantBrief]:
-    merchants = db.execute(
-        select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.name)
-    ).scalars().all()
+    merchants = MerchantContextService(db).list_accessible_merchants(current_user)
     return [MerchantBrief.model_validate(m) for m in merchants]
 
 
@@ -102,3 +102,13 @@ def deactivate_merchant(
     merchant.is_active = False
     db.commit()
     return MessageResponse(message="Merchant desactivado")
+
+
+@router.post("/{merchant_id}/purge", response_model=MessageResponse)
+def purge_merchant(
+    merchant_id: int,
+    db: DbSession,
+    _current_user: Annotated[User, Depends(require_permissions("merchants:delete"))],
+) -> MessageResponse:
+    MerchantService(db).purge_merchant(merchant_id)
+    return MessageResponse(message="Comercio eliminado permanentemente")

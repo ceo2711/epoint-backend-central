@@ -33,6 +33,7 @@ class PaymentLink(Base):
     public_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default=lambda: uuid.uuid4().hex)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True, index=True)
     customer_first_name: Mapped[str] = mapped_column(String(100))
     customer_last_name: Mapped[str] = mapped_column(String(100))
     customer_email: Mapped[str] = mapped_column(String(255), index=True)

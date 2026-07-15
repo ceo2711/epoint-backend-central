@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.common import ORMBase
+from app.schemas.client import MerchantBrief
 
 
 class RoleBrief(ORMBase):
@@ -56,3 +57,16 @@ class UserUpdate(BaseModel):
 
 class UserMeResponse(UserResponse):
     permissions: list[str] = []
+    merchants: list[MerchantBrief] = []
+    active_merchant_id: int | None = None
+    active_merchant: MerchantBrief | None = None
+
+
+class SetActiveMerchantRequest(BaseModel):
+    merchant_id: int
+
+
+class UserProfileUpdate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    email: EmailStr

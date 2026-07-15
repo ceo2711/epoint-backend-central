@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession, require_permissions
+from app.api.deps import CurrentUser, DbSession, OptionalActiveMerchantId, require_permissions
 from app.core.encryption import encrypt_value
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
@@ -34,6 +34,19 @@ from app.services.clients import ClientService
 from app.services.storage import get_storage_provider
 
 router = APIRouter(prefix="/boards", tags=["Tableros"])
+
+
+def _require_staff_client_workspace(
+    db: DbSession,
+    user: User,
+    client_id: int,
+    merchant_id: int | None,
+) -> Client:
+    cs = ClientService(db)
+    client = cs.get_client_for_user(user, client_id, merchant_id=merchant_id)
+    if client is None or not cs.user_can_view_approved_client_workspace(user, client_id, client=client):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    return client
 
 BOARD_STAFF_ROLES = frozenset({"ADMIN", "ONBOARDING_MANAGER", "ADVISOR"})
 
@@ -119,24 +132,34 @@ def _card_response(
     )
 
 
-def _get_card_client(card: BoardCard, current_user: User, db) -> Client:
+def _get_card_client(
+    card: BoardCard,
+    current_user: User,
+    db,
+    *,
+    merchant_id: int | None = None,
+) -> Client:
     client = db.get(Client, card.board_list.board.client_id)
     if client is None:
         raise HTTPException(status_code=404)
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
-        cs = ClientService(db)
-        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
-            raise HTTPException(status_code=404)
+        return _require_staff_client_workspace(db, current_user, client.id, merchant_id)
     return client
 
 
-def _get_attachment_for_user(attachment_id: int, current_user: User, db) -> CardAttachment:
+def _get_attachment_for_user(
+    attachment_id: int,
+    current_user: User,
+    db,
+    *,
+    merchant_id: int | None = None,
+) -> CardAttachment:
     attachment = db.get(CardAttachment, attachment_id)
     if attachment is None:
         raise HTTPException(status_code=404, detail="Adjunto no encontrado")
-    _get_card_client(attachment.card, current_user, db)
+    _get_card_client(attachment.card, current_user, db, merchant_id=merchant_id)
     return attachment
 
 
@@ -199,13 +222,12 @@ def get_board(
     client_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
 ) -> BoardResponse:
     if current_user.role.code == "CLIENT" and current_user.client_id != client_id:
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
-        cs = ClientService(db)
-        if not cs.user_can_view_approved_client_workspace(current_user, client_id):
-            raise HTTPException(status_code=404)
+        _require_staff_client_workspace(db, current_user, client_id, merchant_id)
     board_service = BoardService(db)
     board = board_service.get_board_for_client(client_id)
     if board is None:
@@ -226,15 +248,14 @@ def list_mentionable_users(
     client_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
     include_client: bool = True,
 ) -> list[BoardMentionableUserResponse]:
     if current_user.role.code == "CLIENT" and current_user.client_id != client_id:
         raise HTTPException(status_code=403)
     cs = ClientService(db)
     if current_user.role.code != "CLIENT":
-        if not cs.user_can_view_approved_client_workspace(current_user, client_id):
-            raise HTTPException(status_code=404)
-        client = cs.get_client_detail(client_id)
+        client = _require_staff_client_workspace(db, current_user, client_id, merchant_id)
     else:
         client = cs.get_client_detail(client_id)
     if client is None:
@@ -261,6 +282,7 @@ def create_card(
     payload: CardCreate,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
 ) -> BoardCardResponse:
     board_list = db.get(BoardList, list_id)
     if board_list is None:
@@ -273,9 +295,7 @@ def create_card(
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
-        cs = ClientService(db)
-        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
-            raise HTTPException(status_code=404)
+        _require_staff_client_workspace(db, current_user, client.id, merchant_id)
     _require_board_staff(current_user)
 
     board_service = BoardService(db)
@@ -340,6 +360,7 @@ def move_card(
     payload: CardMoveUpdate,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
 ) -> BoardCardResponse:
     card = db.get(BoardCard, card_id)
     if card is None:
@@ -351,9 +372,7 @@ def move_card(
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
-        cs = ClientService(db)
-        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
-            raise HTTPException(status_code=404)
+        _require_staff_client_workspace(db, current_user, client.id, merchant_id)
     _require_board_staff(current_user)
 
     board_service = BoardService(db)
@@ -386,11 +405,12 @@ def update_card(
     payload: CardUpdate,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
 ) -> BoardCardResponse:
     card = db.get(BoardCard, card_id)
     if card is None:
         raise HTTPException(status_code=404)
-    _get_card_client(card, current_user, db)
+    _get_card_client(card, current_user, db, merchant_id=merchant_id)
     _require_board_staff(current_user)
 
     board_service = BoardService(db)
@@ -422,6 +442,7 @@ async def upload_card_attachment(
     card_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
     file: Annotated[UploadFile, File()],
     comment_id: Annotated[int | None, Form()] = None,
     attachment_type: Annotated[str, Form()] = "CLIENT_UPLOAD",
@@ -429,7 +450,7 @@ async def upload_card_attachment(
     card = db.get(BoardCard, card_id)
     if card is None:
         raise HTTPException(status_code=404)
-    client = _get_card_client(card, current_user, db)
+    client = _get_card_client(card, current_user, db, merchant_id=merchant_id)
 
     if current_user.role.code == "CLIENT" and comment_id is None:
         raise HTTPException(status_code=403, detail="Solo podés adjuntar archivos en comentarios")
@@ -459,8 +480,9 @@ def get_attachment_content(
     attachment_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
 ) -> StreamingResponse:
-    attachment = _get_attachment_for_user(attachment_id, current_user, db)
+    attachment = _get_attachment_for_user(attachment_id, current_user, db, merchant_id=merchant_id)
     storage = get_storage_provider()
     file_bytes, media_type = storage.get_object_bytes(attachment.storage_key)
     return StreamingResponse(
@@ -475,6 +497,7 @@ async def add_comment(
     card_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
     body: Annotated[str, Form()] = "",
     is_internal: Annotated[bool, Form()] = False,
     files: Annotated[list[UploadFile] | None, File()] = None,
@@ -490,9 +513,7 @@ async def add_comment(
             raise HTTPException(status_code=403)
         is_internal = False
     else:
-        cs = ClientService(db)
-        if not cs.user_can_view_approved_client_workspace(current_user, client.id, client=client):
-            raise HTTPException(status_code=404)
+        _require_staff_client_workspace(db, current_user, client.id, merchant_id)
 
     attachments: list[tuple[str, str, bytes]] = []
     for upload in files or []:
