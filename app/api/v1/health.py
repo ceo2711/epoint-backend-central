@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app import __version__
+from app.__version__ import __version__
 from app.core.config import Settings, get_settings
 
 router = APIRouter(tags=["Salud"])
