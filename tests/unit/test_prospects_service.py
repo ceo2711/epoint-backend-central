@@ -1,16 +1,18 @@
-from app.services.prospects import ALLOWED_TRANSITIONS, INITIAL_STATUSES
+from app.services.prospects import ALLOWED_TRANSITIONS, INITIAL_STATUS
 from app.models.enums import ProspectStatus
 
 
 class TestProspectTransitions:
-    def test_initial_statuses(self):
-        assert ProspectStatus.LEAD_CALIFICADO.value in INITIAL_STATUSES
-        assert ProspectStatus.LEAD_NO_CALIFICADO.value in INITIAL_STATUSES
+    def test_initial_status_is_pending_contact(self):
+        assert INITIAL_STATUS == ProspectStatus.PENDIENTE_CONTACTAR.value
 
-    def test_qualified_can_become_contacted(self):
-        allowed = ALLOWED_TRANSITIONS[ProspectStatus.LEAD_CALIFICADO.value]
+    def test_pending_can_become_contacted(self):
+        allowed = ALLOWED_TRANSITIONS[ProspectStatus.PENDIENTE_CONTACTAR.value]
         assert ProspectStatus.LEAD_CONTACTADO.value in allowed
+        assert ProspectStatus.LEAD_CERRADO.value in allowed
 
-    def test_unqualified_can_only_close(self):
-        allowed = ALLOWED_TRANSITIONS[ProspectStatus.LEAD_NO_CALIFICADO.value]
-        assert allowed == {ProspectStatus.LEAD_CERRADO.value}
+    def test_no_legacy_qualification_statuses(self):
+        assert "LEAD_CALIFICADO" not in ALLOWED_TRANSITIONS
+        assert "LEAD_NO_CALIFICADO" not in ALLOWED_TRANSITIONS
+        assert not hasattr(ProspectStatus, "LEAD_CALIFICADO")
+        assert not hasattr(ProspectStatus, "LEAD_NO_CALIFICADO")

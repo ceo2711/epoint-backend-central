@@ -4,25 +4,28 @@ from fastapi import HTTPException, status
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.orm import Session
 
-from app.models.enums import ClientStatus
+from app.models.enums import ClientSource, ClientStatus, ProspectStatus
 from app.models.merchant import Merchant
 from app.models.user import User
 from app.services.clients import ClientService
+from app.services.prospects import ProspectService
 
+# Embudo comercial = estados de prospecto (antes de pasar a cliente).
 SALES_STATUSES = (
-    ClientStatus.PENDIENTE_DE_REVISION.value,
-    ClientStatus.RECHAZADO.value,
-    ClientStatus.APROBADO_PARA_ONBOARDING.value,
+    ProspectStatus.PENDIENTE_CONTACTAR.value,
+    ProspectStatus.LEAD_CONTACTADO.value,
+    ProspectStatus.LEAD_CERRADO.value,
+    ProspectStatus.CONTRATO_ENVIADO.value,
+    ProspectStatus.PAGO_COMPLETADO.value,
 )
 
-SALES_CONVERTED_STATUSES = (
-    ClientStatus.APROBADO_PARA_ONBOARDING.value,
-    ClientStatus.EN_CARGA_DATOS.value,
-    ClientStatus.DOCUMENTOS_EN_REVISION.value,
-    ClientStatus.LISTO_PARA_TABLERO.value,
-    ClientStatus.ONBOARDING_EN_PROGRESO.value,
-    ClientStatus.ONBOARDING_COMPLETADO.value,
+SALES_PIPELINE_STATUSES = (
+    ProspectStatus.PENDIENTE_CONTACTAR.value,
+    ProspectStatus.LEAD_CONTACTADO.value,
+    ProspectStatus.CONTRATO_ENVIADO.value,
 )
+
+SALES_SOURCES = tuple(source.value for source in ClientSource)
 
 ONBOARDING_STATUSES = (
     ClientStatus.APROBADO_PARA_ONBOARDING.value,
@@ -81,6 +84,7 @@ class DashboardService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.clients = ClientService(db)
+        self.prospects = ProspectService(db)
 
     def get_metrics(self, user: User, *, merchant_id: int | None = None) -> dict:
         if merchant_id is None:
@@ -93,39 +97,82 @@ class DashboardService:
         if merchant is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comercio no encontrado")
 
-        scoped = self.clients._scoped_clients_query(user, merchant_id).subquery()
+        scoped_clients = self.clients._scoped_clients_query(user, merchant_id).subquery()
+        scoped_prospects = self.prospects._scoped_query(user, merchant_id).subquery()
 
-        status_rows = self.db.execute(
-            select(scoped.c.status, func.count()).group_by(scoped.c.status)
+        client_status_rows = self.db.execute(
+            select(scoped_clients.c.status, func.count()).group_by(scoped_clients.c.status)
         ).all()
-        by_status: dict[str, int] = {status: count for status, count in status_rows}
+        clients_by_status: dict[str, int] = {status: count for status, count in client_status_rows}
         for status in ClientStatus:
-            by_status.setdefault(status.value, 0)
+            clients_by_status.setdefault(status.value, 0)
+
+        prospect_status_rows = self.db.execute(
+            select(scoped_prospects.c.status, func.count()).group_by(scoped_prospects.c.status)
+        ).all()
+        prospects_by_status: dict[str, int] = {
+            status: count for status, count in prospect_status_rows
+        }
+        for status in ProspectStatus:
+            prospects_by_status.setdefault(status.value, 0)
+
+        prospect_source_rows = self.db.execute(
+            select(scoped_prospects.c.source, func.count()).group_by(scoped_prospects.c.source)
+        ).all()
+        prospects_by_source: dict[str, int] = {}
+        for source, count in prospect_source_rows:
+            key = source or ClientSource.OTHER.value
+            prospects_by_source[key] = prospects_by_source.get(key, 0) + count
+        for source in ClientSource:
+            prospects_by_source.setdefault(source.value, 0)
 
         summary = self.clients.get_client_stats(user, merchant_id=merchant_id)
         role_code = user.role.code
         areas = [
-            self._build_area_metrics(code, name, statuses, by_status, scope)
+            self._build_area_metrics(
+                code,
+                name,
+                statuses,
+                clients_by_status=clients_by_status,
+                prospects_by_status=prospects_by_status,
+                prospects_by_source=prospects_by_source,
+                scope=scope,
+            )
             for code, name, statuses, scope in _area_definitions_for_role(role_code)
         ]
 
         today = date.today()
         series_start = today - timedelta(days=TIMESERIES_DAYS - 1)
 
-        registration_rows = self.db.execute(
-            select(cast(scoped.c.created_at, Date).label("day"), func.count())
-            .where(cast(scoped.c.created_at, Date) >= series_start)
+        client_registration_rows = self.db.execute(
+            select(cast(scoped_clients.c.created_at, Date).label("day"), func.count())
+            .where(cast(scoped_clients.c.created_at, Date) >= series_start)
             .group_by("day")
             .order_by("day")
         ).all()
-        registrations_by_date = {row.day.isoformat(): row[1] for row in registration_rows}
-        registrations = _fill_timeseries(series_start, TIMESERIES_DAYS, registrations_by_date)
+        client_registrations_by_date = {
+            row.day.isoformat(): row[1] for row in client_registration_rows
+        }
+        registrations = _fill_timeseries(series_start, TIMESERIES_DAYS, client_registrations_by_date)
+
+        prospect_registration_rows = self.db.execute(
+            select(cast(scoped_prospects.c.created_at, Date).label("day"), func.count())
+            .where(cast(scoped_prospects.c.created_at, Date) >= series_start)
+            .group_by("day")
+            .order_by("day")
+        ).all()
+        prospect_registrations_by_date = {
+            row.day.isoformat(): row[1] for row in prospect_registration_rows
+        }
+        prospect_registrations = _fill_timeseries(
+            series_start, TIMESERIES_DAYS, prospect_registrations_by_date
+        )
 
         completion_rows = self.db.execute(
-            select(cast(scoped.c.updated_at, Date).label("day"), func.count())
+            select(cast(scoped_clients.c.updated_at, Date).label("day"), func.count())
             .where(
-                scoped.c.status == ClientStatus.ONBOARDING_COMPLETADO.value,
-                cast(scoped.c.updated_at, Date) >= series_start,
+                scoped_clients.c.status == ClientStatus.ONBOARDING_COMPLETADO.value,
+                cast(scoped_clients.c.updated_at, Date) >= series_start,
             )
             .group_by("day")
             .order_by("day")
@@ -141,11 +188,15 @@ class DashboardService:
             },
             "viewer_scope": _viewer_scope_for_role(role_code),
             "summary": summary,
-            "by_status": by_status,
+            "by_status": clients_by_status,
             "areas": areas,
             "registrations": registrations,
+            "prospect_registrations": prospect_registrations,
             "completions": completions,
             "registration_projections": _build_projections(registrations, today, PROJECTION_DAYS),
+            "prospect_registration_projections": _build_projections(
+                prospect_registrations, today, PROJECTION_DAYS
+            ),
             "completion_projections": _build_projections(completions, today, PROJECTION_DAYS),
         }
 
@@ -154,15 +205,25 @@ class DashboardService:
         code: str,
         name: str,
         statuses: tuple[str, ...],
-        by_status: dict[str, int],
+        *,
+        clients_by_status: dict[str, int],
+        prospects_by_status: dict[str, int],
+        prospects_by_source: dict[str, int] | None = None,
         scope: str = "general",
     ) -> dict:
         if code == "VENTAS":
-            return self._build_sales_area_metrics(name, by_status, scope)
+            return self._build_sales_area_metrics(
+                name,
+                prospects_by_status,
+                prospects_by_source or {},
+                scope,
+            )
 
-        status_counts = [{"status": status, "count": by_status.get(status, 0)} for status in statuses]
+        status_counts = [
+            {"status": status, "count": clients_by_status.get(status, 0)} for status in statuses
+        ]
         total = sum(item["count"] for item in status_counts)
-        completed = by_status.get(ClientStatus.ONBOARDING_COMPLETADO.value, 0)
+        completed = clients_by_status.get(ClientStatus.ONBOARDING_COMPLETADO.value, 0)
         in_pipeline = total - completed
 
         return {
@@ -174,41 +235,41 @@ class DashboardService:
             "completed": completed,
             "conversion_rate": None,
             "by_status": status_counts,
+            "by_source": [],
         }
 
     def _build_sales_area_metrics(
         self,
         name: str,
         by_status: dict[str, int],
+        by_source: dict[str, int],
         scope: str,
     ) -> dict:
-        pending = by_status.get(ClientStatus.PENDIENTE_DE_REVISION.value, 0)
-        rejected = by_status.get(ClientStatus.RECHAZADO.value, 0)
-        converted = sum(by_status.get(status, 0) for status in SALES_CONVERTED_STATUSES)
-        inactive = by_status.get(ClientStatus.INACTIVO.value, 0)
-        total = pending + rejected + converted + inactive
-
         status_counts = [
-            {"status": ClientStatus.PENDIENTE_DE_REVISION.value, "count": pending},
-            {"status": ClientStatus.RECHAZADO.value, "count": rejected},
-            {
-                "status": ClientStatus.APROBADO_PARA_ONBOARDING.value,
-                "count": converted,
-            },
+            {"status": status, "count": by_status.get(status, 0)} for status in SALES_STATUSES
         ]
+        total = sum(item["count"] for item in status_counts)
+        in_pipeline = sum(by_status.get(status, 0) for status in SALES_PIPELINE_STATUSES)
+        completed = by_status.get(ProspectStatus.PAGO_COMPLETADO.value, 0)
+        closed = by_status.get(ProspectStatus.LEAD_CERRADO.value, 0)
 
-        denominator = pending + rejected + converted
+        denominator = in_pipeline + completed + closed
         conversion_rate: float | None = None
         if denominator > 0:
-            conversion_rate = round((converted / denominator) * 100, 1)
+            conversion_rate = round((completed / denominator) * 100, 1)
+
+        source_counts = [
+            {"source": source, "count": by_source.get(source, 0)} for source in SALES_SOURCES
+        ]
 
         return {
             "code": "VENTAS",
             "name": name,
             "scope": scope,
             "total": total,
-            "in_pipeline": pending,
-            "completed": 0,
+            "in_pipeline": in_pipeline,
+            "completed": completed,
             "conversion_rate": conversion_rate,
             "by_status": status_counts,
+            "by_source": source_counts,
         }

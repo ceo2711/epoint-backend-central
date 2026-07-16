@@ -44,6 +44,7 @@ def _to_response(prospect) -> ProspectResponse:
         merchant_id=prospect.merchant_id,
         assigned_to_user_id=prospect.assigned_to_user_id,
         status=prospect.status,
+        is_qualified=bool(prospect.is_qualified),
         first_name=prospect.first_name,
         last_name=prospect.last_name,
         full_name=prospect.full_name,
@@ -191,7 +192,7 @@ def create_prospect(
         email=str(payload.email),
         phone=payload.phone,
         merchant_id=payload.merchant_id,
-        initial_status=payload.initial_status.value,
+        is_qualified=payload.is_qualified,
         source=payload.source.value if payload.source else None,
         notes=payload.notes,
     )

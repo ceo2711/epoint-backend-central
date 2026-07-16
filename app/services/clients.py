@@ -290,6 +290,7 @@ class ClientService:
         source: str | None = None,
         merchant_id: int | None = None,
         default_merchant_id: int | None = None,
+        is_qualified: bool = True,
     ) -> Client:
         normalized_email = email.lower().strip()
         normalized_phone = phone.strip()
@@ -330,6 +331,7 @@ class ClientService:
             merchant_id=merchant.id,
             registered_by_user_id=actor.id,
             status=ClientStatus.PENDIENTE_DE_REVISION.value,
+            is_qualified=bool(is_qualified),
         )
         self.db.add(client)
         self.db.flush()

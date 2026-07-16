@@ -13,9 +13,7 @@ class ProspectCreate(BaseModel):
     phone: str = Field(min_length=5, max_length=30)
     source: ClientSource | None = None
     merchant_id: int
-    initial_status: ProspectStatus = Field(
-        description="Debe ser LEAD_CALIFICADO o LEAD_NO_CALIFICADO",
-    )
+    is_qualified: bool = True
     notes: str | None = None
 
 
@@ -26,6 +24,7 @@ class ProspectUpdate(BaseModel):
     phone: str | None = Field(default=None, min_length=5, max_length=30)
     source: ClientSource | None = None
     notes: str | None = None
+    is_qualified: bool | None = None
 
 
 class ProspectStatusUpdate(BaseModel):
@@ -112,6 +111,7 @@ class ProspectResponse(ORMBase):
     merchant_id: int
     assigned_to_user_id: int
     status: str
+    is_qualified: bool
     first_name: str
     last_name: str
     full_name: str
@@ -142,6 +142,7 @@ class ProspectPipelineSummary(BaseModel):
 
     prospect_id: int
     status: str
+    is_qualified: bool
     history: list[ProspectHistoryResponse] = Field(default_factory=list)
     calendly_event: ProspectCalendlyBrief | None = None
     docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)

@@ -14,6 +14,11 @@ class StatusCount(BaseModel):
     count: int
 
 
+class SourceCount(BaseModel):
+    source: str
+    count: int
+
+
 class TimeseriesPoint(BaseModel):
     date: str
     count: int
@@ -33,6 +38,7 @@ class AreaMetrics(BaseModel):
     completed: int
     conversion_rate: float | None = None
     by_status: list[StatusCount]
+    by_source: list[SourceCount] = Field(default_factory=list)
 
 
 class DashboardMetricsResponse(BaseModel):
@@ -42,6 +48,8 @@ class DashboardMetricsResponse(BaseModel):
     by_status: dict[str, int]
     areas: list[AreaMetrics]
     registrations: list[TimeseriesPoint] = Field(default_factory=list)
+    prospect_registrations: list[TimeseriesPoint] = Field(default_factory=list)
     completions: list[TimeseriesPoint] = Field(default_factory=list)
     registration_projections: list[ProjectionPoint] = Field(default_factory=list)
+    prospect_registration_projections: list[ProjectionPoint] = Field(default_factory=list)
     completion_projections: list[ProjectionPoint] = Field(default_factory=list)

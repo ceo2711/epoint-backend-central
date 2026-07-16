@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -25,9 +25,10 @@ class Prospect(Base):
     assigned_to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     status: Mapped[str] = mapped_column(
         String(40),
-        default=ProspectStatus.LEAD_CALIFICADO.value,
+        default=ProspectStatus.PENDIENTE_CONTACTAR.value,
         index=True,
     )
+    is_qualified: Mapped[bool] = mapped_column(Boolean, default=True)
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), index=True)

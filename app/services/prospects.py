@@ -23,22 +23,11 @@ from app.services.audit import AuditService
 from app.services.clients import ClientService
 from app.services.merchant_context import MerchantContextService
 
-INITIAL_STATUSES = {
-    ProspectStatus.LEAD_CALIFICADO.value,
-    ProspectStatus.LEAD_NO_CALIFICADO.value,
-}
+INITIAL_STATUS = ProspectStatus.PENDIENTE_CONTACTAR.value
 
 SALES_REP_MANUAL_STATUSES = {ProspectStatus.LEAD_CERRADO.value}
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    ProspectStatus.LEAD_CALIFICADO.value: {
-        ProspectStatus.PENDIENTE_CONTACTAR.value,
-        ProspectStatus.LEAD_CONTACTADO.value,
-        ProspectStatus.LEAD_CERRADO.value,
-    },
-    ProspectStatus.LEAD_NO_CALIFICADO.value: {
-        ProspectStatus.LEAD_CERRADO.value,
-    },
     ProspectStatus.PENDIENTE_CONTACTAR.value: {
         ProspectStatus.LEAD_CONTACTADO.value,
         ProspectStatus.LEAD_CERRADO.value,
@@ -165,16 +154,11 @@ class ProspectService:
         email: str,
         phone: str,
         merchant_id: int,
-        initial_status: str,
+        is_qualified: bool = True,
         source: str | None = None,
         notes: str | None = None,
         assigned_to_user_id: int | None = None,
     ) -> Prospect:
-        if initial_status not in INITIAL_STATUSES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El estado inicial debe ser LEAD_CALIFICADO o LEAD_NO_CALIFICADO",
-            )
         if not self.merchant_ctx.user_can_access_merchant(actor, merchant_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenés acceso a ese comercio")
 
@@ -194,7 +178,8 @@ class ProspectService:
         prospect = Prospect(
             merchant_id=merchant_id,
             assigned_to_user_id=owner_id,
-            status=initial_status,
+            status=INITIAL_STATUS,
+            is_qualified=bool(is_qualified),
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             email=normalized_email,
@@ -209,7 +194,7 @@ class ProspectService:
             actor=actor,
             event_type=ProspectHistoryEventType.STATUS_CHANGE.value,
             from_status=None,
-            to_status=initial_status,
+            to_status=INITIAL_STATUS,
             note="Prospecto creado",
         )
         self.audit.log(
@@ -217,7 +202,7 @@ class ProspectService:
             action="PROSPECT_CREATED",
             entity_type="prospect",
             entity_id=prospect.id,
-            metadata={"status": initial_status},
+            metadata={"status": INITIAL_STATUS, "is_qualified": prospect.is_qualified},
         )
         self.db.commit()
         self.db.refresh(prospect)
@@ -300,13 +285,10 @@ class ProspectService:
             raise HTTPException(status_code=400, detail="El prospecto ya fue convertido a cliente")
         current = prospect.status
         target = ProspectStatus.LEAD_CONTACTADO.value
-        if current not in {
-            ProspectStatus.PENDIENTE_CONTACTAR.value,
-            ProspectStatus.LEAD_CALIFICADO.value,
-        }:
+        if current != ProspectStatus.PENDIENTE_CONTACTAR.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Solo se puede marcar contactado desde pendiente de contactar o lead calificado",
+                detail="Solo se puede marcar contactado desde pendiente de contactar",
             )
         allowed = ALLOWED_TRANSITIONS.get(current, set())
         if target not in allowed:
@@ -390,14 +372,6 @@ class ProspectService:
                     to_status=prospect.status,
                     note=reschedule_note,
                 )
-        elif prospect.status == ProspectStatus.LEAD_CALIFICADO.value:
-            self._transition_status(
-                prospect,
-                actor=actor,
-                new_status=ProspectStatus.PENDIENTE_CONTACTAR.value,
-                note=f"Reunión agendada: {event.name}",
-                event_type=ProspectHistoryEventType.CALENDLY_LINKED.value,
-            )
         else:
             self._add_history(
                 prospect,
@@ -601,6 +575,7 @@ class ProspectService:
             phone=prospect.phone,
             source=source,
             merchant_id=prospect.merchant_id,
+            is_qualified=prospect.is_qualified,
         )
 
         if prospect.docusign_envelope_id:
@@ -755,7 +730,7 @@ class ProspectService:
         previous = prospect.status
         if new_status != previous:
             allowed = ALLOWED_TRANSITIONS.get(previous, set())
-            if new_status not in allowed and previous not in INITIAL_STATUSES:
+            if new_status not in allowed:
                 return
             prospect.status = new_status
         self._add_history(

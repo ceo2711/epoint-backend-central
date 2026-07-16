@@ -82,6 +82,7 @@ def prospect_pipeline_summary(
     return ProspectPipelineSummary(
         prospect_id=prospect.id,
         status=prospect.status,
+        is_qualified=bool(prospect.is_qualified),
         history=history,
         calendly_event=calendly,
         docusign_envelopes=envelopes,

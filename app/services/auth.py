@@ -279,10 +279,10 @@ class AuthService:
         return self._build_user_me(user)
 
     def update_profile(self, user: User, payload: UserProfileUpdate) -> UserMeResponse:
-        if user.role.code == CLIENT_ROLE_CODE:
+        if user.role.code != "ADMIN":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Los clientes del portal no pueden editar estos datos desde aquí",
+                detail="Solo un administrador puede modificar los datos personales",
             )
 
         normalized_email = payload.email.lower().strip()
