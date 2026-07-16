@@ -134,6 +134,7 @@ class ClientService:
         status_filter: str | None = None,
         search: str | None = None,
         onboarding_only: bool = False,
+        sales_rep_id: int | None = None,
     ) -> tuple[list[Client], int]:
         from sqlalchemy import func, or_
 
@@ -146,6 +147,10 @@ class ClientService:
                     Client.approved_at.isnot(None),
                 )
             )
+        if sales_rep_id is not None:
+            if user.role.code == "SALES_REP" and sales_rep_id != user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+            query = query.where(Client.registered_by_user_id == sales_rep_id)
         if status_filter:
             query = query.where(Client.status == status_filter)
         if search:
@@ -156,7 +161,7 @@ class ClientService:
         total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
         clients = (
             self.db.execute(
-                query.options(joinedload(Client.merchant))
+                query.options(joinedload(Client.merchant), joinedload(Client.registered_by))
                 .order_by(Client.created_at.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
@@ -1090,6 +1095,7 @@ class ClientService:
                 select(Client)
                 .options(
                     joinedload(Client.merchant),
+                    joinedload(Client.registered_by),
                     joinedload(Client.docusign_envelope),
                     joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
                     joinedload(Client.addresses),

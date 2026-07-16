@@ -1,5 +1,5 @@
 from app.models.client import Client
-from app.schemas.client import ClientResponse, ClientSignedContractBrief, MerchantBrief
+from app.schemas.client import AdvisorBrief, ClientResponse, ClientSignedContractBrief, MerchantBrief
 
 
 def client_signed_contract_brief(client: Client) -> ClientSignedContractBrief | None:
@@ -26,6 +26,15 @@ def client_to_response(client: Client) -> ClientResponse:
     merchant = None
     if client.merchant:
         merchant = MerchantBrief.model_validate(client.merchant)
+    registered_by = None
+    seller = getattr(client, "registered_by", None)
+    if seller is not None:
+        registered_by = AdvisorBrief(
+            id=seller.id,
+            first_name=seller.first_name,
+            last_name=seller.last_name,
+            email=seller.email,
+        )
     return ClientResponse(
         id=client.id,
         status=client.status,
@@ -42,6 +51,7 @@ def client_to_response(client: Client) -> ClientResponse:
         date_of_birth=client.date_of_birth,
         has_ssn=bool(client.ssn_encrypted),
         registered_by_user_id=client.registered_by_user_id,
+        registered_by=registered_by,
         created_at=client.created_at,
         docusign_contract_signed_at=client.docusign_contract_signed_at,
         signed_contract=client_signed_contract_brief(client),

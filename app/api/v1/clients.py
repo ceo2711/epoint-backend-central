@@ -51,6 +51,7 @@ def list_clients(
     onboarding_only: bool = Query(False),
     merchant_id: int | None = Query(None, description="Filtrar por comercio específico"),
     all_merchants: bool = Query(False, description="Incluir todos los comercios accesibles"),
+    sales_rep_id: int | None = Query(None, description="Filtrar por vendedor (admin)"),
 ) -> PaginatedResponse[ClientResponse]:
     service = ClientService(db)
     merchant_context = MerchantContextService(db)
@@ -79,6 +80,7 @@ def list_clients(
         status_filter=status_filter,
         search=search,
         onboarding_only=onboarding_only,
+        sales_rep_id=sales_rep_id,
     )
     return PaginatedResponse(
         items=[_to_response(c) for c in clients],

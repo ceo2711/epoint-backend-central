@@ -108,6 +108,7 @@ class ClientResponse(ORMBase):
     date_of_birth: date | None
     has_ssn: bool = False
     registered_by_user_id: int
+    registered_by: AdvisorBrief | None = None
     created_at: datetime
     docusign_contract_signed_at: datetime | None = None
     signed_contract: ClientSignedContractBrief | None = None
