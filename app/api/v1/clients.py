@@ -24,7 +24,15 @@ from app.schemas.client import (
     ClientUpdate,
     AdvisorBrief,
 )
-from app.schemas.common import MessageResponse, PaginatedResponse
+from app.models.sent_email import SentEmail
+from app.schemas.common import (
+    MessageResponse,
+    PaginatedResponse,
+    SendCustomEmailRequest,
+    SentEmailResponse,
+)
+from app.services.email import CustomMessageEmailPayload, send_custom_message_email
+from app.services.email.custom_message import sanitize_message_html
 from app.serializers.client import client_to_response
 from app.services.clients import ClientService
 from app.services.merchant_context import MerchantContextService
@@ -257,6 +265,93 @@ def update_client(
     client = service.update_client(actor=current_user, client=client, **payload.model_dump(exclude_unset=True))
     db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
+
+
+@router.post("/{client_id}/send-email", response_model=MessageResponse)
+def send_client_email(
+    client_id: int,
+    payload: SendCustomEmailRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> MessageResponse:
+    service = ClientService(db)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    subject = payload.subject.strip()
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El asunto es obligatorio")
+    sender_name = f"{current_user.first_name} {current_user.last_name}".strip()
+    sent = send_custom_message_email(
+        CustomMessageEmailPayload(
+            recipient_email=client.email,
+            first_name=client.first_name,
+            subject=subject,
+            message_html=payload.message_html,
+            sender_name=sender_name,
+            log_context=f"client email id={client.id}",
+        )
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo enviar el email. Revisá el mensaje e intentá de nuevo.",
+        )
+    db.add(
+        SentEmail(
+            client_id=client.id,
+            recipient_email=client.email,
+            subject=subject,
+            message_html=sanitize_message_html(payload.message_html),
+            sent_by_user_id=current_user.id,
+        )
+    )
+    service.audit.log(
+        actor=current_user,
+        action="CLIENT_EMAIL_SENT",
+        entity_type="client",
+        entity_id=client.id,
+        metadata={"subject": subject},
+    )
+    db.commit()
+    return MessageResponse(message=f"Email enviado a {client.email}")
+
+
+@router.get("/{client_id}/emails", response_model=list[SentEmailResponse])
+def list_client_emails(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> list[SentEmailResponse]:
+    from sqlalchemy.orm import joinedload
+
+    service = ClientService(db)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    rows = (
+        db.execute(
+            select(SentEmail)
+            .options(joinedload(SentEmail.sent_by))
+            .where(SentEmail.client_id == client.id)
+            .order_by(SentEmail.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        SentEmailResponse(
+            id=row.id,
+            subject=row.subject,
+            message_html=row.message_html,
+            recipient_email=row.recipient_email,
+            sent_by_name=f"{row.sent_by.first_name} {row.sent_by.last_name}".strip(),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 @router.post("/{client_id}/resubmit", response_model=ClientResponse)

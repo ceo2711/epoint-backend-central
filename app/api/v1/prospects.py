@@ -5,7 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import ActiveMerchantId, DbSession, require_permissions
 from app.models.user import User
-from app.schemas.common import PaginatedResponse
+from app.models.sent_email import SentEmail
+from app.schemas.common import (
+    MessageResponse,
+    PaginatedResponse,
+    SendCustomEmailRequest,
+    SentEmailResponse,
+)
+from app.services.email import CustomMessageEmailPayload, send_custom_message_email
+from app.services.email.custom_message import sanitize_message_html
 from app.schemas.prospect import (
     ProspectCalendlyBrief,
     ProspectConvertResponse,
@@ -287,6 +295,87 @@ def add_prospect_note(
         created_at=entry.created_at,
         changed_by_name=f"{current_user.first_name} {current_user.last_name}".strip(),
     )
+
+
+@router.post("/{prospect_id}/send-email", response_model=MessageResponse)
+def send_prospect_email(
+    prospect_id: int,
+    payload: SendCustomEmailRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("prospects:update"))],
+    active_merchant_id: ActiveMerchantId,
+) -> MessageResponse:
+    service = ProspectService(db)
+    prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
+    subject = payload.subject.strip()
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El asunto es obligatorio")
+    sender_name = f"{current_user.first_name} {current_user.last_name}".strip()
+    sent = send_custom_message_email(
+        CustomMessageEmailPayload(
+            recipient_email=prospect.email,
+            first_name=prospect.first_name,
+            subject=subject,
+            message_html=payload.message_html,
+            sender_name=sender_name,
+            log_context=f"prospect email id={prospect.id}",
+        )
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo enviar el email. Revisá el mensaje e intentá de nuevo.",
+        )
+    db.add(
+        SentEmail(
+            prospect_id=prospect.id,
+            recipient_email=prospect.email,
+            subject=subject,
+            message_html=sanitize_message_html(payload.message_html),
+            sent_by_user_id=current_user.id,
+        )
+    )
+    service.add_note(
+        actor=current_user,
+        prospect=prospect,
+        note=f"Email enviado: {subject}",
+    )
+    return MessageResponse(message=f"Email enviado a {prospect.email}")
+
+
+@router.get("/{prospect_id}/emails", response_model=list[SentEmailResponse])
+def list_prospect_emails(
+    prospect_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("prospects:read"))],
+    active_merchant_id: ActiveMerchantId,
+) -> list[SentEmailResponse]:
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+
+    service = ProspectService(db)
+    prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
+    rows = (
+        db.execute(
+            select(SentEmail)
+            .options(joinedload(SentEmail.sent_by))
+            .where(SentEmail.prospect_id == prospect.id)
+            .order_by(SentEmail.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        SentEmailResponse(
+            id=row.id,
+            subject=row.subject,
+            message_html=row.message_html,
+            recipient_email=row.recipient_email,
+            sent_by_name=f"{row.sent_by.first_name} {row.sent_by.last_name}".strip(),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 @router.post("/{prospect_id}/link-calendly", response_model=ProspectResponse)

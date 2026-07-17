@@ -25,6 +25,7 @@ from app.models.permission import Permission, RolePermission
 from app.models.prospect import Prospect
 from app.models.prospect_history import ProspectHistory
 from app.models.role import Role
+from app.models.sent_email import SentEmail
 from app.models.session import UserSession
 from app.models.user import User
 from app.models.user_merchant import UserMerchant
@@ -62,6 +63,7 @@ __all__ = [
     "Permission",
     "Role",
     "RolePermission",
+    "SentEmail",
     "User",
     "UserMerchant",
     "UserSession",
