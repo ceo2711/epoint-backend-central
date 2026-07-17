@@ -48,6 +48,9 @@ class Client(Base):
     last_onboarding_reminder_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    conversion_welcome_email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     ssn_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     portal_temp_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

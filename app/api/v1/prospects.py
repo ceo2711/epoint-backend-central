@@ -15,6 +15,7 @@ from app.schemas.common import (
 from app.services.email import CustomMessageEmailPayload, send_custom_message_email
 from app.services.email.custom_message import sanitize_message_html
 from app.schemas.prospect import (
+    ProspectAvailabilityResponse,
     ProspectCalendlyBrief,
     ProspectConvertResponse,
     ProspectCreate,
@@ -206,6 +207,41 @@ def create_prospect(
     )
     detail = service.get_prospect_detail(current_user, prospect.id)
     return _to_response(detail)
+
+
+@router.get("/check-availability", response_model=ProspectAvailabilityResponse)
+def check_prospect_availability(
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("prospects:create"))],
+    merchant_id: int = Query(..., ge=1),
+    email: str | None = Query(default=None),
+    phone: str | None = Query(default=None),
+    exclude_prospect_id: int | None = Query(default=None),
+) -> ProspectAvailabilityResponse:
+    service = ProspectService(db)
+    if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenés acceso a ese comercio")
+    result = service.check_contact_availability(
+        email=email,
+        phone=phone,
+        merchant_id=merchant_id,
+        exclude_prospect_id=exclude_prospect_id,
+    )
+    return ProspectAvailabilityResponse(**result)
+
+
+@router.delete("/{prospect_id}", response_model=MessageResponse)
+def delete_prospect(
+    prospect_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("prospects:update"))],
+    active_merchant_id: ActiveMerchantId,
+) -> MessageResponse:
+    """Borrado definitivo del prospecto (solo administradores)."""
+    service = ProspectService(db)
+    prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
+    service.delete_prospect(actor=current_user, prospect=prospect)
+    return MessageResponse(message="Prospecto eliminado definitivamente")
 
 
 @router.get("/{prospect_id}", response_model=ProspectDetailResponse)

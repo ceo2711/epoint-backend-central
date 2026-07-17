@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -21,7 +22,13 @@ from app.models.prospect_history import ProspectHistory
 from app.models.user import User
 from app.services.audit import AuditService
 from app.services.clients import ClientService
+from app.services.email.client_conversion_welcome import (
+    ClientConversionWelcomeEmailPayload,
+    send_client_conversion_welcome_email,
+)
 from app.services.merchant_context import MerchantContextService
+
+logger = logging.getLogger(__name__)
 
 INITIAL_STATUS = ProspectStatus.PENDIENTE_CONTACTAR.value
 
@@ -164,6 +171,7 @@ class ProspectService:
 
         normalized_email = email.lower().strip()
         self._assert_email_available(normalized_email, merchant_id=merchant_id)
+        self._assert_phone_available(phone, merchant_id=merchant_id)
 
         owner_id = assigned_to_user_id or actor.id
         if actor.role.code == "SALES_REP" and owner_id != actor.id:
@@ -224,6 +232,12 @@ class ProspectService:
                 exclude_prospect_id=prospect.id,
             )
             fields["email"] = fields["email"].lower().strip()
+        if "phone" in fields and fields["phone"] is not None:
+            self._assert_phone_available(
+                fields["phone"],
+                merchant_id=prospect.merchant_id,
+                exclude_prospect_id=prospect.id,
+            )
         for key, value in fields.items():
             if value is not None and hasattr(prospect, key):
                 if isinstance(value, str):
@@ -234,6 +248,25 @@ class ProspectService:
         self.db.commit()
         self.db.refresh(prospect)
         return prospect
+
+    def delete_prospect(self, *, actor: User, prospect: Prospect) -> None:
+        """Borrado definitivo, solo para administradores. El historial y los emails
+        registrados se eliminan en cascada; links de pago, contratos y reuniones
+        vinculados quedan desasociados."""
+        if actor.role.code != "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo un administrador puede eliminar prospectos",
+            )
+        self.audit.log(
+            actor=actor,
+            action="PROSPECT_DELETED",
+            entity_type="prospect",
+            entity_id=prospect.id,
+            metadata={"email": prospect.email},
+        )
+        self.db.delete(prospect)
+        self.db.commit()
 
     def update_status(
         self,
@@ -558,6 +591,10 @@ class ProspectService:
             client = self.db.get(Client, prospect.converted_client_id)
             if client is None:
                 raise HTTPException(status_code=500, detail="Cliente convertido no encontrado")
+            if prospect.payment_link_id is not None:
+                link = self.db.get(PaymentLink, prospect.payment_link_id)
+                if link is not None:
+                    self._send_client_conversion_welcome(client, link)
             return client
         if not self._ready_for_conversion(prospect):
             raise HTTPException(
@@ -585,11 +622,14 @@ class ProspectService:
                 client.docusign_contract_signed_at = envelope.completed_at or datetime.now(timezone.utc)
                 envelope.client_id = client.id
 
-        if prospect.payment_link_id:
-            link = self.db.get(PaymentLink, prospect.payment_link_id)
-            if link and link.status == PaymentLinkStatus.PAID.value:
-                link.client_id = client.id
-                link.client_registered_at = datetime.now(timezone.utc)
+        link = (
+            self.db.get(PaymentLink, prospect.payment_link_id)
+            if prospect.payment_link_id is not None
+            else None
+        )
+        if link and link.status == PaymentLinkStatus.PAID.value:
+            link.client_id = client.id
+            link.client_registered_at = datetime.now(timezone.utc)
 
         prospect.converted_client_id = client.id
         prospect.status = ProspectStatus.PAGO_COMPLETADO.value
@@ -610,7 +650,40 @@ class ProspectService:
         )
         self.db.commit()
         self.db.refresh(client)
+        if link is not None:
+            self._send_client_conversion_welcome(client, link)
         return client
+
+    def _send_client_conversion_welcome(self, client: Client, link: PaymentLink) -> None:
+        if client.conversion_welcome_email_sent_at is not None:
+            return
+        merchant = self.db.get(Merchant, client.merchant_id) if client.merchant_id else None
+        try:
+            sent = send_client_conversion_welcome_email(
+                ClientConversionWelcomeEmailPayload(
+                    recipient_email=client.email,
+                    first_name=client.first_name,
+                    amount=link.amount,
+                    currency=link.currency,
+                    client_id=client.id,
+                    merchant_name=merchant.name if merchant else None,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Error enviando bienvenida por conversión (client_id=%s)",
+                client.id,
+            )
+            return
+        if not sent:
+            logger.warning(
+                "No se pudo enviar bienvenida por conversión a %s (client_id=%s)",
+                client.email,
+                client.id,
+            )
+            return
+        client.conversion_welcome_email_sent_at = datetime.now(timezone.utc)
+        self.db.commit()
 
     def _ready_for_conversion(self, prospect: Prospect) -> bool:
         if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
@@ -696,27 +769,137 @@ class ProspectService:
         merchant_id: int,
         exclude_prospect_id: int | None = None,
     ) -> None:
-        client_query = select(Client.id).where(
-            func.lower(Client.email) == email,
-            Client.merchant_id == merchant_id,
+        conflict = self._find_email_conflict(
+            email, merchant_id=merchant_id, exclude_prospect_id=exclude_prospect_id
         )
-        if self.db.execute(client_query).scalar_one_or_none() is not None:
+        if conflict is None:
+            return
+        kind, _ = conflict
+        if kind == "client":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Ya existe un cliente con ese email en este comercio",
             )
-        prospect_query = select(Prospect.id).where(
-            func.lower(Prospect.email) == email,
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe un prospecto activo con ese email en este comercio",
+        )
+
+    def _assert_phone_available(
+        self,
+        phone: str,
+        *,
+        merchant_id: int,
+        exclude_prospect_id: int | None = None,
+    ) -> None:
+        conflict = self._find_phone_conflict(
+            phone, merchant_id=merchant_id, exclude_prospect_id=exclude_prospect_id
+        )
+        if conflict is None:
+            return
+        kind, _ = conflict
+        if kind == "client":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe un cliente con ese teléfono en este comercio",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe un prospecto activo con ese teléfono en este comercio",
+        )
+
+    def _find_email_conflict(
+        self,
+        email: str,
+        *,
+        merchant_id: int,
+        exclude_prospect_id: int | None = None,
+    ) -> tuple[str, Client | Prospect] | None:
+        normalized = email.lower().strip()
+        client = self.db.execute(
+            select(Client).where(
+                func.lower(Client.email) == normalized,
+                Client.merchant_id == merchant_id,
+            )
+        ).scalar_one_or_none()
+        if client is not None:
+            return ("client", client)
+        prospect_query = select(Prospect).where(
+            func.lower(Prospect.email) == normalized,
             Prospect.merchant_id == merchant_id,
             Prospect.converted_client_id.is_(None),
         )
         if exclude_prospect_id is not None:
             prospect_query = prospect_query.where(Prospect.id != exclude_prospect_id)
-        if self.db.execute(prospect_query).scalar_one_or_none() is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Ya existe un prospecto activo con ese email en este comercio",
+        prospect = self.db.execute(prospect_query).scalar_one_or_none()
+        if prospect is not None:
+            return ("prospect", prospect)
+        return None
+
+    def _find_phone_conflict(
+        self,
+        phone: str,
+        *,
+        merchant_id: int,
+        exclude_prospect_id: int | None = None,
+    ) -> tuple[str, Client | Prospect] | None:
+        from app.core.config import get_settings
+        from app.core.phone import phones_match
+
+        normalized = phone.strip()
+        if not normalized:
+            return None
+        country_code = get_settings().whatsapp_default_country_code
+        clients = self.db.execute(
+            select(Client).where(Client.merchant_id == merchant_id)
+        ).scalars()
+        for client in clients:
+            if phones_match(client.phone, normalized, country_code):
+                return ("client", client)
+        prospect_query = select(Prospect).where(
+            Prospect.merchant_id == merchant_id,
+            Prospect.converted_client_id.is_(None),
+        )
+        if exclude_prospect_id is not None:
+            prospect_query = prospect_query.where(Prospect.id != exclude_prospect_id)
+        for prospect in self.db.execute(prospect_query).scalars():
+            if phones_match(prospect.phone, normalized, country_code):
+                return ("prospect", prospect)
+        return None
+
+    def check_contact_availability(
+        self,
+        *,
+        email: str | None = None,
+        phone: str | None = None,
+        merchant_id: int,
+        exclude_prospect_id: int | None = None,
+    ) -> dict:
+        result: dict = {"available": True, "email": None, "phone": None}
+        if email and "@" in email:
+            conflict = self._find_email_conflict(
+                email, merchant_id=merchant_id, exclude_prospect_id=exclude_prospect_id
             )
+            if conflict is not None:
+                result["available"] = False
+                result["email"] = self._conflict_payload(*conflict)
+        if phone and len(phone.strip()) >= 5:
+            conflict = self._find_phone_conflict(
+                phone, merchant_id=merchant_id, exclude_prospect_id=exclude_prospect_id
+            )
+            if conflict is not None:
+                result["available"] = False
+                result["phone"] = self._conflict_payload(*conflict)
+        return result
+
+    @staticmethod
+    def _conflict_payload(kind: str, row: Client | Prospect) -> dict:
+        return {
+            "client_id": row.id,
+            "client_name": row.full_name,
+            "client_email": row.email,
+            "kind": kind,
+        }
 
     def _transition_status(
         self,

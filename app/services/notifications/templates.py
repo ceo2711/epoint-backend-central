@@ -185,6 +185,28 @@ Equipo ePoint
 """
 
 
+def client_conversion_welcome_email_body(
+    *,
+    first_name: str,
+    amount_formatted: str,
+    merchant_name: str | None = None,
+) -> str:
+    merchant_block = ""
+    if merchant_name:
+        merchant_block = f"\nTu proceso corresponde a {merchant_name}.\n"
+    return f"""Hola {first_name},
+{merchant_block}
+¡Bienvenido/a a ePoint!
+
+Confirmamos que tu pago de {amount_formatted} se procesó exitosamente y que completaste todos los requisitos iniciales.
+
+Tu perfil pasará ahora a revisión por parte de nuestro equipo de Onboarding. Una vez que sea aprobado, nos contactaremos con vos por este mismo medio para informarte los próximos pasos.
+
+Gracias por elegirnos.
+Equipo ePoint
+"""
+
+
 def password_reset_email_body(
     *,
     first_name: str,

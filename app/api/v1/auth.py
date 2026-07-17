@@ -10,7 +10,6 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     TokenResponse,
     TotpConfirmRequest,
-    TotpDisableRequest,
     TotpSetupResponse,
     TwoFactorVerifyRequest,
 )
@@ -43,15 +42,6 @@ def confirm_2fa(
     db: DbSession,
 ) -> MessageResponse:
     return AuthService(db).confirm_totp(current_user, payload)
-
-
-@router.post("/2fa/disable", response_model=MessageResponse)
-def disable_2fa(
-    payload: TotpDisableRequest,
-    current_user: CurrentUser,
-    db: DbSession,
-) -> MessageResponse:
-    return AuthService(db).disable_totp(current_user, payload)
 
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -44,6 +44,21 @@ def test_render_payment_link_template_substitutes_placeholders():
     assert "{{PAYMENT_URL}}" not in html
 
 
+def test_render_client_conversion_welcome_template_substitutes_placeholders():
+    html = render_html_template(
+        "client_conversion_welcome",
+        FIRST_NAME="Juan",
+        AMOUNT_FORMATTED="USD 99.00",
+        LOGO_URL="https://app.example.com/epoint-logo.png",
+        MERCHANT_LINE="Tu proceso corresponde a Acme Corp.",
+    )
+    assert "Juan" in html
+    assert "USD 99.00" in html
+    assert "Acme Corp." in html
+    assert "Pago confirmado" in html
+    assert "{{AMOUNT_FORMATTED}}" not in html
+
+
 def test_pending_items_html_escapes_special_chars():
     html = pending_items_html(['Item <script> & "test"'])
     assert "&lt;script&gt;" in html

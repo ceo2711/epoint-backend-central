@@ -6,6 +6,19 @@ from pydantic import BaseModel, EmailStr, Field
 from app.models.enums import ClientSource, ProspectStatus
 from app.schemas.common import ORMBase
 
+class ProspectContactConflict(BaseModel):
+    client_id: int
+    client_name: str
+    client_email: str
+    kind: str  # "client" | "prospect"
+
+
+class ProspectAvailabilityResponse(BaseModel):
+    available: bool
+    email: ProspectContactConflict | None = None
+    phone: ProspectContactConflict | None = None
+
+
 class ProspectCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)

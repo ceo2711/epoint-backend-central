@@ -28,7 +28,6 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     TokenResponse,
     TotpConfirmRequest,
-    TotpDisableRequest,
     TotpSetupResponse,
     TwoFactorVerifyRequest,
 )
@@ -218,27 +217,6 @@ class AuthService:
         user.totp_confirmed_at = datetime.now(timezone.utc)
         self.db.commit()
         return MessageResponse(message="Doble factor activado correctamente")
-
-    def disable_totp(self, user: User, payload: TotpDisableRequest) -> MessageResponse:
-        if not user.totp_enabled:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El doble factor no está activado",
-            )
-        if not verify_password(payload.password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contraseña incorrecta")
-        if not user.totp_secret_encrypted:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configuración 2FA incompleta")
-
-        secret = decrypt_totp_secret(user.totp_secret_encrypted)
-        if not verify_totp_code(secret=secret, code=payload.code):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
-
-        user.totp_enabled = False
-        user.totp_secret_encrypted = None
-        user.totp_confirmed_at = None
-        self.db.commit()
-        return MessageResponse(message="Doble factor desactivado correctamente")
 
     def refresh_token(self, payload: RefreshTokenRequest) -> TokenResponse:
         token_payload = safe_decode_token(payload.refresh_token)

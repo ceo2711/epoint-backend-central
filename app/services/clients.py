@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.encryption import decrypt_value, encrypt_value
 from app.core.security import hash_password
+from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
 from app.models.enums import ClientSource, ClientStatus, NotificationEventType
@@ -890,6 +891,9 @@ class ClientService:
         self.db.commit()
 
     def delete_client(self, *, actor: User, client: Client) -> None:
+        """Borrado definitivo (solo ADMIN vía permiso clients:delete): elimina el cliente
+        y también los usuarios del portal asociados, sin dejar rastros que bloqueen
+        volver a registrar el mismo email/teléfono."""
         portal_users = list(
             self.db.execute(select(User).where(User.client_id == client.id)).scalars().all()
         )
@@ -900,15 +904,12 @@ class ClientService:
                 .where(
                     Role.code == "CLIENT",
                     func.lower(User.email) == client.email.lower(),
-                    User.is_active.is_(True),
                 )
             )
             .scalars()
             .all()
         )
-        for portal_user in {user.id: user for user in (*portal_users, *email_matches)}.values():
-            portal_user.client_id = None
-            portal_user.is_active = False
+        users_to_purge = {user.id: user for user in (*portal_users, *email_matches)}.values()
 
         self.audit.log(
             actor=actor,
@@ -917,8 +918,18 @@ class ClientService:
             entity_id=client.id,
             metadata={"email": client.email},
         )
-        self.db.flush()
+        # Primero el cliente: sus documentos, tablero, comentarios y adjuntos
+        # se eliminan en cascada antes de borrar el usuario del portal.
         self.db.delete(client)
+        self.db.flush()
+
+        for portal_user in users_to_purge:
+            self.db.execute(
+                update(AuditLog)
+                .where(AuditLog.actor_user_id == portal_user.id)
+                .values(actor_user_id=None)
+            )
+            self.db.delete(portal_user)
         self.db.commit()
 
     def bulk_delete_clients(self, *, actor: User, client_ids: list[int]) -> dict[str, list]:
