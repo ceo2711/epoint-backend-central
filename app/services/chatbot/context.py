@@ -292,12 +292,36 @@ class ChatbotContextBuilder:
         client_id = self.user.client_id
         if not client_id:
             return {"error": "Usuario cliente sin client_id asociado."}
+        base = self.settings.portal_base_url.rstrip("/")
         return {
             "rol": "CLIENT",
             "portal": {
-                "datos_url": f"{self.settings.portal_base_url}/portal/datos",
-                "documentos_url": f"{self.settings.portal_base_url}/portal/documentos",
-                "tablero_url": f"{self.settings.portal_base_url}/portal/tablero",
+                "inicio_url": f"{base}/portal",
+                "datos_url": f"{base}/portal/datos",
+                "documentos_url": f"{base}/portal/documentos",
+                "tablero_url": f"{base}/portal/tablero",
+                "secciones": [
+                    {
+                        "nombre": "Mi portal",
+                        "url": f"{base}/portal",
+                        "para_que": "Resumen de bienvenida y acceso rápido a las demás secciones.",
+                    },
+                    {
+                        "nombre": "Mis datos",
+                        "url": f"{base}/portal/datos",
+                        "para_que": "Completar SSN, fecha de nacimiento, dirección y vehículo.",
+                    },
+                    {
+                        "nombre": "Documentos",
+                        "url": f"{base}/portal/documentos",
+                        "para_que": "Subir tarjeta SSN, identidad y comprobante de domicilio.",
+                    },
+                    {
+                        "nombre": "Tablero",
+                        "url": f"{base}/portal/tablero",
+                        "para_que": "Avanzar tareas de onboarding (Client TO DO) con adjuntos cuando corresponda.",
+                    },
+                ],
             },
             "cliente": self._client_detail_payload(client_id),
         }

@@ -46,11 +46,11 @@ Critical rules:
 - document_type_matches is the most important field. Set false if the file is NOT the expected report type.
 - detected_document_type and detected_bureau must describe what you actually see, not what was requested.
 - name_matches: true only if the client's full name (or clear partial match) appears on the report.
-- is_recent: true if the report date is within the last 45 days OR no date is visible but content looks like a current portal download.
+- is_recent: true ONLY if the report date is within the last 15 days. If the report date is older than 15 days, set is_recent=false and reject — the client must upload a newly generated report. If no date is visible, set is_recent=false unless the file clearly looks like a freshly generated official portal download (prefer rejecting when freshness cannot be confirmed).
 - is_complete: true if tradelines/accounts section is visible (for credit reports) or all expected sections are present.
 - For PDF credit reports, color is NOT required — focus on readability and correct bureau branding.
 - Every reason must include both "en" and "es".
-- If rejected, rejection_reasons must explain the main issue (wrong bureau, wrong document type, missing name, outdated report, etc.).
+- If rejected, rejection_reasons must explain the main issue (wrong bureau, wrong document type, missing name, outdated report older than 15 days, etc.).
 - If approved, approval_reasons must cite verified facts — never claim a match that is false."""
 
 

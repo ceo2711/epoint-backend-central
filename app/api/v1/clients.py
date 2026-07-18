@@ -199,16 +199,6 @@ def get_client(
     portal_temp_password = service.get_stored_portal_temp_password(client)
     doc_service = DocumentService(db)
     latest_verifications = doc_service.load_latest_verifications_map([doc.id for doc in client.documents])
-    advisor_brief: AdvisorBrief | None = None
-    if current_user.role.code in ("ONBOARDING_MANAGER", "ADMIN"):
-        active_advisor = service._get_active_advisor(client)
-        if active_advisor is not None:
-            advisor_brief = AdvisorBrief(
-                id=active_advisor.id,
-                first_name=active_advisor.first_name,
-                last_name=active_advisor.last_name,
-                email=active_advisor.email,
-            )
     can_view_onboarding = service.user_can_view_approved_client_workspace(
         current_user, client_id, client=client
     )
@@ -216,7 +206,6 @@ def get_client(
         **base.model_dump(),
         **portal,
         portal_temp_password=portal_temp_password,
-        advisor=advisor_brief,
         addresses=client.addresses if can_view_onboarding else [],
         vehicles=client.vehicles if can_view_onboarding else [],
         documents=[
@@ -246,7 +235,7 @@ def get_client(
         response.portal_email = None
         response.portal_login_url = None
         response.portal_temp_password = None
-        response.advisor = None
+        # El asesor asignado sigue visible para ventas (contacto operativo).
     return response
 
 

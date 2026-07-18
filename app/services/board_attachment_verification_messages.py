@@ -66,15 +66,15 @@ def build_board_rejection_messages(
         if report_date:
             messages.append(
                 _msg(
-                    f"The report date ({report_date}) appears outdated (must be within the last 45 days).",
-                    f"La fecha del reporte ({report_date}) parece desactualizada (debe ser de los últimos 45 días).",
+                    f"The report date ({report_date}) is outdated. Only reports from the last 15 days are accepted — please upload a newly generated report.",
+                    f"La fecha del reporte ({report_date}) está desactualizada. Solo se aceptan reportes de los últimos 15 días: subí un reporte recién generado.",
                 )
             )
         else:
             messages.append(
                 _msg(
-                    "The report does not appear recent (must be within the last 45 days).",
-                    "El reporte no parece reciente (debe ser de los últimos 45 días).",
+                    "The report does not appear recent. Only reports from the last 15 days are accepted — please upload a newly generated report.",
+                    "El reporte no parece reciente. Solo se aceptan reportes de los últimos 15 días: subí un reporte recién generado.",
                 )
             )
     if not messages:

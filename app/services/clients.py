@@ -7,17 +7,23 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.encryption import decrypt_value, encrypt_value
 from app.core.security import hash_password
 from app.models.audit_log import AuditLog
+from app.models.card_attachment import CardAttachment
+from app.models.card_comment import CardComment
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
 from app.models.enums import ClientSource, ClientStatus, NotificationEventType
 from app.models.merchant import Merchant
+from app.models.notification import Notification
+from app.models.password_reset_token import PasswordResetToken
+from app.models.prospect import Prospect
 from app.models.role import Role
+from app.models.session import UserSession
 from app.models.user import User
 from app.services.audit import AuditService
 from app.services.boards import BoardService
@@ -162,7 +168,11 @@ class ClientService:
         total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
         clients = (
             self.db.execute(
-                query.options(joinedload(Client.merchant), joinedload(Client.registered_by))
+                query.options(
+                    joinedload(Client.merchant),
+                    joinedload(Client.registered_by),
+                    joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
+                )
                 .order_by(Client.created_at.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
@@ -342,20 +352,28 @@ class ClientService:
         self.db.add(client)
         self.db.flush()
 
-        onboarding_users = self._get_onboarding_team()
-        self.notifications.notify(
-            event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
-            users=onboarding_users,
-            title="Nuevo cliente para revisar",
-            body=f"{client.full_name} fue registrado y espera revisión.",
-            payload={"client_id": client.id},
-        )
         self.audit.log(
             actor=actor,
             action="CLIENT_CREATED",
             entity_type="client",
             entity_id=client.id,
         )
+
+        auto_approved = self.try_auto_approve_pending_client(
+            actor=actor,
+            client=client,
+            commit=False,
+        )
+        if not auto_approved:
+            onboarding_users = self._get_onboarding_team()
+            self.notifications.notify(
+                event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
+                users=onboarding_users,
+                title="Nuevo cliente para revisar",
+                body=f"{client.full_name} fue registrado y espera revisión.",
+                payload={"client_id": client.id},
+            )
+
         self.db.commit()
         self.db.refresh(client)
         return client
@@ -427,14 +445,20 @@ class ClientService:
             event_types=[NotificationEventType.CLIENT_REJECTED.value],
             user_ids=[actor.id],
         )
-        onboarding_users = self._get_onboarding_team()
-        self.notifications.notify(
-            event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
-            users=onboarding_users,
-            title="Cliente reenviado a revisión",
-            body=f"{client.full_name} fue corregido y reenviado.",
-            payload={"client_id": client.id},
+        auto_approved = self.try_auto_approve_pending_client(
+            actor=actor,
+            client=client,
+            commit=False,
         )
+        if not auto_approved:
+            onboarding_users = self._get_onboarding_team()
+            self.notifications.notify(
+                event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
+                users=onboarding_users,
+                title="Cliente reenviado a revisión",
+                body=f"{client.full_name} fue corregido y reenviado.",
+                payload={"client_id": client.id},
+            )
         self.db.commit()
         self.db.refresh(client)
         return client
@@ -472,6 +496,32 @@ class ClientService:
         self.db.commit()
         self.db.refresh(client)
         return client
+
+    def _clear_portal_auth_state(self, portal_user: User) -> None:
+        """Limpia 2FA, sesiones y tokens para que el portal arranque desde cero."""
+        portal_user.totp_enabled = False
+        portal_user.totp_secret_encrypted = None
+        portal_user.totp_confirmed_at = None
+        portal_user.must_change_password = True
+        self.db.execute(delete(UserSession).where(UserSession.user_id == portal_user.id))
+        self.db.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.user_id == portal_user.id)
+        )
+
+    def _purge_portal_user(self, portal_user: User) -> None:
+        """Elimina por completo el usuario del portal (2FA, sesiones, notificaciones, etc.)."""
+        uid = portal_user.id
+        self.db.execute(delete(Notification).where(Notification.user_id == uid))
+        self.db.execute(delete(UserSession).where(UserSession.user_id == uid))
+        self.db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == uid))
+        self.db.execute(delete(CardComment).where(CardComment.author_user_id == uid))
+        self.db.execute(delete(CardAttachment).where(CardAttachment.uploaded_by_user_id == uid))
+        self.db.execute(
+            update(AuditLog)
+            .where(AuditLog.actor_user_id == uid)
+            .values(actor_user_id=None)
+        )
+        self.db.delete(portal_user)
 
     def _resolve_portal_user(self, client: Client, client_role: Role, temp_password: str) -> User:
         """Obtiene o crea el usuario portal vinculado a este cliente (no reutiliza otros clientes)."""
@@ -516,6 +566,9 @@ class ClientService:
                     role_id=client_role.id,
                     client_id=client.id,
                     must_change_password=True,
+                    totp_enabled=False,
+                    totp_secret_encrypted=None,
+                    totp_confirmed_at=None,
                     is_active=True,
                 )
                 self.db.add(portal_user)
@@ -523,13 +576,13 @@ class ClientService:
                 return portal_user
 
         portal_user.password_hash = hash_password(temp_password)
-        portal_user.must_change_password = True
         portal_user.client_id = client.id
         portal_user.is_active = True
         portal_user.first_name = client.first_name
         portal_user.last_name = client.last_name
         portal_user.phone = client.phone
         portal_user.role_id = client_role.id
+        self._clear_portal_auth_state(portal_user)
         if portal_user.email != client.email:
             conflict = self.db.execute(
                 select(User).where(User.email == client.email, User.id != portal_user.id)
@@ -542,6 +595,77 @@ class ClientService:
             portal_user.email = client.email
         self.db.flush()
         return portal_user
+
+    def pick_least_loaded_advisor(self) -> User | None:
+        """Elige el asesor activo con menos clientes asignados (desempate por id)."""
+        advisors = list(
+            self.db.execute(
+                select(User)
+                .join(Role)
+                .options(joinedload(User.role))
+                .where(Role.code == "ADVISOR", User.is_active.is_(True))
+                .order_by(User.id)
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        if not advisors:
+            return None
+
+        load_rows = self.db.execute(
+            select(ClientAssignment.advisor_user_id, func.count())
+            .where(ClientAssignment.unassigned_at.is_(None))
+            .group_by(ClientAssignment.advisor_user_id)
+        ).all()
+        load_by_advisor = {int(advisor_id): int(count) for advisor_id, count in load_rows}
+
+        return min(advisors, key=lambda user: (load_by_advisor.get(user.id, 0), user.id))
+
+    def try_auto_approve_pending_client(
+        self,
+        *,
+        actor: User,
+        client: Client,
+        commit: bool = True,
+    ) -> bool:
+        """Revisa datos mínimos y aprueba automáticamente asignando un asesor."""
+        if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
+            return False
+
+        from app.services.chatbot.approval_rules import validate_approval_requirements
+
+        issues = validate_approval_requirements(client, self)
+        if issues:
+            logger.info(
+                "Auto-aprobación omitida para cliente #%s: %s",
+                client.id,
+                "; ".join(issues),
+            )
+            return False
+
+        advisor = self.pick_least_loaded_advisor()
+        if advisor is None:
+            logger.warning(
+                "Auto-aprobación omitida para cliente #%s: no hay asesores activos",
+                client.id,
+            )
+            return False
+
+        self.approve_client(
+            actor=actor,
+            client=client,
+            advisor_user_id=advisor.id,
+            send_welcome_notifications=True,
+            commit=commit,
+        )
+        logger.info(
+            "Cliente #%s auto-aprobado y asignado al asesor #%s (%s)",
+            client.id,
+            advisor.id,
+            advisor.email,
+        )
+        return True
 
     def approve_client(
         self,
@@ -892,8 +1016,8 @@ class ClientService:
 
     def delete_client(self, *, actor: User, client: Client) -> None:
         """Borrado definitivo (solo ADMIN vía permiso clients:delete): elimina el cliente
-        y también los usuarios del portal asociados, sin dejar rastros que bloqueen
-        volver a registrar el mismo email/teléfono."""
+        y también los usuarios del portal asociados (incluido 2FA, sesiones y tokens),
+        sin dejar rastros que bloqueen volver a registrar el mismo email/teléfono."""
         portal_users = list(
             self.db.execute(select(User).where(User.client_id == client.id)).scalars().all()
         )
@@ -909,27 +1033,45 @@ class ClientService:
             .scalars()
             .all()
         )
-        users_to_purge = {user.id: user for user in (*portal_users, *email_matches)}.values()
+        users_to_purge = list({user.id: user for user in (*portal_users, *email_matches)}.values())
+
+        source_prospects = list(
+            self.db.execute(
+                select(Prospect).where(Prospect.converted_client_id == client.id)
+            )
+            .scalars()
+            .all()
+        )
 
         self.audit.log(
             actor=actor,
             action="CLIENT_DELETED",
             entity_type="client",
             entity_id=client.id,
-            metadata={"email": client.email},
+            metadata={
+                "email": client.email,
+                "purged_portal_user_ids": [u.id for u in users_to_purge],
+                "purged_prospect_ids": [p.id for p in source_prospects],
+            },
         )
-        # Primero el cliente: sus documentos, tablero, comentarios y adjuntos
-        # se eliminan en cascada antes de borrar el usuario del portal.
+
+        # Desvincular portal users antes del DELETE del cliente.
+        for portal_user in users_to_purge:
+            portal_user.client_id = None
+        self.db.flush()
+
+        # El prospecto origen vuelve a listarse si solo se hace SET NULL:
+        # hay que eliminarlo junto con el cliente.
+        for prospect in source_prospects:
+            self.db.delete(prospect)
+        self.db.flush()
+
+        # Documentos, tablero, comentarios y adjuntos se eliminan en cascada.
         self.db.delete(client)
         self.db.flush()
 
         for portal_user in users_to_purge:
-            self.db.execute(
-                update(AuditLog)
-                .where(AuditLog.actor_user_id == portal_user.id)
-                .values(actor_user_id=None)
-            )
-            self.db.delete(portal_user)
+            self._purge_portal_user(portal_user)
         self.db.commit()
 
     def bulk_delete_clients(self, *, actor: User, client_ids: list[int]) -> dict[str, list]:
@@ -949,10 +1091,16 @@ class ClientService:
                 self.delete_client(actor=actor, client=client)
                 deleted_ids.append(client_id)
             except HTTPException as exc:
+                self.db.rollback()
                 detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
                 failures.append({"client_id": client_id, "reason": detail})
-            except Exception:
-                failures.append({"client_id": client_id, "reason": "No se pudo eliminar el cliente"})
+            except Exception as exc:
+                self.db.rollback()
+                logger.exception("Error eliminando cliente #%s", client_id)
+                reason = str(getattr(exc, "orig", None) or exc)
+                if len(reason) > 180:
+                    reason = f"{reason[:177]}..."
+                failures.append({"client_id": client_id, "reason": reason or "No se pudo eliminar el cliente"})
 
         return {"deleted_ids": deleted_ids, "failures": failures}
 

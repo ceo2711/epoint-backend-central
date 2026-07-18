@@ -3,6 +3,7 @@ from app.services.board_attachment_verification_rules import (
     CREDIT_BUREAU_REPORTS,
     EQUIFAX_CREDIT_REPORT,
     EXPERIAN_CREDIT_REPORT,
+    TAX_REPORT,
     TRANSUNION_CREDIT_REPORT,
     build_board_attachment_context,
     is_board_attachment_approved,
@@ -65,6 +66,64 @@ def test_build_context_includes_client_name():
     assert "Jane Doe" in context
     assert "EQUIFAX_CREDIT_REPORT" in context
     assert "Equifax" in context
+    assert "15 days" in context
+
+
+def test_build_context_credit_bureau_reports_requires_fresh_report():
+    context = build_board_attachment_context(
+        attachment_kind=CREDIT_BUREAU_REPORTS,
+        client_name="Jane Doe",
+        card_title="Reportes: Experian, Equifax y TransUnion",
+        list_title="Client TO DO",
+    )
+    assert "15 days" in context
+    assert "newly generated" in context.lower() or "re-download" in context.lower()
+
+
+def test_resolve_taxes_card():
+    kind = resolve_attachment_kind(
+        card_title="Informe de Taxes",
+        list_title="Client TO DO",
+        requires_file_upload=True,
+    )
+    assert kind == TAX_REPORT
+
+
+def test_approve_tax_report():
+    result = {
+        "is_readable": True,
+        "is_complete": True,
+        "is_recent": True,
+        "document_type_matches": True,
+        "detected_document_type": "Form 1040 Tax Return",
+        "name_matches": True,
+    }
+    assert is_board_attachment_approved(result, TAX_REPORT) is True
+
+
+def test_reject_tax_report_wrong_document():
+    result = {
+        "is_readable": True,
+        "is_complete": True,
+        "is_recent": True,
+        "document_type_matches": False,
+        "detected_document_type": "Equifax credit report",
+        "name_matches": True,
+    }
+    assert is_board_attachment_approved(result, TAX_REPORT) is False
+
+
+def test_reject_outdated_report():
+    result = {
+        "is_readable": True,
+        "is_complete": True,
+        "is_recent": False,
+        "report_date": "2026-01-01",
+        "document_type_matches": True,
+        "detected_bureau": "Equifax",
+        "name_matches": True,
+    }
+    assert is_board_attachment_approved(result, CREDIT_BUREAU_REPORTS) is False
 
 
 def test_approve_equifax_report():

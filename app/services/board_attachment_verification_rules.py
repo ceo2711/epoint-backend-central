@@ -6,11 +6,15 @@ from typing import Any
 
 BoardAttachmentKind = str
 
+# Antigüedad máxima aceptada para reportes de buró en verificación IA.
+BOARD_REPORT_MAX_AGE_DAYS = 15
+
 CREDIT_BUREAU_REPORTS = "CREDIT_BUREAU_REPORTS"
 EXPERIAN_CREDIT_REPORT = "EXPERIAN_CREDIT_REPORT"
 EQUIFAX_CREDIT_REPORT = "EQUIFAX_CREDIT_REPORT"
 TRANSUNION_CREDIT_REPORT = "TRANSUNION_CREDIT_REPORT"
 CLARITY_REPORT = "CLARITY_REPORT"
+TAX_REPORT = "TAX_REPORT"
 GENERIC_BOARD_UPLOAD = "GENERIC_BOARD_UPLOAD"
 
 BUREAU_KINDS = frozenset(
@@ -27,11 +31,14 @@ ATTACHMENT_KIND_GUIDANCE: dict[str, dict[str, str]] = {
         "description": (
             "A consumer credit report PDF or clear screenshot downloaded from Experian, Equifax, or TransUnion. "
             "Must show bureau branding, the consumer's name, and credit account/tradeline information. "
-            "Acceptable sources: experian.com, equifax.com, transunion.com official consumer portals."
+            "Acceptable sources: experian.com, equifax.com, transunion.com official consumer portals. "
+            "The report MUST be newly generated: report date within the last 15 days. "
+            "Reject any report older than 15 days — the client must re-download a fresh report."
         ),
         "reject_examples": (
             "invoices, bank statements, utility bills, SSN cards, driver's licenses, random PDFs, "
-            "marketing emails, tutorials, blank pages, or reports from ChexSystems/Innovis/Clarity only."
+            "marketing emails, tutorials, blank pages, reports older than 15 days, "
+            "or reports from ChexSystems/Innovis/Clarity only."
         ),
         "bureau_rule": (
             "The file must be a legitimate consumer credit report from Experian, Equifax, OR TransUnion "
@@ -79,6 +86,18 @@ ATTACHMENT_KIND_GUIDANCE: dict[str, dict[str, str]] = {
         ),
         "bureau_rule": "detected_bureau should be Clarity or Experian Clarity Services.",
     },
+    TAX_REPORT: {
+        "description": (
+            "A tax document / informe de taxes: IRS Tax Return (Form 1040 or similar), Tax Transcript, "
+            "or another official tax report PDF/image. Must show the taxpayer's name and recognizable "
+            "tax form content (income, filing year, IRS/tax branding or form numbers)."
+        ),
+        "reject_examples": (
+            "credit bureau reports, bank statements, utility bills, SSN cards, driver's licenses, "
+            "blank pages, invoices unrelated to taxes, random PDFs."
+        ),
+        "bureau_rule": "",
+    },
     GENERIC_BOARD_UPLOAD: {
         "description": (
             "A document or image related to the board task. Must be readable and appear to match the card context."
@@ -95,6 +114,8 @@ def resolve_attachment_kind(*, card_title: str, list_title: str, requires_file_u
 
     if "reportes" in title and ("equifax" in title or "experian" in title or "transunion" in title):
         return CREDIT_BUREAU_REPORTS
+    if "tax" in title or "taxes" in title or "impuesto" in title:
+        return TAX_REPORT
     if "clarity" in title:
         return CLARITY_REPORT
 
@@ -132,6 +153,9 @@ def build_board_attachment_context(
         "document_type_matches must be false when the content is a different document category, "
         "even if the PDF/image is readable."
         f"{bureau_section}\n"
+        f"Freshness rule: is_recent=true only if the report date is within the last {BOARD_REPORT_MAX_AGE_DAYS} days. "
+        f"If the report is older than {BOARD_REPORT_MAX_AGE_DAYS} days, set is_recent=false and reject — "
+        "the client must upload a newly generated report.\n"
         "name_matches: true only if the client's full name (or a clear partial match) appears on the report."
     )
 
@@ -175,6 +199,9 @@ def is_board_attachment_approved(result: dict[str, Any], attachment_kind: str) -
     if attachment_kind in BUREAU_KINDS or attachment_kind == CLARITY_REPORT:
         approved = approved and result.get("is_recent") is True
         approved = approved and _bureau_matches(result, attachment_kind)
+    elif attachment_kind == TAX_REPORT:
+        # Taxes: exigir documento correcto y legible; recency preferred but not fail-closed on missing date.
+        approved = approved and result.get("is_recent") is not False
     else:
         approved = approved and result.get("is_recent") is not False
 

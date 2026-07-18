@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     docusign_auth_server: str = "account-d.docusign.com"
     docusign_base_uri: str = ""
     docusign_default_template_id: str = ""
-    docusign_default_template_role_name: str = "Signer"
+    docusign_default_template_role_name: str = "Cliente"
     docusign_connect_hmac_key: str = ""
     backend_public_url: str = Field(
         default="",

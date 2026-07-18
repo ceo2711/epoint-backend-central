@@ -15,15 +15,18 @@ from app.services.default_board_cards import (
 def test_client_todo_default_cards():
     cards = default_cards_for_column("Client TO DO")
 
-    assert len(cards) == 3
+    assert len(cards) == 4
     assert cards[0].title == "Reportes: Experian, Equifax y TransUnion"
-    assert cards[1].title == "Apertura de Cuentas & Freeze"
-    assert cards[2].title == "Lista de bancos con relacion"
+    assert cards[1].title == "Informe de Taxes"
+    assert cards[2].title == "Apertura de Cuentas & Freeze"
+    assert cards[3].title == "Lista de bancos con relacion"
     assert cards[0].requires_file_upload is True
-    assert cards[1].requires_credentials is True
-    assert len(cards[1].comments) == 3
+    assert cards[1].requires_file_upload is True
+    assert cards[2].requires_credentials is True
+    assert len(cards[2].comments) == 3
     assert "experian.com" in cards[0].description_md
-    assert "1-800-456-1244" in cards[1].description_md
+    assert "taxes" in cards[1].description_md.lower()
+    assert "1-800-456-1244" in cards[2].description_md
 
 
 def test_credenciales_default_cards():
@@ -118,7 +121,7 @@ def test_create_board_card_from_default_adds_comments():
     db = MagicMock()
     board_list = MagicMock(id=10)
     author = MagicMock(id=7)
-    card_def = default_cards_for_column("Client TO DO")[1]
+    card_def = default_cards_for_column("Client TO DO")[2]
 
     create_board_card_from_default(
         db,
@@ -139,8 +142,8 @@ def test_apply_default_cards_to_board_list_uses_column_title():
 
     created = apply_default_cards_to_board_list(db, board_list=board_list)
 
-    assert len(created) == 3
-    assert db.add.call_count == 6
+    assert len(created) == 4
+    assert db.add.call_count == 7
 
 
 def test_resolve_default_comment_author_prefers_system_user():

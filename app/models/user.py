@@ -28,7 +28,9 @@ class User(Base):
 
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"))
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"), nullable=True)
-    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"), nullable=True
+    )
     active_merchant_id: Mapped[int | None] = mapped_column(
         ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -50,7 +52,11 @@ class User(Base):
     sessions: Mapped[List["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    notifications: Mapped[List["Notification"]] = relationship(back_populates="user")
+    notifications: Mapped[List["Notification"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     calendly_connection: Mapped["CalendlyConnection | None"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

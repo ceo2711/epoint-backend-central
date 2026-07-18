@@ -452,9 +452,6 @@ async def upload_card_attachment(
         raise HTTPException(status_code=404)
     client = _get_card_client(card, current_user, db, merchant_id=merchant_id)
 
-    if current_user.role.code == "CLIENT" and comment_id is None:
-        raise HTTPException(status_code=403, detail="Solo podés adjuntar archivos en comentarios")
-
     file_bytes = await file.read()
     board_service = BoardService(db)
     try:

@@ -25,6 +25,8 @@ _CLIENT_TODO_REPORTS_DESCRIPTION = """**Descripción**
 
 Enviar el reporte descargado en PDF de [Experian](https://www.experian.com/) (Experian: Credit Report, FICO® Score & Financial Tools), generar los 3 reportes (Experian, Equifax y TransUnion). VER TUTORIAL ADJUNTADO DE COMO DESCARGAR LOS REPORTES.
 
+**Importante:** los reportes deben estar recién generados (máximo 15 días de antigüedad). Si el reporte es más antiguo, será rechazado y deberás descargar uno nuevo.
+
 Registrarse en [Equifax](https://www.equifax.com/) y [TransUnion](https://www.transunion.com/) (dejar usuario y clave de ambas en los comentarios)."""
 
 _CLIENT_TODO_ACCOUNTS_DESCRIPTION = """**Descripción**
@@ -88,6 +90,17 @@ Colocar una lista de los bancos con los que tiene alguna relación, bien sea tar
 - Del negocio/negocios
 - Tarjetas de crédito
 - Incluso cuentas o bancos cerrados"""
+
+_CLIENT_TODO_TAXES_DESCRIPTION = """**Descripción**
+
+Subí tu informe de taxes (Tax Return / declaración de impuestos o Tax Transcript del IRS) en PDF o imagen clara.
+
+**Requisitos:**
+- Debe verse el nombre del contribuyente
+- Debe ser un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe de taxes oficial)
+- Preferí archivos recién generados o del año fiscal correspondiente
+
+Si el archivo no es un informe de taxes válido, será rechazado y deberás volver a subirlo."""
 
 _PERSONAL_DATA_PLACEHOLDER = """**Descripción**
 
@@ -243,9 +256,15 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             requires_file_upload=True,
         ),
         DefaultBoardCard(
+            title="Informe de Taxes",
+            description_md=_CLIENT_TODO_TAXES_DESCRIPTION,
+            position=1,
+            requires_file_upload=True,
+        ),
+        DefaultBoardCard(
             title="Apertura de Cuentas & Freeze",
             description_md=_CLIENT_TODO_ACCOUNTS_DESCRIPTION,
-            position=1,
+            position=2,
             requires_credentials=True,
             comments=(
                 DefaultBoardCardComment(body=_CHEXSYSTEMS_COMMENT),
@@ -256,7 +275,7 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
         DefaultBoardCard(
             title="Lista de bancos con relacion",
             description_md=_CLIENT_TODO_BANKS_DESCRIPTION,
-            position=2,
+            position=3,
         ),
     ),
     "Credenciales": (

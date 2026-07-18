@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.deps import ActiveMerchantId, CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, OptionalActiveMerchantId
 from app.schemas.chatbot import ChatbotRequest, ChatbotResponse
 from app.services.chatbot import ChatbotService
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 async def send_chat_message(
     body: ChatbotRequest,
     current_user: CurrentUser,
-    merchant_id: ActiveMerchantId,
+    merchant_id: OptionalActiveMerchantId,
     db: DbSession,
 ) -> ChatbotResponse:
     service = ChatbotService(db)

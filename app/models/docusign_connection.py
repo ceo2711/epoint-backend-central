@@ -21,7 +21,7 @@ class DocusignConnection(Base):
     auth_server: Mapped[str] = mapped_column(String(120), default="account-d.docusign.com")
     private_key_encrypted: Mapped[str] = mapped_column(Text)
     default_template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    default_template_role_name: Mapped[str] = mapped_column(String(120), default="Signer")
+    default_template_role_name: Mapped[str] = mapped_column(String(120), default="Cliente")
     connected_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

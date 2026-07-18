@@ -413,6 +413,7 @@ class PaymentService:
                 ),
                 payload={
                     "payment_link_id": link.id,
+                    "prospect_id": link.prospect_id,
                     "customer_email": link.customer_email,
                     "customer_name": f"{link.customer_first_name} {link.customer_last_name}",
                     "amount": str(link.amount),

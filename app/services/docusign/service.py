@@ -42,6 +42,53 @@ logger = logging.getLogger(__name__)
 DOCUSIGN_ROLES = frozenset({"ADMIN", "SALES_REP", "ONBOARDING_MANAGER"})
 DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
 DOCUSIGN_SENT_DOCUMENT_STATUSES = frozenset({"sent", "delivered", "completed"})
+PREFERRED_TEMPLATE_ROLE_NAMES = ("Cliente", "Client", "Signer", "Firmante")
+
+
+def resolve_template_role_name(requested: str | None, valid_roles: list[str]) -> str:
+    """Elige un rol válido de la plantilla; tolera defaults desactualizados (Signer vs Cliente)."""
+    if not valid_roles:
+        raise ValueError("La plantilla DocuSign no tiene roles de firmante configurados")
+
+    requested_norm = (requested or "").strip()
+    if requested_norm in valid_roles:
+        return requested_norm
+
+    if requested_norm:
+        for role in valid_roles:
+            if role.lower() == requested_norm.lower():
+                return role
+
+    lower_map = {role.lower(): role for role in valid_roles}
+    for preferred in PREFERRED_TEMPLATE_ROLE_NAMES:
+        match = lower_map.get(preferred.lower())
+        if match:
+            if requested_norm and requested_norm != match:
+                logger.info(
+                    "Rol DocuSign «%s» no está en la plantilla; usando «%s»",
+                    requested_norm,
+                    match,
+                )
+            return match
+
+    if len(valid_roles) == 1:
+        only = valid_roles[0]
+        if requested_norm and requested_norm != only:
+            logger.info(
+                "Rol DocuSign «%s» no está en la plantilla; usando el único rol «%s»",
+                requested_norm,
+                only,
+            )
+        return only
+
+    if requested_norm:
+        logger.warning(
+            "Rol DocuSign «%s» no válido (%s); usando «%s»",
+            requested_norm,
+            ", ".join(valid_roles),
+            valid_roles[0],
+        )
+    return valid_roles[0]
 
 
 class DocusignService:
@@ -893,14 +940,10 @@ class DocusignService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La plantilla DocuSign no tiene roles de firmante configurados",
             )
-        if role_name not in valid_roles:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"El rol «{role_name}» no existe en la plantilla. "
-                    f"Roles válidos: {', '.join(valid_roles)}"
-                ),
-            )
+        try:
+            role_name = resolve_template_role_name(role_name, valid_roles)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         if len(valid_roles) > 1:
             logger.warning(
                 "Plantilla %s tiene %s roles (%s); se enviará solo «%s»",
