@@ -292,8 +292,24 @@ class AuthService:
 
         user.password_hash = hash_password(payload.new_password)
         user.must_change_password = False
+        self._clear_client_portal_temp_password(user)
         self.db.commit()
         return MessageResponse(message="Contraseña actualizada correctamente")
+
+    def _clear_client_portal_temp_password(self, user: User) -> None:
+        """Si el cliente ya eligió su propia clave, la temporal deja de ser válida."""
+        role_code = user.role.code if user.role is not None else None
+        if role_code is None:
+            # Asegurar rol cargado en sesiones parciales
+            self.db.refresh(user, attribute_names=["role"])
+            role_code = user.role.code if user.role is not None else None
+        if role_code != CLIENT_ROLE_CODE or user.client_id is None:
+            return
+        from app.models.client import Client
+
+        client = self.db.get(Client, user.client_id)
+        if client is not None and client.portal_temp_password_encrypted is not None:
+            client.portal_temp_password_encrypted = None
 
     def request_password_reset(self, payload: ForgotPasswordRequest) -> MessageResponse:
         user = (
@@ -379,6 +395,7 @@ class AuthService:
 
         user.password_hash = hash_password(payload.new_password)
         user.must_change_password = False
+        self._clear_client_portal_temp_password(user)
         reset_row.used_at = now
 
         sessions = self.db.execute(

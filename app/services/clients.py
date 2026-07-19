@@ -877,6 +877,16 @@ class ClientService:
     def get_stored_portal_temp_password(self, client: Client) -> str | None:
         if not client.portal_temp_password_encrypted:
             return None
+
+        portal_user = self.db.execute(
+            select(User).where(User.client_id == client.id, User.is_active.is_(True))
+        ).scalar_one_or_none()
+        # Si el cliente ya cambió la clave, la temporal guardada ya no es válida.
+        if portal_user is not None and not portal_user.must_change_password:
+            client.portal_temp_password_encrypted = None
+            self.db.commit()
+            return None
+
         try:
             return decrypt_value(client.portal_temp_password_encrypted)
         except Exception:
