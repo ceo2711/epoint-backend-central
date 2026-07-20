@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -33,12 +34,14 @@ from app.schemas.auth import (
 )
 from app.schemas.common import MessageResponse
 from app.schemas.client import MerchantBrief
-from app.schemas.user import UserMeResponse, UserProfileUpdate, UserResponse
+from app.schemas.user import UserMeResponse, UserProfileUpdate
 from app.services.merchant_context import MerchantContextService
+from app.services.user_serialization import serialize_user
 from app.services.email.password_reset import (
     PasswordResetEmailPayload,
     send_password_reset_email,
 )
+from app.services.storage.s3 import get_storage_provider
 from app.services.totp import (
     build_provisioning_uri,
     decrypt_totp_secret,
@@ -46,11 +49,19 @@ from app.services.totp import (
     generate_totp_secret,
     verify_totp_code,
 )
+from app.utils.mime import resolve_content_type
 
 PASSWORD_RESET_SENT_MESSAGE = (
     "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
 )
 CLIENT_ROLE_CODE = "CLIENT"
+AVATAR_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+AVATAR_EXT_BY_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 class AuthService:
@@ -59,7 +70,7 @@ class AuthService:
 
     def _build_user_me(self, user: User) -> UserMeResponse:
         permissions = get_user_permissions(self.db, user)
-        base = UserResponse.model_validate(user)
+        base = serialize_user(user)
         ctx = MerchantContextService(self.db)
         merchants = ctx.list_accessible_merchants(user) if ctx.is_staff(user) else []
         merchant_briefs = [MerchantBrief.model_validate(m) for m in merchants]
@@ -278,6 +289,74 @@ class AuthService:
         user.last_name = payload.last_name.strip()
         user.email = normalized_email
         self.db.commit()
+
+        refreshed = self.db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area))
+            .where(User.id == user.id)
+        ).unique().scalar_one()
+        return self._build_user_me(refreshed)
+
+    def upload_avatar(
+        self,
+        user: User,
+        *,
+        filename: str,
+        content_type: str,
+        file_bytes: bytes,
+    ) -> UserMeResponse:
+        if not file_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo de avatar está vacío",
+            )
+        if len(file_bytes) > AVATAR_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El avatar no puede superar los 5 MB",
+            )
+
+        mime_type = resolve_content_type(content_type, filename)
+        if mime_type not in AVATAR_ALLOWED_MIME:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo se permiten imágenes JPEG, PNG o WebP",
+            )
+
+        storage = get_storage_provider()
+        ext = AVATAR_EXT_BY_MIME[mime_type]
+        new_key = storage.build_key("users", str(user.id), "avatar", f"{uuid4().hex}.{ext}")
+        storage.put_object(new_key, file_bytes, mime_type)
+
+        old_key = user.avatar_storage_key
+        user.avatar_storage_key = new_key
+        self.db.commit()
+
+        if old_key and old_key != new_key:
+            try:
+                storage.delete_object(old_key)
+            except Exception:
+                pass
+
+        refreshed = self.db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area))
+            .where(User.id == user.id)
+        ).unique().scalar_one()
+        return self._build_user_me(refreshed)
+
+    def delete_avatar(self, user: User) -> UserMeResponse:
+        old_key = user.avatar_storage_key
+        if not old_key:
+            return self._build_user_me(user)
+
+        user.avatar_storage_key = None
+        self.db.commit()
+
+        try:
+            get_storage_provider().delete_object(old_key)
+        except Exception:
+            pass
 
         refreshed = self.db.execute(
             select(User)

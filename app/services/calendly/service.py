@@ -32,6 +32,7 @@ from app.schemas.calendly import (
 from app.schemas.common import MessageResponse
 from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
+from app.services.user_serialization import avatar_url_for
 
 CALENDLY_ROLES = frozenset({"ADMIN", "SALES_REP"})
 SYNC_PAST_DAYS = 30
@@ -543,6 +544,7 @@ class CalendlyService:
                     connected=connection is not None,
                     scheduling_url=connection.scheduling_url if connection else None,
                     last_synced_at=connection.last_synced_at if connection else None,
+                    avatar_url=avatar_url_for(user),
                 )
             )
         return items

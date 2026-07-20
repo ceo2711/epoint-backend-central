@@ -1,7 +1,7 @@
 import math
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
@@ -11,6 +11,8 @@ from app.models.role import Role
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.services.auth import AuthService
+from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 
@@ -78,7 +80,7 @@ def list_users(
     )
 
     return PaginatedResponse(
-        items=[UserResponse.model_validate(u) for u in users],
+        items=[serialize_user(u) for u in users],
         total=total,
         page=page,
         page_size=page_size,
@@ -111,7 +113,7 @@ def create_user(
     db.commit()
     db.refresh(user)
     db.refresh(user, attribute_names=["role", "area"])
-    return UserResponse.model_validate(user)
+    return serialize_user(user)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -123,7 +125,7 @@ def get_user(
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-    return UserResponse.model_validate(user)
+    return serialize_user(user)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -153,7 +155,38 @@ def update_user(
 
     db.commit()
     db.refresh(user)
-    return UserResponse.model_validate(user)
+    return serialize_user(user)
+
+
+@router.post("/{user_id}/avatar", response_model=UserResponse)
+async def upload_user_avatar(
+    user_id: int,
+    db: DbSession,
+    _current_user: Annotated[User, Depends(require_permissions("users:update"))],
+    file: UploadFile = File(...),
+) -> UserResponse:
+    user = _get_staff_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    file_bytes = await file.read()
+    return AuthService(db).upload_avatar(
+        user,
+        filename=file.filename or "avatar.jpg",
+        content_type=file.content_type or "application/octet-stream",
+        file_bytes=file_bytes,
+    )
+
+
+@router.delete("/{user_id}/avatar", response_model=UserResponse)
+def delete_user_avatar(
+    user_id: int,
+    db: DbSession,
+    _current_user: Annotated[User, Depends(require_permissions("users:update"))],
+) -> UserResponse:
+    user = _get_staff_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    return AuthService(db).delete_avatar(user)
 
 
 @router.delete("/{user_id}", response_model=MessageResponse)

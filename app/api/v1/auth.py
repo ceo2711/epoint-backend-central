@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, File, UploadFile
 
 from app.api.deps import CurrentUser, DbSession
 from app.schemas.auth import (
@@ -66,6 +66,26 @@ def update_me(
     db: DbSession,
 ) -> UserMeResponse:
     return AuthService(db).update_profile(current_user, payload)
+
+
+@router.post("/me/avatar", response_model=UserMeResponse)
+async def upload_my_avatar(
+    current_user: CurrentUser,
+    db: DbSession,
+    file: UploadFile = File(...),
+) -> UserMeResponse:
+    file_bytes = await file.read()
+    return AuthService(db).upload_avatar(
+        current_user,
+        filename=file.filename or "avatar.jpg",
+        content_type=file.content_type or "application/octet-stream",
+        file_bytes=file_bytes,
+    )
+
+
+@router.delete("/me/avatar", response_model=UserMeResponse)
+def delete_my_avatar(current_user: CurrentUser, db: DbSession) -> UserMeResponse:
+    return AuthService(db).delete_avatar(current_user)
 
 
 @router.put("/me/active-merchant", response_model=UserMeResponse)

@@ -25,6 +25,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    avatar_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"))
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"), nullable=True)

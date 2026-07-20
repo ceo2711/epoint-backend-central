@@ -32,6 +32,7 @@ class UserResponse(ORMBase):
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime
+    avatar_url: str | None = None
 
 
 class UserCreate(BaseModel):

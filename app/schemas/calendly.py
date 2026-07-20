@@ -24,6 +24,7 @@ class CalendlySalesRepItem(BaseModel):
     connected: bool
     scheduling_url: str | None = None
     last_synced_at: datetime | None = None
+    avatar_url: str | None = None
 
 
 class CalendlyLinkedProspectBrief(BaseModel):
