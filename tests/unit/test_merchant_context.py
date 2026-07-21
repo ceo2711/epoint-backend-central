@@ -34,6 +34,16 @@ def test_list_accessible_merchants_for_admin_returns_all_active():
     assert [m.id for m in result] == [1, 2]
 
 
+def test_list_accessible_merchants_for_branch_manager_returns_all_active():
+    db = MagicMock()
+    merchants = [_merchant(1), _merchant(2)]
+    db.execute.return_value.scalars.return_value.all.return_value = merchants
+
+    result = MerchantContextService(db).list_accessible_merchants(_user("BRANCH_MANAGER"))
+
+    assert [m.id for m in result] == [1, 2]
+
+
 def test_resolve_active_merchant_uses_header_when_allowed():
     db = MagicMock()
     user = _user(active_merchant_id=1)

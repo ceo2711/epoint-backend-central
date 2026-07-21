@@ -28,6 +28,8 @@ class ProspectCreate(BaseModel):
     merchant_id: int
     is_qualified: bool = True
     notes: str | None = None
+    assigned_to_user_id: int | None = None
+    sede_id: int | None = None
 
 
 class ProspectUpdate(BaseModel):

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.merchant import Merchant
     from app.models.payment_link import PaymentLink
     from app.models.prospect_history import ProspectHistory
+    from app.models.sede import Sede
     from app.models.user import User
 
 
@@ -22,6 +23,7 @@ class Prospect(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    sede_id: Mapped[int] = mapped_column(ForeignKey("sedes.id"), index=True)
     assigned_to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     status: Mapped[str] = mapped_column(
         String(40),
@@ -63,6 +65,7 @@ class Prospect(Base):
     )
 
     merchant: Mapped["Merchant"] = relationship()
+    sede: Mapped["Sede"] = relationship(back_populates="prospects")
     assigned_to: Mapped["User"] = relationship(foreign_keys=[assigned_to_user_id])
     converted_client: Mapped["Client | None"] = relationship(foreign_keys=[converted_client_id])
     calendly_event: Mapped["CalendlyEvent | None"] = relationship(foreign_keys=[calendly_event_id])

@@ -40,7 +40,7 @@ from app.services.chatbot.calendly_options import (
 )
 from app.services.chatbot.messages import t
 
-CALENDAR_ROLES = frozenset({"ADMIN", "SALES_REP"})
+CALENDAR_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
 
 
 class CalendlyChatActions:

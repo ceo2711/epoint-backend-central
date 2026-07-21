@@ -5,25 +5,29 @@ from pydantic import BaseModel, Field
 from app.schemas.common import ORMBase
 
 
-class MerchantResponse(ORMBase):
+class SedeBrief(ORMBase):
+    id: int
+    code: str
+    name: str
+
+
+class SedeResponse(ORMBase):
     id: int
     code: str
     name: str
     description: str | None
     is_active: bool
     created_at: datetime
-    sede_id: int
+    avatar_url: str | None = None
 
 
-class MerchantCreate(BaseModel):
+class SedeCreate(BaseModel):
     code: str = Field(min_length=2, max_length=50, pattern=r"^[a-z0-9-]+$")
     name: str = Field(min_length=2, max_length=100)
     description: str | None = None
-    sede_id: int | None = None
 
 
-class MerchantUpdate(BaseModel):
+class SedeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=100)
     description: str | None = None
     is_active: bool | None = None
-    sede_id: int | None = None

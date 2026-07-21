@@ -60,6 +60,7 @@ def list_clients(
     merchant_id: int | None = Query(None, description="Filtrar por comercio específico"),
     all_merchants: bool = Query(False, description="Incluir todos los comercios accesibles"),
     sales_rep_id: int | None = Query(None, description="Filtrar por vendedor (admin)"),
+    sede_id: int | None = Query(None, description="Filtrar por sede (admin global)"),
 ) -> PaginatedResponse[ClientResponse]:
     service = ClientService(db)
     merchant_context = MerchantContextService(db)
@@ -83,6 +84,7 @@ def list_clients(
         current_user,
         merchant_id=scope_merchant_id,
         all_merchants=scope_all_merchants,
+        filter_sede_id=sede_id,
         page=page,
         page_size=page_size,
         status_filter=status_filter,
@@ -220,7 +222,7 @@ def get_client(
         else [],
     )
     user_perms = set(get_user_permissions(db, current_user))
-    if current_user.role.code == "ADMIN" or "prospects:read" in user_perms:
+    if current_user.role.code == "ADMIN" or current_user.role.code == "BRANCH_MANAGER" or "prospects:read" in user_perms:
         response.source_prospect = ProspectService(db).get_pipeline_for_client(
             current_user,
             client_id,
@@ -440,7 +442,7 @@ def assign_client_advisor(
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
     merchant_id: ActiveMerchantId,
 ) -> AdvisorBrief:
-    if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN"):
+    if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"):
         raise HTTPException(status_code=403, detail="Solo onboarding puede gestionar el asesor asignado")
 
     service = ClientService(db)

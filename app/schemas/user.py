@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.common import ORMBase
 from app.schemas.client import MerchantBrief
+from app.schemas.sede import SedeBrief
 
 
 class RoleBrief(ORMBase):
@@ -26,6 +27,8 @@ class UserResponse(ORMBase):
     phone: str | None
     role: RoleBrief
     area: AreaBrief | None
+    sede_id: int | None = None
+    sede: SedeBrief | None = None
     client_id: int | None = None
     must_change_password: bool
     totp_enabled: bool = False
@@ -43,6 +46,7 @@ class UserCreate(BaseModel):
     phone: str | None = None
     role_id: int
     area_id: int | None = None
+    sede_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -53,6 +57,7 @@ class UserUpdate(BaseModel):
     phone: str | None = None
     role_id: int | None = None
     area_id: int | None = None
+    sede_id: int | None = None
     is_active: bool | None = None
 
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.client_assignment import ClientAssignment
     from app.models.document import Document
     from app.models.merchant import Merchant
+    from app.models.sede import Sede
     from app.models.user import User
     from app.models.vehicle import Vehicle
 
@@ -30,6 +31,7 @@ class Client(Base):
     phone: Mapped[str] = mapped_column(String(30))
     source: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     merchant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("merchants.id"), nullable=True, index=True)
+    sede_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sedes.id"), nullable=True, index=True)
 
     registered_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -65,6 +67,7 @@ class Client(Base):
         foreign_keys=[docusign_envelope_id],
     )
     merchant: Mapped["Merchant | None"] = relationship(back_populates="clients")
+    sede: Mapped["Sede | None"] = relationship(back_populates="clients")
     registered_by: Mapped["User"] = relationship(foreign_keys=[registered_by_user_id])
     approved_by: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])
     assignments: Mapped[List["ClientAssignment"]] = relationship(

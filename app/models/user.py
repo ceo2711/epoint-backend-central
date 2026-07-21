@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.merchant import Merchant
     from app.models.notification import Notification
     from app.models.role import Role
+    from app.models.sede import Sede
     from app.models.session import UserSession
 
 
@@ -35,6 +36,9 @@ class User(Base):
     active_merchant_id: Mapped[int | None] = mapped_column(
         ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    sede_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sedes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -49,6 +53,7 @@ class User(Base):
 
     role: Mapped["Role"] = relationship(back_populates="users")
     area: Mapped["Area | None"] = relationship(back_populates="users")
+    sede: Mapped["Sede | None"] = relationship(back_populates="users")
     active_merchant: Mapped["Merchant | None"] = relationship(foreign_keys=[active_merchant_id])
     sessions: Mapped[List["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

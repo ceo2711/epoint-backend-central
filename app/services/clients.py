@@ -106,7 +106,10 @@ class ClientService:
         merchant_id: int | None = None,
         *,
         all_merchants: bool = False,
+        filter_sede_id: int | None = None,
     ):
+        from app.services.sede_scope import effective_sede_id
+
         query = select(Client)
         if all_merchants:
             accessible = MerchantContextService(self.db).list_accessible_merchants(user)
@@ -117,6 +120,13 @@ class ClientService:
                 query = query.where(Client.id == -1)
         elif merchant_id is not None:
             query = query.where(Client.merchant_id == merchant_id)
+
+        sede_id = effective_sede_id(user)
+        if sede_id is not None:
+            query = query.where(Client.sede_id == sede_id)
+        elif filter_sede_id is not None:
+            query = query.where(Client.sede_id == filter_sede_id)
+
         if user.role.code == "SALES_REP":
             query = query.where(Client.registered_by_user_id == user.id)
         elif user.role.code == "ADVISOR":
@@ -136,6 +146,7 @@ class ClientService:
         *,
         merchant_id: int | None = None,
         all_merchants: bool = False,
+        filter_sede_id: int | None = None,
         page: int,
         page_size: int,
         status_filter: str | None = None,
@@ -145,7 +156,12 @@ class ClientService:
     ) -> tuple[list[Client], int]:
         from sqlalchemy import func, or_
 
-        query = self._scoped_clients_query(user, merchant_id, all_merchants=all_merchants)
+        query = self._scoped_clients_query(
+            user,
+            merchant_id,
+            all_merchants=all_merchants,
+            filter_sede_id=filter_sede_id,
+        )
         if onboarding_only:
             query = query.where(
                 or_(
@@ -183,7 +199,14 @@ class ClientService:
         )
         return list(clients), total
 
-    def get_client_stats(self, user: User, *, merchant_id: int | None = None) -> dict[str, int]:
+    def get_client_stats(
+        self,
+        user: User,
+        *,
+        merchant_id: int | None = None,
+        all_merchants: bool = False,
+        filter_sede_id: int | None = None,
+    ) -> dict[str, int]:
         from sqlalchemy import func
 
         pending = ClientStatus.PENDIENTE_DE_REVISION.value
@@ -197,7 +220,12 @@ class ClientService:
             ClientStatus.LISTO_PARA_TABLERO.value,
         }
 
-        scoped = self._scoped_clients_query(user, merchant_id).subquery()
+        scoped = self._scoped_clients_query(
+            user,
+            merchant_id,
+            all_merchants=all_merchants,
+            filter_sede_id=filter_sede_id,
+        ).subquery()
         rows = self.db.execute(
             select(scoped.c.status, func.count()).group_by(scoped.c.status)
         ).all()
@@ -345,6 +373,7 @@ class ClientService:
             phone=normalized_phone,
             source=resolved_source,
             merchant_id=merchant.id,
+            sede_id=merchant.sede_id,
             registered_by_user_id=actor.id,
             status=ClientStatus.PENDIENTE_DE_REVISION.value,
             is_qualified=bool(is_qualified),
@@ -1120,7 +1149,7 @@ class ClientService:
                 select(User)
                 .join(Role)
                 .where(
-                    Role.code.in_(["ONBOARDING_MANAGER", "AREA_LEADER", "ADMIN"]),
+                    Role.code.in_(["ONBOARDING_MANAGER", "AREA_LEADER", "ADMIN", "BRANCH_MANAGER"]),
                     User.is_active.is_(True),
                 )
             )
@@ -1208,10 +1237,15 @@ class ClientService:
         *,
         merchant_id: int | None = None,
     ) -> bool:
+        from app.services.sede_scope import effective_sede_id
+
         row = self.db.execute(
-            select(Client.id, Client.registered_by_user_id, Client.merchant_id).where(
-                Client.id == client_id
-            )
+            select(
+                Client.id,
+                Client.registered_by_user_id,
+                Client.merchant_id,
+                Client.sede_id,
+            ).where(Client.id == client_id)
         ).one_or_none()
         if row is None:
             return False
@@ -1222,6 +1256,11 @@ class ClientService:
                 return False
         elif merchant_id is not None and not merchant_ctx.user_can_access_merchant(user, merchant_id):
             return False
+
+        sede_id = effective_sede_id(user)
+        if sede_id is not None and row.sede_id != sede_id:
+            return False
+
         if user.role.code == "CLIENT":
             return user.client_id == client_id
         if user.role.code == "SALES_REP":
@@ -1238,9 +1277,9 @@ class ClientService:
         return True
 
     def user_can_view_client_onboarding_data(self, user: User, client_id: int) -> bool:
-        """Documentos, perfil extendido, portal, tablero: admin, onboarding y asesor asignado."""
-        if user.role.code in ("ADMIN", "ONBOARDING_MANAGER"):
-            return True
+        """Documentos, perfil extendido, portal, tablero: admin, gerente, onboarding y asesor asignado."""
+        if user.role.code in ("ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"):
+            return self.user_can_access_client(user, client_id)
         if user.role.code == "ADVISOR":
             return self.user_can_access_client(user, client_id)
         return False

@@ -86,7 +86,13 @@ class DashboardService:
         self.clients = ClientService(db)
         self.prospects = ProspectService(db)
 
-    def get_metrics(self, user: User, *, merchant_id: int | None = None) -> dict:
+    def get_metrics(
+        self,
+        user: User,
+        *,
+        merchant_id: int | None = None,
+        filter_sede_id: int | None = None,
+    ) -> dict:
         if merchant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,8 +103,22 @@ class DashboardService:
         if merchant is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comercio no encontrado")
 
-        scoped_clients = self.clients._scoped_clients_query(user, merchant_id).subquery()
-        scoped_prospects = self.prospects._scoped_query(user, merchant_id).subquery()
+        use_sede_scope = filter_sede_id is not None
+        scope_merchant_id = None if use_sede_scope else merchant_id
+        scope_all_merchants = use_sede_scope
+
+        scoped_clients = self.clients._scoped_clients_query(
+            user,
+            scope_merchant_id,
+            all_merchants=scope_all_merchants,
+            filter_sede_id=filter_sede_id,
+        ).subquery()
+        scoped_prospects = self.prospects._scoped_query(
+            user,
+            scope_merchant_id,
+            all_merchants=scope_all_merchants,
+            filter_sede_id=filter_sede_id,
+        ).subquery()
 
         client_status_rows = self.db.execute(
             select(scoped_clients.c.status, func.count()).group_by(scoped_clients.c.status)
@@ -126,7 +146,12 @@ class DashboardService:
         for source in ClientSource:
             prospects_by_source.setdefault(source.value, 0)
 
-        summary = self.clients.get_client_stats(user, merchant_id=merchant_id)
+        summary = self.clients.get_client_stats(
+            user,
+            merchant_id=scope_merchant_id,
+            all_merchants=scope_all_merchants,
+            filter_sede_id=filter_sede_id,
+        )
         role_code = user.role.code
         areas = [
             self._build_area_metrics(

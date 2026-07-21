@@ -12,6 +12,7 @@ class MerchantBrief(ORMBase):
     id: int
     code: str
     name: str
+    sede_id: int | None = None
 
 
 class ClientCreate(BaseModel):

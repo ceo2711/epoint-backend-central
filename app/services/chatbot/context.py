@@ -42,7 +42,7 @@ DOCUMENT_GAP_LABELS = {
 
 REQUIRED_DOCUMENT_TYPES = list(ALL_UPLOADABLE_TYPES)
 
-STAFF_ROLES = {"ADMIN", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
+STAFF_ROLES = {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
 SALES_ROLE = "SALES_REP"
 CLIENT_ROLE = "CLIENT"
 
@@ -61,7 +61,7 @@ class ChatbotContextBuilder:
         from app.api.deps import get_user_permissions
 
         perms = set(get_user_permissions(self.db, self.user))
-        if self.user.role.code == "ADMIN":
+        if self.user.role.code in ("ADMIN", "BRANCH_MANAGER"):
             return True
         return "clients:approve" in perms
 
@@ -69,7 +69,7 @@ class ChatbotContextBuilder:
         from app.api.deps import get_user_permissions
 
         perms = set(get_user_permissions(self.db, self.user))
-        if self.user.role.code == "ADMIN":
+        if self.user.role.code in ("ADMIN", "BRANCH_MANAGER"):
             return True
         return "clients:create" in perms
 

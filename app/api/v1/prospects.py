@@ -155,6 +155,7 @@ def list_prospects(
     status_filter: str | None = None,
     search: str | None = None,
     sales_rep_id: int | None = Query(None, description="Filtrar por vendedor (admin)"),
+    sede_id: int | None = Query(None, description="Filtrar por sede (admin global)"),
     all_merchants: bool = Query(False),
     include_converted: bool = Query(False),
 ) -> PaginatedResponse[ProspectResponse]:
@@ -171,6 +172,7 @@ def list_prospects(
         current_user,
         merchant_id=scope_merchant_id,
         all_merchants=scope_all,
+        filter_sede_id=sede_id,
         sales_rep_id=sales_rep_id,
         status_filter=status_filter,
         search=search,
@@ -204,6 +206,8 @@ def create_prospect(
         is_qualified=payload.is_qualified,
         source=payload.source.value if payload.source else None,
         notes=payload.notes,
+        assigned_to_user_id=payload.assigned_to_user_id,
+        sede_id=payload.sede_id,
     )
     detail = service.get_prospect_detail(current_user, prospect.id)
     return _to_response(detail)

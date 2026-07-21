@@ -15,7 +15,9 @@ from app.models.board import BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.merchant import Merchant
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
+from app.models.sede import Sede
 from app.models.user import User
+from app.services.sede_scope import SEDE_SCOPED_ROLES, sync_user_merchants_for_sede
 from app.constants.default_board_cards import EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, default_cards_for_column
 from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 
@@ -49,6 +51,10 @@ PERMISSIONS = [
     ("merchants:create", "Crear merchants"),
     ("merchants:update", "Editar merchants"),
     ("merchants:delete", "Desactivar merchants"),
+    ("sedes:read", "Ver sedes"),
+    ("sedes:create", "Crear sedes"),
+    ("sedes:update", "Editar sedes"),
+    ("sedes:delete", "Desactivar sedes"),
     ("calendly:read", "Ver calendario de reuniones"),
     ("calendly:manage", "Conectar y sincronizar Calendly"),
     ("payments:read", "Ver links de pago"),
@@ -59,7 +65,7 @@ PERMISSIONS = [
 ROLES = {
     "ADMIN": {
         "name": "Administrador",
-        "description": "Acceso total al sistema",
+        "description": "Acceso total al sistema y a todas las sedes",
         "permissions": "*",
     },
     "AREA_LEADER": {
@@ -74,6 +80,11 @@ ROLES = {
             "boards:read",
             "boards:manage",
         ],
+    },
+    "BRANCH_MANAGER": {
+        "name": "Gerente de sucursal",
+        "description": "Acceso completo al portal limitado a su sede (equivalente al admin de una sucursal)",
+        "permissions": "*",
     },
     "SALES_REP": {
         "name": "Vendedor",
@@ -131,6 +142,7 @@ DEMO_USERS = [
     ("vendedor@epoint.com", "Vendedor", "Demo", "SALES_REP", "VENTAS", "Vendedor123!"),
     ("onboarding@epoint.com", "Encargado", "Onboarding", "ONBOARDING_MANAGER", "ONBOARDING", "Onboard123!"),
     ("asesor@epoint.com", "Asesor", "Demo", "ADVISOR", "ONBOARDING", "Asesor123!"),
+    ("gerente@epoint.com", "Gerente", "Sucursal", "BRANCH_MANAGER", "VENTAS", "Gerente123!"),
     (EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, "EPoint", "Corp", "ONBOARDING_MANAGER", "ONBOARDING", "SystemBoard123!"),
 ]
 
@@ -193,17 +205,28 @@ def seed() -> None:
                 if pid not in existing_rp:
                     db.add(RolePermission(role_id=role.id, permission_id=pid))
 
-        # Merchants: solo ADMIN (revocar si quedaron asignados a otros roles)
-        merchant_perm_ids = {
+        db.flush()
+
+        # Sedes y merchants: solo ADMIN (el gerente usa merchants como workspace, sin CRUD).
+        admin_only_catalog = {
             perm_map[code].id
-            for code in ("merchants:read", "merchants:create", "merchants:update", "merchants:delete")
+            for code in (
+                "sedes:read",
+                "sedes:create",
+                "sedes:update",
+                "sedes:delete",
+                "merchants:read",
+                "merchants:create",
+                "merchants:update",
+                "merchants:delete",
+            )
             if code in perm_map
         }
         for role in db.execute(select(Role).where(Role.code != "ADMIN")).scalars().all():
             for rp in db.execute(
                 select(RolePermission).where(
                     RolePermission.role_id == role.id,
-                    RolePermission.permission_id.in_(merchant_perm_ids),
+                    RolePermission.permission_id.in_(admin_only_catalog),
                 )
             ).scalars().all():
                 db.delete(rp)
@@ -214,11 +237,24 @@ def seed() -> None:
             if area is None:
                 db.add(Area(code=code, name=name, description=desc))
 
+        # Sede principal
+        sede = db.execute(select(Sede).where(Sede.code == "sede-principal")).scalar_one_or_none()
+        if sede is None:
+            sede = Sede(
+                code="sede-principal",
+                name="Sede Principal",
+                description="Sede inicial del grupo Epoint",
+            )
+            db.add(sede)
+            db.flush()
+
         # Merchants
         for code, name, desc in MERCHANTS:
             merchant = db.execute(select(Merchant).where(Merchant.code == code)).scalar_one_or_none()
             if merchant is None:
-                db.add(Merchant(code=code, name=name, description=desc))
+                db.add(Merchant(code=code, name=name, description=desc, sede_id=sede.id))
+            elif merchant.sede_id is None:
+                merchant.sede_id = sede.id
 
         db.flush()
 
@@ -241,18 +277,31 @@ def seed() -> None:
         area_map = {a.code: a for a in db.execute(select(Area)).scalars().all()}
         role_map = {r.code: r for r in db.execute(select(Role)).scalars().all()}
         for email, fname, lname, role_code, area_code, pwd in DEMO_USERS:
-            if db.execute(select(User).where(User.email == email)).scalar_one_or_none() is None:
-                db.add(
-                    User(
-                        email=email,
-                        password_hash=hash_password(pwd),
-                        first_name=fname,
-                        last_name=lname,
-                        role_id=role_map[role_code].id,
-                        area_id=area_map.get(area_code).id if area_code in area_map else None,
-                        is_active=True,
-                    )
+            demo = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+            if demo is None:
+                demo = User(
+                    email=email,
+                    password_hash=hash_password(pwd),
+                    first_name=fname,
+                    last_name=lname,
+                    role_id=role_map[role_code].id,
+                    area_id=area_map.get(area_code).id if area_code in area_map else None,
+                    sede_id=sede.id if role_code in SEDE_SCOPED_ROLES else None,
+                    is_active=True,
                 )
+                db.add(demo)
+                db.flush()
+            elif demo.sede_id is None and role_code in SEDE_SCOPED_ROLES:
+                demo.sede_id = sede.id
+            if demo is not None and demo.sede_id is not None:
+                sync_user_merchants_for_sede(db, demo, demo.sede_id)
+
+        # Staff operativo sin sede: backfill a sede principal
+        for user in db.execute(
+            select(User).join(Role).where(Role.code.in_(tuple(SEDE_SCOPED_ROLES)), User.sede_id.is_(None))
+        ).scalars().all():
+            user.sede_id = sede.id
+            sync_user_merchants_for_sede(db, user, sede.id)
 
         # Template de tablero
         tpl = db.execute(

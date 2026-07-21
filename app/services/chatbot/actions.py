@@ -105,7 +105,7 @@ NAME_PATTERN = re.compile(
     r"^[A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ'\-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ'\-]*)+$",
 )
 
-STAFF_UPLOAD_ROLES = STAFF_ROLES | {"ADMIN"}
+STAFF_UPLOAD_ROLES = STAFF_ROLES | {"ADMIN", "BRANCH_MANAGER"}
 
 
 class ChatbotActionHandler:
@@ -116,7 +116,7 @@ class ChatbotActionHandler:
         self.merchant_id = merchant_id
         self.clients = ClientService(db)
         self.permissions = set(get_user_permissions(db, user))
-        if user.role.code == "ADMIN":
+        if user.role.code in ("ADMIN", "BRANCH_MANAGER"):
             self.permissions |= {"clients:create", "clients:approve", "clients:read"}
 
     async def handle(
@@ -307,8 +307,8 @@ class ChatbotActionHandler:
     def _can_view_client_report(self) -> bool:
         if self.user.role.code == CLIENT_ROLE:
             return False
-        if self.user.role.code in STAFF_ROLES | {SALES_ROLE, "ADMIN"}:
-            return "clients:read" in self.permissions or self.user.role.code == "ADMIN"
+        if self.user.role.code in STAFF_ROLES | {SALES_ROLE, "ADMIN", "BRANCH_MANAGER"}:
+            return "clients:read" in self.permissions or self.user.role.code in ("ADMIN", "BRANCH_MANAGER")
         return False
 
     def _can_upload_documents(self) -> bool:

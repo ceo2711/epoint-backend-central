@@ -34,7 +34,7 @@ from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
 from app.services.user_serialization import avatar_url_for
 
-CALENDLY_ROLES = frozenset({"ADMIN", "SALES_REP"})
+CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
 SYNC_PAST_DAYS = 30
 SYNC_FUTURE_DAYS = 180
 AUTO_SYNC_STALE_MINUTES = 3
@@ -484,7 +484,7 @@ class CalendlyService:
                     detail="No puede ver el calendario de otro usuario",
                 )
             return actor.id
-        if actor.role.code == "ADMIN":
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
             if user_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -516,17 +516,23 @@ class CalendlyService:
 
     def list_sales_reps(self, actor: User) -> list[CalendlySalesRepItem]:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "ADMIN":
+        if actor.role.code not in ("ADMIN", "BRANCH_MANAGER"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
 
+        from app.services.sede_scope import effective_sede_id
+
+        query = (
+            select(User)
+            .join(Role)
+            .options(joinedload(User.calendly_connection), joinedload(User.sede))
+            .where(Role.code == "SALES_REP", User.is_active.is_(True))
+        )
+        sede_id = effective_sede_id(actor)
+        if sede_id is not None:
+            query = query.where(User.sede_id == sede_id)
+
         users = (
-            self.db.execute(
-                select(User)
-                .join(Role)
-                .options(joinedload(User.calendly_connection))
-                .where(Role.code == "SALES_REP", User.is_active.is_(True))
-                .order_by(User.first_name, User.last_name)
-            )
+            self.db.execute(query.order_by(User.first_name, User.last_name))
             .unique()
             .scalars()
             .all()
@@ -545,15 +551,17 @@ class CalendlyService:
                     scheduling_url=connection.scheduling_url if connection else None,
                     last_synced_at=connection.last_synced_at if connection else None,
                     avatar_url=avatar_url_for(user),
+                    sede_id=user.sede_id,
+                    sede_name=user.sede.name if user.sede is not None else None,
                 )
             )
         return items
 
     def connect(self, actor: User, payload: CalendlyConnectRequest) -> CalendlyConnectionResponse:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "SALES_REP" and actor.role.code != "ADMIN":
+        if actor.role.code != "SALES_REP" and actor.role.code not in ("ADMIN", "BRANCH_MANAGER"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden conectar Calendly")
-        if actor.role.code == "ADMIN":
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Los administradores deben ver el calendario de cada vendedor; la conexión es por vendedor",

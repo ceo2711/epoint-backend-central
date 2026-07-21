@@ -13,7 +13,7 @@ from app.services.onboarding_reminders import run_onboarding_reminders
 
 router = APIRouter(prefix="/onboarding-reminders", tags=["Recordatorios onboarding"])
 
-ONBOARDING_REMINDER_ROLES = frozenset({"ADMIN", "ONBOARDING_MANAGER"})
+ONBOARDING_REMINDER_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"})
 
 
 def require_onboarding_reminder_staff(current_user: CurrentUser) -> User:

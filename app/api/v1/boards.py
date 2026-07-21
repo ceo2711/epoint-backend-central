@@ -48,7 +48,7 @@ def _require_staff_client_workspace(
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return client
 
-BOARD_STAFF_ROLES = frozenset({"ADMIN", "ONBOARDING_MANAGER", "ADVISOR"})
+BOARD_STAFF_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR"})
 
 
 def _is_board_staff(user: User) -> bool:

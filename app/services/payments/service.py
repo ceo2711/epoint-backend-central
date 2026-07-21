@@ -35,7 +35,7 @@ from app.services.payments.paypal_provider import PayPalPaymentProvider
 
 logger = logging.getLogger(__name__)
 
-PAYMENT_ROLES = frozenset({"ADMIN", "SALES_REP"})
+PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
 
 PROVIDER_LABELS = {
     PaymentProvider.AUTHORIZE.value: "Authorize.net",

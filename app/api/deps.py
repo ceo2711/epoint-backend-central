@@ -32,7 +32,7 @@ def get_current_user(
     user = (
         db.execute(
             select(User)
-            .options(joinedload(User.role), joinedload(User.area))
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
             .where(User.id == int(user_id))
         )
         .unique()
@@ -59,9 +59,11 @@ def require_any_permissions(*required: str):
         db: Annotated[Session, Depends(get_db)],
         current_user: Annotated[User, Depends(get_current_user)],
     ) -> User:
-        user_perms = set(get_user_permissions(db, current_user))
-        if current_user.role.code == "ADMIN":
+        from app.services.role_access import bypasses_permission
+
+        if any(bypasses_permission(current_user, perm) for perm in required):
             return current_user
+        user_perms = set(get_user_permissions(db, current_user))
         if not any(perm in user_perms for perm in required):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -77,9 +79,11 @@ def require_permissions(*required: str):
         db: Annotated[Session, Depends(get_db)],
         current_user: Annotated[User, Depends(get_current_user)],
     ) -> User:
-        user_perms = set(get_user_permissions(db, current_user))
-        if current_user.role.code == "ADMIN":
+        from app.services.role_access import bypasses_permission
+
+        if all(bypasses_permission(current_user, perm) for perm in required):
             return current_user
+        user_perms = set(get_user_permissions(db, current_user))
         if not all(perm in user_perms for perm in required):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

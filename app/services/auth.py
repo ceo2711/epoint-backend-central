@@ -94,7 +94,7 @@ class AuthService:
         MerchantContextService(self.db).set_active_merchant(user, merchant_id)
         refreshed = self.db.execute(
             select(User)
-            .options(joinedload(User.role), joinedload(User.area))
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
             .where(User.id == user.id)
         ).unique().scalar_one()
         return self._build_user_me(refreshed)
@@ -118,7 +118,7 @@ class AuthService:
         user = (
             self.db.execute(
                 select(User)
-                .options(joinedload(User.role), joinedload(User.area))
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
                 .where(User.email == payload.email.lower())
             )
             .unique()
@@ -168,7 +168,7 @@ class AuthService:
         user = (
             self.db.execute(
                 select(User)
-                .options(joinedload(User.role), joinedload(User.area))
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
                 .where(User.id == int(user_id))
             )
             .unique()
@@ -268,7 +268,9 @@ class AuthService:
         return self._build_user_me(user)
 
     def update_profile(self, user: User, payload: UserProfileUpdate) -> UserMeResponse:
-        if user.role.code != "ADMIN":
+        from app.services.role_access import is_sede_admin
+
+        if not is_sede_admin(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo un administrador puede modificar los datos personales",
@@ -292,7 +294,7 @@ class AuthService:
 
         refreshed = self.db.execute(
             select(User)
-            .options(joinedload(User.role), joinedload(User.area))
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
             .where(User.id == user.id)
         ).unique().scalar_one()
         return self._build_user_me(refreshed)
@@ -340,7 +342,7 @@ class AuthService:
 
         refreshed = self.db.execute(
             select(User)
-            .options(joinedload(User.role), joinedload(User.area))
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
             .where(User.id == user.id)
         ).unique().scalar_one()
         return self._build_user_me(refreshed)
@@ -360,7 +362,7 @@ class AuthService:
 
         refreshed = self.db.execute(
             select(User)
-            .options(joinedload(User.role), joinedload(User.area))
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
             .where(User.id == user.id)
         ).unique().scalar_one()
         return self._build_user_me(refreshed)

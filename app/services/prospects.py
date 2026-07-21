@@ -71,6 +71,7 @@ class ProspectService:
         *,
         merchant_id: int | None = None,
         all_merchants: bool = False,
+        filter_sede_id: int | None = None,
         sales_rep_id: int | None = None,
         status_filter: str | None = None,
         search: str | None = None,
@@ -78,7 +79,12 @@ class ProspectService:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[Prospect], int]:
-        query = self._scoped_query(user, merchant_id, all_merchants=all_merchants)
+        query = self._scoped_query(
+            user,
+            merchant_id,
+            all_merchants=all_merchants,
+            filter_sede_id=filter_sede_id,
+        )
         if not include_converted:
             query = query.where(Prospect.converted_client_id.is_(None))
         if sales_rep_id is not None:
@@ -165,26 +171,77 @@ class ProspectService:
         source: str | None = None,
         notes: str | None = None,
         assigned_to_user_id: int | None = None,
+        sede_id: int | None = None,
     ) -> Prospect:
+        from app.services.role_access import is_global_admin
+        from app.services.sede_scope import effective_sede_id
+
         if not self.merchant_ctx.user_can_access_merchant(actor, merchant_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenés acceso a ese comercio")
+
+        merchant = self.db.get(Merchant, merchant_id)
+        if merchant is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comercio inválido")
 
         normalized_email = email.lower().strip()
         self._assert_email_available(normalized_email, merchant_id=merchant_id)
         self._assert_phone_available(phone, merchant_id=merchant_id)
 
-        owner_id = assigned_to_user_id or actor.id
-        if actor.role.code == "SALES_REP" and owner_id != actor.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        if actor.role.code == "SALES_REP":
+            owner_id = actor.id
+            if assigned_to_user_id is not None and assigned_to_user_id != actor.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        else:
+            if assigned_to_user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Debés asignar un vendedor al prospecto",
+                )
+            owner_id = assigned_to_user_id
+
         owner = self.db.get(User, owner_id)
-        if owner is None or owner.role.code != "SALES_REP":
-            if actor.role.code == "SALES_REP":
-                owner_id = actor.id
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendedor inválido")
+        if owner is None or not owner.is_active or owner.role.code != "SALES_REP":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendedor inválido")
+
+        actor_sede_id = effective_sede_id(actor)
+        owner_sede_id = owner.sede_id
+
+        if actor_sede_id is not None and owner_sede_id != actor_sede_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El vendedor no pertenece a tu sede",
+            )
+
+        # Solo el admin global elige sede; gerente/vendedor heredan la propia
+        if is_global_admin(actor):
+            if sede_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Debés seleccionar una sede",
+                )
+            if owner_sede_id != sede_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El vendedor no pertenece a esa sede",
+                )
+            resolved_sede_id = sede_id
+        else:
+            if sede_id is not None and sede_id != (actor_sede_id or owner_sede_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No podés asignar otra sede",
+                )
+            resolved_sede_id = owner_sede_id or actor_sede_id or merchant.sede_id
+
+        if resolved_sede_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo determinar la sede del prospecto",
+            )
 
         prospect = Prospect(
             merchant_id=merchant_id,
+            sede_id=resolved_sede_id,
             assigned_to_user_id=owner_id,
             status=INITIAL_STATUS,
             is_qualified=bool(is_qualified),
@@ -253,7 +310,7 @@ class ProspectService:
         """Borrado definitivo, solo para administradores. El historial y los emails
         registrados se eliminan en cascada; links de pago, contratos y reuniones
         vinculados quedan desasociados."""
-        if actor.role.code != "ADMIN":
+        if actor.role.code != "ADMIN" and actor.role.code != "BRANCH_MANAGER":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo un administrador puede eliminar prospectos",
@@ -614,6 +671,8 @@ class ProspectService:
             merchant_id=prospect.merchant_id,
             is_qualified=prospect.is_qualified,
         )
+        # Mantener la sede del prospecto (la del vendedor), no solo la del merchant
+        client.sede_id = prospect.sede_id
 
         if prospect.docusign_envelope_id:
             envelope = self.db.get(DocusignEnvelope, prospect.docusign_envelope_id)
@@ -700,7 +759,16 @@ class ProspectService:
         envelopes = self.list_linked_envelopes(prospect)
         return any(envelope.status.lower() == "completed" for envelope in envelopes)
 
-    def _scoped_query(self, user: User, merchant_id: int | None, *, all_merchants: bool = False):
+    def _scoped_query(
+        self,
+        user: User,
+        merchant_id: int | None,
+        *,
+        all_merchants: bool = False,
+        filter_sede_id: int | None = None,
+    ):
+        from app.services.sede_scope import effective_sede_id
+
         query = select(Prospect)
         if all_merchants:
             accessible = self.merchant_ctx.list_accessible_merchants(user)
@@ -711,6 +779,13 @@ class ProspectService:
                 query = query.where(Prospect.id == -1)
         elif merchant_id is not None:
             query = query.where(Prospect.merchant_id == merchant_id)
+
+        sede_id = effective_sede_id(user)
+        if sede_id is not None:
+            query = query.where(Prospect.sede_id == sede_id)
+        elif filter_sede_id is not None:
+            query = query.where(Prospect.sede_id == filter_sede_id)
+
         if user.role.code == "SALES_REP":
             query = query.where(Prospect.assigned_to_user_id == user.id)
         return query
@@ -759,6 +834,11 @@ class ProspectService:
         elif not self.merchant_ctx.user_can_access_merchant(user, prospect.merchant_id):
             raise HTTPException(status_code=404, detail="Prospecto no encontrado")
         if user.role.code == "SALES_REP" and prospect.assigned_to_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Prospecto no encontrado")
+        from app.services.sede_scope import effective_sede_id
+
+        sede_id = effective_sede_id(user)
+        if sede_id is not None and prospect.sede_id != sede_id:
             raise HTTPException(status_code=404, detail="Prospecto no encontrado")
         return prospect
 

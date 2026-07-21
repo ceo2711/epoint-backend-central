@@ -9,9 +9,13 @@ from sqlalchemy.orm import Session
 from app.models.merchant import Merchant
 from app.models.user import User
 from app.models.user_merchant import UserMerchant
+from app.services.sede_scope import (
+    ADMIN_ROLE,
+    BRANCH_MANAGER_ROLE,
+    CLIENT_ROLE,
+)
 
-CLIENT_ROLE = "CLIENT"
-ADMIN_ROLE = "ADMIN"
+CLIENT_ROLE_ALIAS = CLIENT_ROLE  # backwards compat if imported elsewhere
 
 
 class MerchantContextService:
@@ -22,9 +26,10 @@ class MerchantContextService:
         return user.role.code != CLIENT_ROLE
 
     def list_accessible_merchants(self, user: User) -> list[Merchant]:
+        """Comercios del workspace. Son transversales a sedes (no se filtran por sede)."""
         if not self.is_staff(user):
             return []
-        if user.role.code == ADMIN_ROLE:
+        if user.role.code in (ADMIN_ROLE, BRANCH_MANAGER_ROLE):
             return list(
                 self.db.execute(
                     select(Merchant).where(Merchant.is_active.is_(True)).order_by(Merchant.name)
@@ -43,7 +48,7 @@ class MerchantContextService:
         merchant = self.db.get(Merchant, merchant_id)
         if merchant is None or not merchant.is_active:
             return False
-        if user.role.code == ADMIN_ROLE:
+        if user.role.code in (ADMIN_ROLE, BRANCH_MANAGER_ROLE):
             return True
         if not self.is_staff(user):
             return False

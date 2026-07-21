@@ -12,6 +12,13 @@ from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.services.auth import AuthService
+from app.services.sede_scope import (
+    assert_actor_can_assign_role,
+    effective_sede_id,
+    is_global_admin,
+    resolve_sede_for_user,
+    sync_user_merchants_for_sede,
+)
 from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
@@ -21,7 +28,7 @@ def _staff_users_query():
     """Usuarios internos de la plataforma (empleados), sin cuentas portal de clientes."""
     return (
         select(User)
-        .options(joinedload(User.role), joinedload(User.area))
+        .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
         .join(Role)
         .where(Role.code != "CLIENT")
     )
@@ -35,35 +42,52 @@ def _get_staff_user(db: DbSession, user_id: int) -> User | None:
     )
 
 
-def _assert_staff_role(db: DbSession, role_id: int) -> None:
+def _get_role(db: DbSession, role_id: int) -> Role:
     role = db.get(Role, role_id)
     if role is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rol inválido")
-    if role.code == "CLIENT":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Los clientes del portal no se gestionan desde usuarios de la plataforma",
-        )
+    return role
+
+
+def _assert_can_manage_target(actor: User, target: User) -> None:
+    if is_global_admin(actor):
+        return
+    scope = effective_sede_id(actor)
+    if scope is None or target.sede_id != scope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    if target.role.code in ("ADMIN", "BRANCH_MANAGER"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
 
 @router.get("", response_model=PaginatedResponse[UserResponse])
 def list_users(
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:read"))],
+    current_user: Annotated[User, Depends(require_permissions("users:read"))],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: str | None = None,
+    sede_id: int | None = None,
     is_active: bool | None = None,
 ) -> PaginatedResponse[UserResponse]:
     query = _staff_users_query()
 
+    scope = effective_sede_id(current_user)
+    if scope is not None:
+        query = query.where(User.sede_id == scope)
+    elif sede_id is not None:
+        query = query.where(User.sede_id == sede_id)
+
     if search:
-        term = f"%{search}%"
-        query = query.where(
-            (User.email.ilike(term))
-            | (User.first_name.ilike(term))
-            | (User.last_name.ilike(term))
-        )
+        words = [part.strip() for part in search.strip().split() if part.strip()]
+        for word in words:
+            term = f"%{word}%"
+            full_name = func.concat(User.first_name, " ", User.last_name)
+            query = query.where(
+                (User.email.ilike(term))
+                | (User.first_name.ilike(term))
+                | (User.last_name.ilike(term))
+                | full_name.ilike(term)
+            )
     if is_active is not None:
         query = query.where(User.is_active == is_active)
 
@@ -92,13 +116,20 @@ def list_users(
 def create_user(
     payload: UserCreate,
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:create"))],
+    current_user: Annotated[User, Depends(require_permissions("users:create"))],
 ) -> UserResponse:
     existing = db.execute(select(User).where(User.email == payload.email.lower())).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
 
-    _assert_staff_role(db, payload.role_id)
+    role = _get_role(db, payload.role_id)
+    assert_actor_can_assign_role(current_user, role)
+    sede_id = resolve_sede_for_user(
+        db,
+        actor=current_user,
+        role=role,
+        requested_sede_id=payload.sede_id,
+    )
 
     user = User(
         email=payload.email.lower(),
@@ -108,11 +139,14 @@ def create_user(
         phone=payload.phone,
         role_id=payload.role_id,
         area_id=payload.area_id,
+        sede_id=sede_id,
     )
     db.add(user)
+    db.flush()
+    sync_user_merchants_for_sede(db, user, sede_id)
     db.commit()
     db.refresh(user)
-    db.refresh(user, attribute_names=["role", "area"])
+    db.refresh(user, attribute_names=["role", "area", "sede"])
     return serialize_user(user)
 
 
@@ -120,11 +154,12 @@ def create_user(
 def get_user(
     user_id: int,
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:read"))],
+    current_user: Annotated[User, Depends(require_permissions("users:read"))],
 ) -> UserResponse:
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    _assert_can_manage_target(current_user, user)
     return serialize_user(user)
 
 
@@ -133,28 +168,47 @@ def update_user(
     user_id: int,
     payload: UserUpdate,
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:update"))],
+    current_user: Annotated[User, Depends(require_permissions("users:update"))],
 ) -> UserResponse:
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    _assert_can_manage_target(current_user, user)
 
     data = payload.model_dump(exclude_unset=True)
     if "email" in data and data["email"]:
         data["email"] = data["email"].lower()
+
+    role = user.role
     if "role_id" in data and data["role_id"] is not None:
-        _assert_staff_role(db, int(data["role_id"]))
+        role = _get_role(db, int(data["role_id"]))
+        assert_actor_can_assign_role(current_user, role)
+
+    sede_in_payload = "sede_id" in data
+    if "role_id" in data or sede_in_payload:
+        requested_sede = data.pop("sede_id") if sede_in_payload else user.sede_id
+        data["sede_id"] = resolve_sede_for_user(
+            db,
+            actor=current_user,
+            role=role,
+            requested_sede_id=requested_sede,
+        )
 
     password = data.pop("password", None)
     if password:
         user.password_hash = hash_password(password)
         user.must_change_password = True
 
+    previous_sede = user.sede_id
     for field, value in data.items():
         setattr(user, field, value)
 
+    if user.sede_id != previous_sede or "role_id" in data:
+        sync_user_merchants_for_sede(db, user, user.sede_id)
+
     db.commit()
     db.refresh(user)
+    db.refresh(user, attribute_names=["role", "area", "sede"])
     return serialize_user(user)
 
 
@@ -162,12 +216,13 @@ def update_user(
 async def upload_user_avatar(
     user_id: int,
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:update"))],
+    current_user: Annotated[User, Depends(require_permissions("users:update"))],
     file: UploadFile = File(...),
 ) -> UserResponse:
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    _assert_can_manage_target(current_user, user)
     file_bytes = await file.read()
     return AuthService(db).upload_avatar(
         user,
@@ -181,11 +236,12 @@ async def upload_user_avatar(
 def delete_user_avatar(
     user_id: int,
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("users:update"))],
+    current_user: Annotated[User, Depends(require_permissions("users:update"))],
 ) -> UserResponse:
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    _assert_can_manage_target(current_user, user)
     return AuthService(db).delete_avatar(user)
 
 
@@ -200,6 +256,7 @@ def deactivate_user(
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    _assert_can_manage_target(current_user, user)
     user.is_active = False
     db.commit()
     return MessageResponse(message="Usuario desactivado")
