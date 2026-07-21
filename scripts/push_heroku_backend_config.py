@@ -30,15 +30,28 @@ def parse_env(path: Path) -> dict[str, str]:
     if not path.exists():
         raise FileNotFoundError(path)
     content = path.read_text(encoding="utf-8")
+    # No usar \s* tras "=": comería saltos de línea y asignaría la clave siguiente
+    # (p. ej. PAYPAL_WEBHOOK_ID vacío + DOCUSIGN_PRIVATE_KEY multilínea).
     for match in re.finditer(
-        r'^([A-Z][A-Z0-9_]*)\s*=\s*("(?:[^"\\]|\\.)*"|[^\n#]+)',
+        r'^([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*("(?:[^"\\]|\\.|\\n)*"|[^\n#]+)',
         content,
         re.MULTILINE,
     ):
         key, raw = match.group(1), match.group(2).strip()
         if raw.startswith('"') and raw.endswith('"'):
             raw = raw[1:-1]
+            raw = raw.replace("\\n", "\n").replace('\\"', '"')
         data[key] = raw
+
+    # Valores entre comillas multilínea (p. ej. DOCUSIGN_PRIVATE_KEY)
+    for match in re.finditer(
+        r'^([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*"([\s\S]*?)"\s*$',
+        content,
+        re.MULTILINE,
+    ):
+        key, raw = match.group(1), match.group(2)
+        if "\n" in raw or key not in data:
+            data[key] = raw
     return data
 
 
