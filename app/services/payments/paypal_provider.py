@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 import httpx
@@ -11,6 +12,10 @@ from app.core.config import Settings
 from app.services.payments.base import PaymentCheckoutResult, PaymentProviderError
 
 logger = logging.getLogger(__name__)
+
+
+def _digits_only(value: str) -> str:
+    return re.sub(r"\D+", "", value or "")
 
 
 class PayPalPaymentProvider:
@@ -54,12 +59,45 @@ class PayPalPaymentProvider:
         reference_id: str,
         return_url: str,
         cancel_url: str,
+        customer_first_name: str = "",
+        customer_last_name: str = "",
+        customer_phone: str = "",
     ) -> PaymentCheckoutResult:
         if not self.is_configured:
             raise PaymentProviderError("PayPal no está configurado")
 
         amount_str = f"{amount.quantize(Decimal('0.01')):.2f}"
-        payload = {
+        email = customer_email.strip()[:254]
+        given_name = customer_first_name.strip()[:140]
+        surname = customer_last_name.strip()[:140]
+        phone_digits = _digits_only(customer_phone)[:14]
+
+        paypal_source: dict = {
+            "experience_context": {
+                "brand_name": (self.settings.app_name or "ePoint")[:127],
+                "locale": "es-ES",
+                "landing_page": "GUEST_CHECKOUT",
+                "shipping_preference": "NO_SHIPPING",
+                "user_action": "PAY_NOW",
+                "payment_method_preference": "UNRESTRICTED",
+                "return_url": return_url,
+                "cancel_url": cancel_url,
+            },
+        }
+        if email:
+            paypal_source["email_address"] = email
+        if given_name or surname:
+            paypal_source["name"] = {
+                "given_name": given_name or "Cliente",
+                "surname": surname or "ePoint",
+            }
+        if phone_digits and len(phone_digits) >= 8:
+            paypal_source["phone"] = {
+                "phone_type": "MOBILE",
+                "phone_number": {"national_number": phone_digits},
+            }
+
+        payload: dict = {
             "intent": "CAPTURE",
             "purchase_units": [
                 {
@@ -73,23 +111,8 @@ class PayPalPaymentProvider:
                 }
             ],
             # Preferir tarjeta / invitado (sin forzar login de PayPal).
-            "payment_source": {
-                "paypal": {
-                    "experience_context": {
-                        "brand_name": (self.settings.app_name or "ePoint")[:127],
-                        "locale": "es-ES",
-                        "landing_page": "GUEST_CHECKOUT",
-                        "shipping_preference": "NO_SHIPPING",
-                        "user_action": "PAY_NOW",
-                        "payment_method_preference": "UNRESTRICTED",
-                        "return_url": return_url,
-                        "cancel_url": cancel_url,
-                    },
-                }
-            },
+            "payment_source": {"paypal": paypal_source},
         }
-        if customer_email.strip():
-            payload["payment_source"]["paypal"]["email_address"] = customer_email.strip()[:254]
 
         with httpx.Client(timeout=30.0) as client:
             access_token = self._get_access_token(client)
