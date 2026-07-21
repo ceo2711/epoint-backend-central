@@ -25,13 +25,17 @@ def is_sede_admin(user: User) -> bool:
 def bypasses_permission(user: User, permission: str) -> bool:
     """
     ADMIN: bypass total.
-    BRANCH_MANAGER: bypass total excepto gestión de sedes y merchants (solo ADMIN).
-    Puede usar merchants como workspace (selector), pero no administrar el CRUD.
+    BRANCH_MANAGER: bypass total excepto gestión de sedes/merchants y borrado de clientes
+    (solo ADMIN). Puede usar merchants como workspace (selector), pero no administrar el CRUD.
     """
     if is_global_admin(user):
         return True
     if is_branch_manager(user):
-        if permission.startswith("sedes:") or permission.startswith("merchants:"):
+        if (
+            permission.startswith("sedes:")
+            or permission.startswith("merchants:")
+            or permission == "clients:delete"
+        ):
             return False
         return True
     return False

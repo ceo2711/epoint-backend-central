@@ -207,7 +207,8 @@ def seed() -> None:
 
         db.flush()
 
-        # Sedes y merchants: solo ADMIN (el gerente usa merchants como workspace, sin CRUD).
+        # Sedes, merchants y borrado de clientes: solo ADMIN
+        # (el gerente usa merchants como workspace, sin CRUD; no puede eliminar clientes).
         admin_only_catalog = {
             perm_map[code].id
             for code in (
@@ -219,6 +220,7 @@ def seed() -> None:
                 "merchants:create",
                 "merchants:update",
                 "merchants:delete",
+                "clients:delete",
             )
             if code in perm_map
         }
