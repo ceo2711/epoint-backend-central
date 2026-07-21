@@ -72,15 +72,24 @@ class PayPalPaymentProvider:
                     },
                 }
             ],
-            "application_context": {
-                "brand_name": self.settings.app_name,
-                "locale": "es-AR",
-                "landing_page": "LOGIN",
-                "user_action": "PAY_NOW",
-                "return_url": return_url,
-                "cancel_url": cancel_url,
+            # Preferir tarjeta / invitado (sin forzar login de PayPal).
+            "payment_source": {
+                "paypal": {
+                    "experience_context": {
+                        "brand_name": (self.settings.app_name or "ePoint")[:127],
+                        "locale": "es-ES",
+                        "landing_page": "GUEST_CHECKOUT",
+                        "shipping_preference": "NO_SHIPPING",
+                        "user_action": "PAY_NOW",
+                        "payment_method_preference": "UNRESTRICTED",
+                        "return_url": return_url,
+                        "cancel_url": cancel_url,
+                    },
+                }
             },
         }
+        if customer_email.strip():
+            payload["payment_source"]["paypal"]["email_address"] = customer_email.strip()[:254]
 
         with httpx.Client(timeout=30.0) as client:
             access_token = self._get_access_token(client)
@@ -103,7 +112,11 @@ class PayPalPaymentProvider:
         data = response.json()
         order_id = str(data.get("id", ""))
         approve_url = next(
-            (link["href"] for link in data.get("links", []) if link.get("rel") == "approve"),
+            (
+                link["href"]
+                for link in data.get("links", [])
+                if link.get("rel") in ("approve", "payer-action")
+            ),
             None,
         )
         if not order_id or not approve_url:

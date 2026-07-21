@@ -122,7 +122,10 @@ class Settings(BaseSettings):
     paypal_client_id: str = ""
     paypal_client_secret: str = ""
     paypal_webhook_id: str = ""
-    paypal_environment: str = "sandbox"
+    paypal_environment: str = Field(
+        default="sandbox",
+        validation_alias=AliasChoices("PAYPAL_ENV", "PAYPAL_ENVIRONMENT"),
+    )
 
     @field_validator("docusign_private_key", mode="after")
     @classmethod

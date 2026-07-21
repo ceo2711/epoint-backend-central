@@ -150,6 +150,7 @@ class ProspectDetailResponse(ProspectResponse):
     docusign_envelope: ProspectEnvelopeBrief | None = None
     docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)
     payment_link: ProspectPaymentBrief | None = None
+    payment_links: list[ProspectPaymentBrief] = Field(default_factory=list)
 
 
 class ProspectPipelineSummary(BaseModel):
@@ -162,6 +163,7 @@ class ProspectPipelineSummary(BaseModel):
     calendly_event: ProspectCalendlyBrief | None = None
     docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)
     payment_link: ProspectPaymentBrief | None = None
+    payment_links: list[ProspectPaymentBrief] = Field(default_factory=list)
 
 
 class ProspectConvertResponse(BaseModel):

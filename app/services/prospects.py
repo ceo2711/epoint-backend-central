@@ -158,6 +158,22 @@ class ProspectService:
                 rows.insert(0, linked)
         return rows
 
+    def list_linked_payment_links(self, prospect: Prospect) -> list[PaymentLink]:
+        rows = list(
+            self.db.execute(
+                select(PaymentLink)
+                .where(PaymentLink.prospect_id == prospect.id)
+                .order_by(PaymentLink.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        if prospect.payment_link_id and not any(row.id == prospect.payment_link_id for row in rows):
+            linked = prospect.payment_link or self.db.get(PaymentLink, prospect.payment_link_id)
+            if linked is not None:
+                rows.insert(0, linked)
+        return rows
+
     def create_prospect(
         self,
         *,
@@ -556,6 +572,22 @@ class ProspectService:
         )
         self.db.flush()
         return prospect
+
+    def on_payment_cancelled(self, *, actor: User, link: PaymentLink) -> None:
+        if link.prospect_id is None:
+            return
+        prospect = self.db.get(Prospect, link.prospect_id)
+        if prospect is None:
+            return
+        self._add_history(
+            prospect,
+            actor=actor,
+            event_type=ProspectHistoryEventType.PAYMENT_CANCELLED.value,
+            from_status=prospect.status,
+            to_status=prospect.status,
+            note=f"Link de pago cancelado ({link.currency} {link.amount})",
+        )
+        self.db.flush()
 
     def link_envelope(
         self,

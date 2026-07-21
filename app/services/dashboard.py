@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import Date, cast, func, select
@@ -6,9 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.models.enums import ClientSource, ClientStatus, ProspectStatus
 from app.models.merchant import Merchant
+from app.models.payment_link import PaymentLink, PaymentLinkStatus
 from app.models.user import User
 from app.services.clients import ClientService
 from app.services.prospects import ProspectService
+
+# Comisión provisional del vendedor sobre pagos de prospectos.
+SALES_COMMISSION_RATE = Decimal("0.15")
 
 # Embudo comercial = estados de prospecto (antes de pasar a cliente).
 SALES_STATUSES = (
@@ -153,6 +158,13 @@ class DashboardService:
             filter_sede_id=filter_sede_id,
         )
         role_code = user.role.code
+        sales_commission = None
+        if role_code == "SALES_REP":
+            sales_commission = self._sales_monthly_commission(
+                user_id=user.id,
+                merchant_id=merchant_id,
+            )
+
         areas = [
             self._build_area_metrics(
                 code,
@@ -162,6 +174,7 @@ class DashboardService:
                 prospects_by_status=prospects_by_status,
                 prospects_by_source=prospects_by_source,
                 scope=scope,
+                sales_commission=sales_commission if code == "VENTAS" and scope == "personal" else None,
             )
             for code, name, statuses, scope in _area_definitions_for_role(role_code)
         ]
@@ -225,6 +238,67 @@ class DashboardService:
             "completion_projections": _build_projections(completions, today, PROJECTION_DAYS),
         }
 
+    def _sales_monthly_commission(self, *, user_id: int, merchant_id: int) -> dict:
+        """Serie diaria del mes + comisión acumulada del vendedor (15% sobre cobrado)."""
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        month_start_dt = datetime(today.year, today.month, 1, tzinfo=timezone.utc)
+
+        day_col = cast(PaymentLink.paid_at, Date).label("day")
+        rows = self.db.execute(
+            select(
+                day_col,
+                func.coalesce(func.sum(PaymentLink.amount), 0),
+                func.count(PaymentLink.id),
+            )
+            .where(
+                PaymentLink.status == PaymentLinkStatus.PAID.value,
+                PaymentLink.paid_at.is_not(None),
+                PaymentLink.paid_at >= month_start_dt,
+                PaymentLink.created_by_user_id == user_id,
+                PaymentLink.merchant_id == merchant_id,
+                PaymentLink.prospect_id.is_not(None),
+            )
+            .group_by(day_col)
+            .order_by(day_col)
+        ).all()
+
+        by_day: dict[date, tuple[Decimal, int]] = {}
+        for row in rows:
+            day_value = row[0]
+            if isinstance(day_value, datetime):
+                day_value = day_value.date()
+            by_day[day_value] = (Decimal(str(row[1])), int(row[2]))
+
+        series: list[dict] = []
+        running_paid = Decimal("0")
+        paid_count = 0
+        current = month_start
+        while current <= today:
+            day_paid, day_count = by_day.get(current, (Decimal("0"), 0))
+            running_paid += day_paid
+            paid_count += day_count
+            daily_commission = (day_paid * SALES_COMMISSION_RATE).quantize(Decimal("0.01"))
+            cumulative = (running_paid * SALES_COMMISSION_RATE).quantize(Decimal("0.01"))
+            series.append(
+                {
+                    "date": current.isoformat(),
+                    "daily_paid": float(day_paid),
+                    "daily_commission": float(daily_commission),
+                    "cumulative_commission": float(cumulative),
+                }
+            )
+            current += timedelta(days=1)
+
+        monthly_commission = (running_paid * SALES_COMMISSION_RATE).quantize(Decimal("0.01"))
+        return {
+            "monthly_paid_total": float(running_paid),
+            "monthly_commission": float(monthly_commission),
+            "commission_rate": float(SALES_COMMISSION_RATE),
+            "monthly_paid_count": paid_count,
+            "commission_series": series,
+        }
+
     def _build_area_metrics(
         self,
         code: str,
@@ -235,6 +309,7 @@ class DashboardService:
         prospects_by_status: dict[str, int],
         prospects_by_source: dict[str, int] | None = None,
         scope: str = "general",
+        sales_commission: dict | None = None,
     ) -> dict:
         if code == "VENTAS":
             return self._build_sales_area_metrics(
@@ -242,6 +317,7 @@ class DashboardService:
                 prospects_by_status,
                 prospects_by_source or {},
                 scope,
+                sales_commission=sales_commission,
             )
 
         status_counts = [
@@ -269,6 +345,8 @@ class DashboardService:
         by_status: dict[str, int],
         by_source: dict[str, int],
         scope: str,
+        *,
+        sales_commission: dict | None = None,
     ) -> dict:
         status_counts = [
             {"status": status, "count": by_status.get(status, 0)} for status in SALES_STATUSES
@@ -287,7 +365,7 @@ class DashboardService:
             {"source": source, "count": by_source.get(source, 0)} for source in SALES_SOURCES
         ]
 
-        return {
+        metrics: dict = {
             "code": "VENTAS",
             "name": name,
             "scope": scope,
@@ -298,3 +376,6 @@ class DashboardService:
             "by_status": status_counts,
             "by_source": source_counts,
         }
+        if sales_commission:
+            metrics.update(sales_commission)
+        return metrics

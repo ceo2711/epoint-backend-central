@@ -236,7 +236,8 @@ class PaymentService:
                     first_name=link.customer_first_name,
                     amount=link.amount,
                     currency=link.currency,
-                    payment_url=portal_url,
+                    # Ir directo al checkout (PayPal/Authorize) cuando exista; si no, portal.
+                    payment_url=link.payment_url or portal_url,
                     provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
                     payment_link_id=link.id,
                     description=link.description,
@@ -258,6 +259,10 @@ class PaymentService:
         if link.status != PaymentLinkStatus.PENDING.value:
             raise HTTPException(status_code=400, detail="Solo se pueden cancelar links pendientes")
         link.status = PaymentLinkStatus.CANCELLED.value
+        if link.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            ProspectService(self.db).on_payment_cancelled(actor=user, link=link)
         self.db.commit()
         self.db.refresh(link)
         return self._to_response(link)

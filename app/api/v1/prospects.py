@@ -84,7 +84,24 @@ def _envelope_brief(env) -> ProspectEnvelopeBrief:
     )
 
 
-def _to_detail(prospect, *, linked_envelopes: list | None = None) -> ProspectDetailResponse:
+def _payment_brief(link) -> ProspectPaymentBrief:
+    return ProspectPaymentBrief(
+        id=link.id,
+        amount=link.amount,
+        currency=link.currency,
+        status=link.status,
+        payment_url=link.payment_url,
+        paid_at=link.paid_at,
+        created_at=link.created_at,
+    )
+
+
+def _to_detail(
+    prospect,
+    *,
+    linked_envelopes: list | None = None,
+    linked_payment_links: list | None = None,
+) -> ProspectDetailResponse:
     base = _to_response(prospect).model_dump()
     history = [
         ProspectHistoryResponse(
@@ -123,18 +140,14 @@ def _to_detail(prospect, *, linked_envelopes: list | None = None) -> ProspectDet
     envelopes = [_envelope_brief(env) for env in (linked_envelopes or [])]
     if not envelopes and envelope is not None:
         envelopes = [envelope]
+    payments = [_payment_brief(link) for link in (linked_payment_links or [])]
     payment = None
     if prospect.payment_link:
-        link = prospect.payment_link
-        payment = ProspectPaymentBrief(
-            id=link.id,
-            amount=link.amount,
-            currency=link.currency,
-            status=link.status,
-            payment_url=link.payment_url,
-            paid_at=link.paid_at,
-            created_at=link.created_at,
-        )
+        payment = _payment_brief(prospect.payment_link)
+    elif payments:
+        payment = payments[0]
+    if payment and not any(item.id == payment.id for item in payments):
+        payments = [payment, *payments]
     return ProspectDetailResponse(
         **base,
         history=history,
@@ -142,6 +155,7 @@ def _to_detail(prospect, *, linked_envelopes: list | None = None) -> ProspectDet
         docusign_envelope=envelope,
         docusign_envelopes=envelopes,
         payment_link=payment,
+        payment_links=payments,
     )
 
 
@@ -258,7 +272,12 @@ def get_prospect(
     service = ProspectService(db)
     prospect = service.get_prospect_detail(current_user, prospect_id, merchant_id=active_merchant_id)
     linked_envelopes = service.list_linked_envelopes(prospect)
-    return _to_detail(prospect, linked_envelopes=linked_envelopes)
+    linked_payment_links = service.list_linked_payment_links(prospect)
+    return _to_detail(
+        prospect,
+        linked_envelopes=linked_envelopes,
+        linked_payment_links=linked_payment_links,
+    )
 
 
 @router.patch("/{prospect_id}", response_model=ProspectResponse)

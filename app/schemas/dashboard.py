@@ -29,6 +29,13 @@ class ProjectionPoint(BaseModel):
     projected: float
 
 
+class CommissionDayPoint(BaseModel):
+    date: str
+    daily_paid: float
+    daily_commission: float
+    cumulative_commission: float
+
+
 class AreaMetrics(BaseModel):
     code: str
     name: str
@@ -39,6 +46,12 @@ class AreaMetrics(BaseModel):
     conversion_rate: float | None = None
     by_status: list[StatusCount]
     by_source: list[SourceCount] = Field(default_factory=list)
+    # Comisión del vendedor (solo scope personal / SALES_REP)
+    monthly_paid_total: float | None = None
+    monthly_commission: float | None = None
+    commission_rate: float | None = None
+    monthly_paid_count: int | None = None
+    commission_series: list[CommissionDayPoint] = Field(default_factory=list)
 
 
 class DashboardMetricsResponse(BaseModel):

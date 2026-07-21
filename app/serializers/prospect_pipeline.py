@@ -25,10 +25,23 @@ def envelope_brief(env) -> ProspectEnvelopeBrief:
     )
 
 
+def payment_brief(link) -> ProspectPaymentBrief:
+    return ProspectPaymentBrief(
+        id=link.id,
+        amount=link.amount,
+        currency=link.currency,
+        status=link.status,
+        payment_url=link.payment_url,
+        paid_at=link.paid_at,
+        created_at=link.created_at,
+    )
+
+
 def prospect_pipeline_summary(
     prospect: Prospect,
     *,
     linked_envelopes: list | None = None,
+    linked_payment_links: list | None = None,
 ) -> ProspectPipelineSummary:
     history = [
         ProspectHistoryResponse(
@@ -67,18 +80,14 @@ def prospect_pipeline_summary(
     envelopes = [envelope_brief(env) for env in (linked_envelopes or [])]
     if not envelopes and envelope is not None:
         envelopes = [envelope]
+    payments = [payment_brief(link) for link in (linked_payment_links or [])]
     payment = None
     if prospect.payment_link:
-        link = prospect.payment_link
-        payment = ProspectPaymentBrief(
-            id=link.id,
-            amount=link.amount,
-            currency=link.currency,
-            status=link.status,
-            payment_url=link.payment_url,
-            paid_at=link.paid_at,
-            created_at=link.created_at,
-        )
+        payment = payment_brief(prospect.payment_link)
+    elif payments:
+        payment = payments[0]
+    if payment and not any(item.id == payment.id for item in payments):
+        payments = [payment, *payments]
     return ProspectPipelineSummary(
         prospect_id=prospect.id,
         status=prospect.status,
@@ -87,6 +96,7 @@ def prospect_pipeline_summary(
         calendly_event=calendly,
         docusign_envelopes=envelopes,
         payment_link=payment,
+        payment_links=payments,
     )
 
 
@@ -95,4 +105,9 @@ def load_prospect_pipeline_for_client(
     prospect: Prospect,
 ) -> ProspectPipelineSummary:
     linked_envelopes = service.list_linked_envelopes(prospect)
-    return prospect_pipeline_summary(prospect, linked_envelopes=linked_envelopes)
+    linked_payment_links = service.list_linked_payment_links(prospect)
+    return prospect_pipeline_summary(
+        prospect,
+        linked_envelopes=linked_envelopes,
+        linked_payment_links=linked_payment_links,
+    )

@@ -1,7 +1,10 @@
 from datetime import date
+from decimal import Decimal
+from unittest.mock import MagicMock
 
 from app.services.dashboard import (
     DashboardService,
+    SALES_COMMISSION_RATE,
     SALES_STATUSES,
     _area_definitions_for_role,
     _build_projections,
@@ -125,3 +128,51 @@ class TestDashboardRoleAreas:
         areas = _area_definitions_for_role("ADMIN")
         assert [area[0] for area in areas] == ["VENTAS", "ONBOARDING"]
         assert _viewer_scope_for_role("ADMIN") == "general"
+
+
+class TestSalesMonthlyCommission:
+    def test_commission_is_fifteen_percent_of_paid_total(self):
+        service = DashboardService.__new__(DashboardService)
+        db = MagicMock()
+        today = date.today()
+        db.execute.return_value.all.return_value = [
+            (today, Decimal("1000.00"), 3),
+        ]
+        service.db = db
+
+        result = service._sales_monthly_commission(user_id=7, merchant_id=1)
+
+        assert result["monthly_paid_total"] == 1000.0
+        assert result["monthly_commission"] == 150.0
+        assert result["commission_rate"] == float(SALES_COMMISSION_RATE)
+        assert result["monthly_paid_count"] == 3
+        assert result["commission_series"][-1]["cumulative_commission"] == 150.0
+        assert result["commission_series"][-1]["daily_commission"] == 150.0
+        assert len(result["commission_series"]) == today.day
+
+    def test_sales_area_includes_commission_when_provided(self):
+        service = DashboardService.__new__(DashboardService)
+        metrics = service._build_sales_area_metrics(
+            "Mis ventas",
+            {"PENDIENTE_CONTACTAR": 1, "PAGO_COMPLETADO": 0},
+            {},
+            "personal",
+            sales_commission={
+                "monthly_paid_total": 200.0,
+                "monthly_commission": 30.0,
+                "commission_rate": 0.15,
+                "monthly_paid_count": 1,
+                "commission_series": [
+                    {
+                        "date": "2026-07-01",
+                        "daily_paid": 200.0,
+                        "daily_commission": 30.0,
+                        "cumulative_commission": 30.0,
+                    }
+                ],
+            },
+        )
+        assert metrics["monthly_commission"] == 30.0
+        assert metrics["monthly_paid_total"] == 200.0
+        assert metrics["scope"] == "personal"
+        assert len(metrics["commission_series"]) == 1
