@@ -1,9 +1,11 @@
 from typing import Annotated, Any
+import math
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import ActiveMerchantId, CurrentUser, DbSession, require_permissions
 from app.models.user import User
+from app.schemas.common import PaginatedResponse
 from app.schemas.payment import (
     PaymentConfigResponse,
     PaymentLinkCreate,
@@ -24,17 +26,28 @@ def get_payment_config(current_user: CurrentUser, db: DbSession) -> PaymentConfi
     return PaymentService(db).get_config(current_user)
 
 
-@router.get("/links", response_model=list[PaymentLinkResponse])
+@router.get("/links", response_model=PaginatedResponse[PaymentLinkResponse])
 def list_payment_links(
     current_user: Annotated[User, Depends(require_permissions("payments:read"))],
     merchant_id: ActiveMerchantId,
     db: DbSession,
     created_by_user_id: int | None = Query(None, ge=1),
-) -> list[PaymentLinkResponse]:
-    return PaymentService(db).list_links(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+) -> PaginatedResponse[PaymentLinkResponse]:
+    items, total = PaymentService(db).list_links(
         current_user,
         merchant_id=merchant_id,
         created_by_user_id=created_by_user_id,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=max(1, math.ceil(total / page_size)) if total else 1,
     )
 
 

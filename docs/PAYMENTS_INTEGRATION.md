@@ -44,14 +44,16 @@ Si **ningún** proveedor tiene credenciales, la app entra en **modo stub**:
 
 ## Authorize.net
 
+Guía completa paso a paso: **[AUTHORIZE_SETUP.md](./AUTHORIZE_SETUP.md)**.
+
 ### Qué necesitás
 
 | Requisito | Dónde obtenerlo |
 |-----------|-----------------|
-| Cuenta Authorize.net | [authorize.net](https://www.authorize.net/) |
+| Cuenta Authorize.net | [authorize.net](https://www.authorize.net/) / [sandbox](https://sandbox.authorize.net/) |
 | API Login ID | Merchant Interface → Account → Settings → API Credentials & Keys |
 | Transaction Key | Misma pantalla (generar nueva key) |
-| Signature Key (webhooks) | Account → Webhooks → Signature Key |
+| Signature Key (webhooks) | Account → Webhooks / API Credentials → Signature Key |
 
 ### Entornos
 

@@ -84,6 +84,7 @@ class PublicPaymentLinkResponse(BaseModel):
     stub_mode: bool
     can_pay: bool
     checkout_url: str | None = None
+    hosted_payment_token: str | None = None
     provider_label: str | None = None
 
 

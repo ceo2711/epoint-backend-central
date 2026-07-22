@@ -362,8 +362,9 @@ frontend/src/features/payments/
 
 Documentación relacionada:
 
-- [PAYMENTS_INTEGRATION.md](./PAYMENTS_INTEGRATION.md) — Authorize.net + overview de pagos
-- [INTEGRATIONS_PRODUCTION_CHECKLIST.md](./INTEGRATIONS_PRODUCTION_CHECKLIST.md)
+- [PAYMENTS_INTEGRATION.md](./PAYMENTS_INTEGRATION.md) — overview Authorize + PayPal
+- [AUTHORIZE_SETUP.md](./AUTHORIZE_SETUP.md) — guía paso a paso de Authorize.net
+- [PAYPAL_SETUP.md](./PAYPAL_SETUP.md) — guía equivalente de PayPal
 
 ---
 

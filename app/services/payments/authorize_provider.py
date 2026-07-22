@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from decimal import Decimal
 
 import httpx
@@ -12,6 +13,28 @@ from app.core.config import Settings
 from app.services.payments.base import PaymentCheckoutResult, PaymentProviderError
 
 logger = logging.getLogger(__name__)
+
+
+def _authorize_safe_url(url: str) -> str:
+    """Authorize.net sandbox rechaza 'localhost' en return/cancel; 127.0.0.1 sí pasa.
+
+    También evita '&' en return/cancel (rompe Accept Hosted).
+    """
+    safe = (
+        url.replace("://localhost:", "://127.0.0.1:")
+        .replace("://localhost/", "://127.0.0.1/")
+    )
+    # Accept Hosted falla si return/cancel traen '&' (query extra).
+    if "?" in safe:
+        base, _, query = safe.partition("?")
+        # Un solo query param sin '&' está OK (ej. ?paid=1).
+        if "&" in query:
+            return base
+    return safe
+
+
+def _digits_phone(value: str) -> str:
+    return re.sub(r"\D+", "", value or "")[:25]
 
 
 class AuthorizePaymentProvider:
@@ -44,29 +67,53 @@ class AuthorizePaymentProvider:
         reference_id: str,
         return_url: str,
         cancel_url: str,
+        customer_first_name: str = "",
+        customer_last_name: str = "",
+        customer_phone: str = "",
     ) -> PaymentCheckoutResult:
         if not self.is_configured:
             raise PaymentProviderError("Authorize.net no está configurado")
 
         amount_str = f"{amount.quantize(Decimal('0.01')):.2f}"
+        return_url = _authorize_safe_url(return_url)
+        cancel_url = _authorize_safe_url(cancel_url)
+
+        bill_to: dict[str, str] = {}
+        email = customer_email.strip()
+        first = customer_first_name.strip()[:50]
+        last = customer_last_name.strip()[:50]
+        phone = _digits_phone(customer_phone)
+        # billTo no admite email (va en customer.email).
+        if first:
+            bill_to["firstName"] = first
+        if last:
+            bill_to["lastName"] = last
+        if phone:
+            bill_to["phoneNumber"] = phone
+
+        merchant_name = (self.settings.app_name or "ePoint").replace(" API", "").strip()[:35] or "ePoint"
+
+        transaction_request: dict = {
+            "transactionType": "authCaptureTransaction",
+            "amount": amount_str,
+            "currencyCode": currency.upper(),
+            "order": {
+                "invoiceNumber": reference_id[:20],
+                "description": (description or f"Pago {merchant_name}")[:255],
+            },
+        }
+        if email:
+            transaction_request["customer"] = {"email": email[:255]}
+        if bill_to:
+            transaction_request["billTo"] = bill_to
+
         payload = {
             "getHostedPaymentPageRequest": {
                 "merchantAuthentication": {
                     "name": self.settings.authorize_api_login_id,
                     "transactionKey": self.settings.authorize_transaction_key,
                 },
-                "transactionRequest": {
-                    "transactionType": "authCaptureTransaction",
-                    "amount": amount_str,
-                    "currencyCode": currency.upper(),
-                    "order": {
-                        "invoiceNumber": reference_id[:20],
-                        "description": (description or "Pago ePoint CRM")[:255],
-                    },
-                    "billTo": {
-                        "email": customer_email[:255],
-                    },
-                },
+                "transactionRequest": transaction_request,
                 "hostedPaymentSettings": {
                     "setting": [
                         {
@@ -84,6 +131,31 @@ class AuthorizePaymentProvider:
                         {
                             "settingName": "hostedPaymentButtonOptions",
                             "settingValue": json.dumps({"text": "Pagar"}),
+                        },
+                        {
+                            "settingName": "hostedPaymentOrderOptions",
+                            "settingValue": json.dumps(
+                                {"show": True, "merchantName": merchant_name}
+                            ),
+                        },
+                        {
+                            # Color de acento (Accept Hosted no permite subir logo).
+                            "settingName": "hostedPaymentStyleOptions",
+                            "settingValue": json.dumps({"bgColor": "#3d6b45"}),
+                        },
+                        {
+                            "settingName": "hostedPaymentPaymentOptions",
+                            "settingValue": json.dumps(
+                                {
+                                    "cardCodeRequired": True,
+                                    "showCreditCard": True,
+                                    "showBankAccount": False,
+                                }
+                            ),
+                        },
+                        {
+                            "settingName": "hostedPaymentBillingAddressOptions",
+                            "settingValue": json.dumps({"show": True, "required": False}),
                         },
                     ]
                 },
@@ -107,5 +179,6 @@ class AuthorizePaymentProvider:
             detail = str(messages) if messages else response.text[:200]
             raise PaymentProviderError(f"Authorize.net no devolvió token: {detail}")
 
-        checkout_url = f"{self.hosted_base}?token={token_response}"
-        return PaymentCheckoutResult(external_id=str(token_response), checkout_url=checkout_url)
+        # Accept Hosted requiere POST del token (GET con query string falla: "Missing or invalid token").
+        token = str(token_response)
+        return PaymentCheckoutResult(external_id=token, checkout_url=self.hosted_base)

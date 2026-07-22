@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
@@ -126,20 +126,30 @@ class PaymentService:
         *,
         merchant_id: int,
         created_by_user_id: int | None = None,
-    ) -> list[PaymentLinkResponse]:
+        page: int = 1,
+        page_size: int = 10,
+    ) -> tuple[list[PaymentLinkResponse], int]:
         self.ensure_access(user)
+        filters = [PaymentLink.merchant_id == merchant_id]
+        if user.role.code == "SALES_REP":
+            filters.append(PaymentLink.created_by_user_id == user.id)
+        elif created_by_user_id is not None:
+            filters.append(PaymentLink.created_by_user_id == created_by_user_id)
+
+        total = self.db.execute(
+            select(func.count()).select_from(PaymentLink).where(*filters)
+        ).scalar_one()
+
         stmt = (
             select(PaymentLink)
             .options(joinedload(PaymentLink.created_by))
-            .where(PaymentLink.merchant_id == merchant_id)
+            .where(*filters)
             .order_by(PaymentLink.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
-        if user.role.code == "SALES_REP":
-            stmt = stmt.where(PaymentLink.created_by_user_id == user.id)
-        elif created_by_user_id is not None:
-            stmt = stmt.where(PaymentLink.created_by_user_id == created_by_user_id)
         rows = self.db.execute(stmt).unique().scalars().all()
-        return [self._to_response(row) for row in rows]
+        return [self._to_response(row) for row in rows], int(total)
 
     def create_link(
         self, user: User, payload: PaymentLinkCreate, *, merchant_id: int
@@ -167,6 +177,9 @@ class PaymentService:
                     amount=payload.amount,
                     currency=payload.currency,
                     customer_email=str(payload.customer_email),
+                    customer_first_name=payload.customer_first_name,
+                    customer_last_name=payload.customer_last_name,
+                    customer_phone=payload.customer_phone,
                     description=payload.description,
                     reference_id=token,
                     return_url=success_url,
@@ -211,7 +224,12 @@ class PaymentService:
             provider=payload.provider,
             status=PaymentLinkStatus.PENDING.value,
             description=payload.description,
-            payment_url=external_url or portal_url,
+            # Authorize Accept Hosted necesita POST del token: el link compartible es el portal.
+            payment_url=(
+                portal_url
+                if payload.provider == PaymentProvider.AUTHORIZE.value
+                else (external_url or portal_url)
+            ),
             external_checkout_id=external_id,
             external_checkout_url=external_url,
         )
@@ -274,6 +292,14 @@ class PaymentService:
         link = self._get_link_by_token(token)
         can_pay = link.status == PaymentLinkStatus.PENDING.value and self.settings.payments_enabled
         checkout_url = link.external_checkout_url if not self.stub_mode else None
+        hosted_payment_token: str | None = None
+        if (
+            not self.stub_mode
+            and link.provider == PaymentProvider.AUTHORIZE.value
+            and link.external_checkout_id
+        ):
+            hosted_payment_token = link.external_checkout_id
+            checkout_url = self.authorize.hosted_base
         return PublicPaymentLinkResponse(
             customer_first_name=link.customer_first_name,
             customer_last_name=link.customer_last_name,
@@ -286,6 +312,7 @@ class PaymentService:
             stub_mode=self.stub_mode,
             can_pay=can_pay,
             checkout_url=checkout_url,
+            hosted_payment_token=hosted_payment_token,
             provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
         )
 

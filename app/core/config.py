@@ -116,7 +116,10 @@ class Settings(BaseSettings):
     authorize_api_login_id: str = ""
     authorize_transaction_key: str = ""
     authorize_signature_key: str = ""
-    authorize_environment: str = "sandbox"
+    authorize_environment: str = Field(
+        default="sandbox",
+        validation_alias=AliasChoices("AUTHORIZE_ENV", "AUTHORIZE_ENVIRONMENT"),
+    )
 
     # Pagos — PayPal
     paypal_client_id: str = ""
