@@ -67,6 +67,16 @@ def main() -> int:
         env["DOCUSIGN_PRIVATE_KEY"] = pem_to_heroku(env["DOCUSIGN_PRIVATE_KEY"])
 
     skip = {"REDIS_URL"}  # Heroku Redis si se agrega addon; local no aplica
+    # Claves vacías en .env no se suben; además se limpian en Heroku si quedaron
+    # contaminadas (p.ej. EMAIL_DEV_REDIRECT_TO= + línea siguiente pegada).
+    empty_keys = sorted(k for k, v in env.items() if k not in skip and not v.strip())
+    if empty_keys:
+        print(f"Quitando {len(empty_keys)} vars vacías de {HEROKU_APP}: {', '.join(empty_keys)}")
+        unset = [HEROKU_BIN, "config:unset", *empty_keys, "-a", HEROKU_APP]
+        result = subprocess.run(unset, check=False)
+        if result.returncode != 0:
+            return result.returncode
+
     items = [(k, v) for k, v in env.items() if k not in skip and v.strip()]
     batch_size = 8
     print(f"Subiendo {len(items)} variables a {HEROKU_APP}...")

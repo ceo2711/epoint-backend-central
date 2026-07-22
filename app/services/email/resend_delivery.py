@@ -27,6 +27,13 @@ def resolve_email_recipient(intended: str, settings: Settings | None = None) -> 
     settings = settings or get_settings()
     original = intended.strip().lower()
     redirect = settings.email_dev_redirect_to.strip().lower()
+    # Evitar valores corruptos del parser de .env (ej. "SENDGRID_API_KEY=").
+    if redirect and ("@" not in redirect or "=" in redirect or " " in redirect.split("@", 1)[0]):
+        logger.warning(
+            "EMAIL_DEV_REDIRECT_TO inválido (%r); se ignora y se envía al destinatario original",
+            settings.email_dev_redirect_to.strip()[:80],
+        )
+        redirect = ""
     if redirect and original != redirect:
         logger.info("Email redirigido de %s → %s (EMAIL_DEV_REDIRECT_TO)", original, redirect)
         prefix = f"[Entorno de prueba — destinatario original: {original}]\n\n"

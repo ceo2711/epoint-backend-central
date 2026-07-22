@@ -17,6 +17,15 @@ def test_resolve_email_recipient_redirects_when_configured(monkeypatch):
     assert "cliente@ejemplo.com" in prefix
 
 
+def test_resolve_email_recipient_ignores_polluted_redirect(monkeypatch):
+    """Valores corruptos (p.ej. sync .env pegando la clave siguiente) no deben usarse como `to`."""
+    monkeypatch.setenv("EMAIL_DEV_REDIRECT_TO", "sendgrid_api_key=")
+    recipient, prefix, original = resolve_email_recipient("cliente@ejemplo.com")
+    assert recipient == "cliente@ejemplo.com"
+    assert original == "cliente@ejemplo.com"
+    assert prefix == ""
+
+
 def test_send_resend_text_email_dry_run(monkeypatch):
     monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
     assert send_resend_text_email(
