@@ -18,6 +18,7 @@ from app.models.role import Role
 from app.models.sede import Sede
 from app.models.user import User
 from app.services.sede_scope import SEDE_SCOPED_ROLES, sync_user_merchants_for_sede
+from app.services.sources import ensure_default_sources
 from app.constants.default_board_cards import EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, default_cards_for_column
 from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 
@@ -51,6 +52,10 @@ PERMISSIONS = [
     ("merchants:create", "Crear merchants"),
     ("merchants:update", "Editar merchants"),
     ("merchants:delete", "Desactivar merchants"),
+    ("sources:read", "Ver sources"),
+    ("sources:create", "Crear sources"),
+    ("sources:update", "Editar sources"),
+    ("sources:delete", "Desactivar sources"),
     ("sedes:read", "Ver sedes"),
     ("sedes:create", "Crear sedes"),
     ("sedes:update", "Editar sedes"),
@@ -74,11 +79,19 @@ ROLES = {
         "permissions": [
             "users:read",
             "clients:read",
+            "clients:create",
             "clients:update",
+            "prospects:read",
+            "prospects:create",
+            "prospects:update",
             "documents:read",
             "documents:upload",
             "boards:read",
             "boards:manage",
+            "calendly:read",
+            "calendly:manage",
+            "payments:read",
+            "payments:create",
         ],
     },
     "BRANCH_MANAGER": {
@@ -140,6 +153,7 @@ ADMIN_PASSWORD = "Admin123!"
 
 DEMO_USERS = [
     ("vendedor@epoint.com", "Vendedor", "Demo", "SALES_REP", "VENTAS", "Vendedor123!"),
+    ("lider.ventas@epoint.com", "Líder", "Ventas", "AREA_LEADER", "VENTAS", "LiderVentas123!"),
     ("onboarding@epoint.com", "Encargado", "Onboarding", "ONBOARDING_MANAGER", "ONBOARDING", "Onboard123!"),
     ("asesor@epoint.com", "Asesor", "Demo", "ADVISOR", "ONBOARDING", "Asesor123!"),
     ("gerente@epoint.com", "Gerente", "Sucursal", "BRANCH_MANAGER", "VENTAS", "Gerente123!"),
@@ -220,6 +234,10 @@ def seed() -> None:
                 "merchants:create",
                 "merchants:update",
                 "merchants:delete",
+                "sources:read",
+                "sources:create",
+                "sources:update",
+                "sources:delete",
                 "clients:delete",
             )
             if code in perm_map
@@ -238,6 +256,8 @@ def seed() -> None:
             area = db.execute(select(Area).where(Area.code == code)).scalar_one_or_none()
             if area is None:
                 db.add(Area(code=code, name=name, description=desc))
+
+        ensure_default_sources(db)
 
         # Sede principal
         sede = db.execute(select(Sede).where(Sede.code == "sede-principal")).scalar_one_or_none()

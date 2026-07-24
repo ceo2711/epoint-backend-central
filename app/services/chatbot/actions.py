@@ -790,9 +790,10 @@ class ChatbotActionHandler:
                 normalized.pop("merchant_id", None)
         source = normalized.get("source")
         if isinstance(source, str) and source.strip():
-            try:
-                normalized["source"] = ClientSource(source.strip().upper()).value
-            except ValueError:
+            code = source.strip().upper()
+            if re.fullmatch(r"[A-Z0-9_]+", code):
+                normalized["source"] = code
+            else:
                 normalized.pop("source", None)
         return normalized
 

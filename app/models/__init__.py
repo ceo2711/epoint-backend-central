@@ -16,6 +16,7 @@ from app.models.docusign_connection import DocusignConnection
 from app.models.docusign_envelope import DocusignEnvelope
 from app.models.document import Document
 from app.models.document_verification import DocumentVerification
+from app.models.influencer import Influencer
 from app.models.merchant import Merchant
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
@@ -28,6 +29,7 @@ from app.models.role import Role
 from app.models.sede import Sede
 from app.models.sent_email import SentEmail
 from app.models.session import UserSession
+from app.models.source import Source
 from app.models.user import User
 from app.models.user_merchant import UserMerchant
 from app.models.vehicle import Vehicle
@@ -54,6 +56,7 @@ __all__ = [
     "DocusignEnvelope",
     "Document",
     "DocumentVerification",
+    "Influencer",
     "Merchant",
     "Notification",
     "PasswordResetToken",
@@ -66,6 +69,7 @@ __all__ = [
     "RolePermission",
     "Sede",
     "SentEmail",
+    "Source",
     "User",
     "UserMerchant",
     "UserSession",

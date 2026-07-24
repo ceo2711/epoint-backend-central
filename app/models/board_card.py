@@ -23,6 +23,7 @@ class BoardCard(Base):
     instructions_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_links: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="PENDIENTE")
+    label: Mapped[str | None] = mapped_column(String(30), nullable=True, default="PENDIENTE")
     position: Mapped[int] = mapped_column(Integer, default=0)
     requires_credentials: Mapped[bool] = mapped_column(Boolean, default=False)
     requires_file_upload: Mapped[bool] = mapped_column(Boolean, default=False)

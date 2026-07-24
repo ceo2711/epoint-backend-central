@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import ActiveMerchantId, CurrentUser, DbSession
@@ -127,6 +127,13 @@ def register_client_from_envelope(
     db: DbSession,
 ) -> DocusignRegisterClientResponse:
     """Registra al firmante como cliente CRM y lo envía a revisión de onboarding."""
+    from app.services.sources import require_active_source_code
+
+    try:
+        source = require_active_source_code(db, payload.source, required=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     service = DocusignService(db)
     row, client = service.register_client_from_envelope(
         current_user,
@@ -135,7 +142,7 @@ def register_client_from_envelope(
         last_name=payload.last_name,
         email=str(payload.email),
         phone=payload.phone,
-        source=payload.source.value,
+        source=source,
         merchant_id=payload.merchant_id,
         active_merchant_id=merchant_id,
     )

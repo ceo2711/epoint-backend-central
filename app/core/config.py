@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
 
     # App
-    app_name: str = "ePoint CRM API"
+    app_name: str = "Epoint CRM API"
     app_env: str = "development"
     debug: bool = True
     api_prefix: str = "/api/v1"

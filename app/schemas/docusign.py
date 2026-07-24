@@ -2,8 +2,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.enums import ClientSource
-
 
 class DocusignConnectionResponse(BaseModel):
     connected: bool
@@ -83,7 +81,7 @@ class DocusignRegisterClientRequest(BaseModel):
     last_name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     phone: str = Field(min_length=5, max_length=30)
-    source: ClientSource
+    source: str = Field(min_length=1, max_length=40)
     merchant_id: int
 
 

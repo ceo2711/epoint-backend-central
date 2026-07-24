@@ -21,6 +21,7 @@ from app.schemas.board import (
     CardAttachmentResponse,
     CardCommentResponse,
     CardCreate,
+    CardLabelUpdate,
     CardMoveUpdate,
     CardResultUpdate,
     CardStatusUpdate,
@@ -49,6 +50,7 @@ def _require_staff_client_workspace(
     return client
 
 BOARD_STAFF_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR"})
+BOARD_CARD_DELETE_ROLES = frozenset({"ONBOARDING_MANAGER", "ADVISOR"})
 
 
 def _is_board_staff(user: User) -> bool:
@@ -58,6 +60,44 @@ def _is_board_staff(user: User) -> bool:
 def _require_board_staff(user: User) -> None:
     if not _is_board_staff(user):
         raise HTTPException(status_code=403, detail="No tenés permiso para modificar el tablero")
+
+
+def _require_board_card_delete(user: User) -> None:
+    if user.role.code not in BOARD_CARD_DELETE_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Solo asesores y encargados de onboarding pueden eliminar cards",
+        )
+
+
+def _require_card_label_editor(user: User, client: Client, db) -> None:
+    """Solo onboarding o el asesor designado del cliente pueden setear labels."""
+    if user.role.code == "ONBOARDING_MANAGER":
+        return
+    if user.role.code == "ADVISOR":
+        advisor = ClientService(db)._get_active_advisor(client)
+        if advisor is not None and advisor.id == user.id:
+            return
+    raise HTTPException(
+        status_code=403,
+        detail="Solo onboarding o el asesor designado pueden cambiar el label de la card",
+    )
+
+
+def _lite_card_response(card: BoardCard) -> BoardCardResponse:
+    return BoardCardResponse(
+        id=card.id,
+        title=card.title,
+        description_md=card.description_md,
+        instructions_md=card.instructions_md,
+        external_links=card.external_links,
+        status=card.status,
+        label=card.label,
+        position=card.position,
+        requires_credentials=card.requires_credentials,
+        requires_file_upload=card.requires_file_upload,
+        client_result_text=card.client_result_text,
+    )
 
 
 def _attachment_response(
@@ -122,6 +162,7 @@ def _card_response(
         instructions_md=card.instructions_md,
         external_links=card.external_links,
         status=card.status,
+        label=card.label,
         position=card.position,
         requires_credentials=card.requires_credentials,
         requires_file_upload=card.requires_file_upload,
@@ -204,6 +245,7 @@ def _build_board_response(board, storage, user: User, board_service: BoardServic
                     instructions_md=card.instructions_md,
                     external_links=card.external_links,
                     status=card.status,
+                    label=card.label,
                     position=card.position,
                     requires_credentials=card.requires_credentials,
                     requires_file_upload=card.requires_file_upload,
@@ -296,7 +338,7 @@ def create_card(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         _require_staff_client_workspace(db, current_user, client.id, merchant_id)
-    _require_board_staff(current_user)
+        _require_board_staff(current_user)
 
     board_service = BoardService(db)
     try:
@@ -308,18 +350,7 @@ def create_card(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return BoardCardResponse(
-        id=card.id,
-        title=card.title,
-        description_md=card.description_md,
-        instructions_md=card.instructions_md,
-        external_links=card.external_links,
-        status=card.status,
-        position=card.position,
-        requires_credentials=card.requires_credentials,
-        requires_file_upload=card.requires_file_upload,
-        client_result_text=card.client_result_text,
-    )
+    return _lite_card_response(card)
 
 
 @router.patch("/cards/{card_id}/status", response_model=BoardCardResponse)
@@ -340,18 +371,7 @@ def update_card_status(
         raise HTTPException(status_code=403)
     board_service = BoardService(db)
     card = board_service.update_card_status(card=card, status=payload.status, actor=current_user, client=client)
-    return BoardCardResponse(
-        id=card.id,
-        title=card.title,
-        description_md=card.description_md,
-        instructions_md=card.instructions_md,
-        external_links=card.external_links,
-        status=card.status,
-        position=card.position,
-        requires_credentials=card.requires_credentials,
-        requires_file_upload=card.requires_file_upload,
-        client_result_text=card.client_result_text,
-    )
+    return _lite_card_response(card)
 
 
 @router.patch("/cards/{card_id}/move", response_model=BoardCardResponse)
@@ -385,18 +405,7 @@ def move_card(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return BoardCardResponse(
-        id=card.id,
-        title=card.title,
-        description_md=card.description_md,
-        instructions_md=card.instructions_md,
-        external_links=card.external_links,
-        status=card.status,
-        position=card.position,
-        requires_credentials=card.requires_credentials,
-        requires_file_upload=card.requires_file_upload,
-        client_result_text=card.client_result_text,
-    )
+    return _lite_card_response(card)
 
 
 @router.patch("/cards/{card_id}", response_model=BoardCardResponse)
@@ -423,18 +432,43 @@ def update_card(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return BoardCardResponse(
-        id=card.id,
-        title=card.title,
-        description_md=card.description_md,
-        instructions_md=card.instructions_md,
-        external_links=card.external_links,
-        status=card.status,
-        position=card.position,
-        requires_credentials=card.requires_credentials,
-        requires_file_upload=card.requires_file_upload,
-        client_result_text=card.client_result_text,
-    )
+    return _lite_card_response(card)
+
+
+@router.patch("/cards/{card_id}/label", response_model=BoardCardResponse)
+def update_card_label(
+    card_id: int,
+    payload: CardLabelUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> BoardCardResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    client = _get_card_client(card, current_user, db, merchant_id=merchant_id)
+    _require_card_label_editor(current_user, client, db)
+
+    label_value = payload.label.value if payload.label is not None else None
+    card = BoardService(db).update_card_label(card=card, label=label_value)
+    return _lite_card_response(card)
+
+
+@router.delete("/cards/{card_id}", response_model=MessageResponse)
+def delete_card(
+    card_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> MessageResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    _get_card_client(card, current_user, db, merchant_id=merchant_id)
+    _require_board_card_delete(current_user)
+
+    BoardService(db).delete_card(card=card)
+    return MessageResponse(message="Card eliminada")
 
 
 @router.post("/cards/{card_id}/attachments", response_model=CardAttachmentResponse)

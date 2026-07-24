@@ -19,6 +19,14 @@ class SourceCount(BaseModel):
     count: int
 
 
+class InfluencerLeadCount(BaseModel):
+    influencer_id: int
+    name: str
+    handle: str | None = None
+    count: int
+    converted_count: int = 0
+
+
 class TimeseriesPoint(BaseModel):
     date: str
     count: int
@@ -36,6 +44,38 @@ class CommissionDayPoint(BaseModel):
     cumulative_commission: float
 
 
+class WeekdaySalesPoint(BaseModel):
+    """Ventas por día de la semana (0=lunes … 6=domingo). Solo líder de ventas."""
+
+    weekday: int
+    paid_count: int
+    paid_amount: float
+
+
+class SalesRepLeaderboardItem(BaseModel):
+    user_id: int
+    first_name: str
+    last_name: str
+    paid_count: int
+    paid_amount: float
+    commission: float
+
+
+class SalesLeadershipMetrics(BaseModel):
+    """KPIs de supervisión del líder de área de Ventas (equipo completo)."""
+
+    active_sales_reps: int
+    team_monthly_paid_count: int
+    team_monthly_paid_total: float
+    team_monthly_commission: float
+    commission_per_sale: float
+    weekday_sales: list[WeekdaySalesPoint] = Field(default_factory=list)
+    best_weekday: int | None = None
+    best_weekday_paid_count: int = 0
+    best_weekday_paid_amount: float = 0.0
+    leaderboard: list[SalesRepLeaderboardItem] = Field(default_factory=list)
+
+
 class AreaMetrics(BaseModel):
     code: str
     name: str
@@ -46,10 +86,11 @@ class AreaMetrics(BaseModel):
     conversion_rate: float | None = None
     by_status: list[StatusCount]
     by_source: list[SourceCount] = Field(default_factory=list)
+    by_influencer: list[InfluencerLeadCount] = Field(default_factory=list)
     # Comisión del vendedor (solo scope personal / SALES_REP)
     monthly_paid_total: float | None = None
     monthly_commission: float | None = None
-    commission_rate: float | None = None
+    commission_per_sale: float | None = None
     monthly_paid_count: int | None = None
     commission_series: list[CommissionDayPoint] = Field(default_factory=list)
 
@@ -66,3 +107,4 @@ class DashboardMetricsResponse(BaseModel):
     registration_projections: list[ProjectionPoint] = Field(default_factory=list)
     prospect_registration_projections: list[ProjectionPoint] = Field(default_factory=list)
     completion_projections: list[ProjectionPoint] = Field(default_factory=list)
+    sales_leadership: SalesLeadershipMetrics | None = None

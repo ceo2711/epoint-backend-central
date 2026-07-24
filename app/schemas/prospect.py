@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.enums import ClientSource, ProspectStatus
+from app.models.enums import ProspectStatus
 from app.schemas.common import ORMBase
 
 class ProspectContactConflict(BaseModel):
@@ -24,7 +24,8 @@ class ProspectCreate(BaseModel):
     last_name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     phone: str = Field(min_length=5, max_length=30)
-    source: ClientSource | None = None
+    source: str | None = Field(default=None, max_length=40)
+    influencer_id: int | None = None
     merchant_id: int
     is_qualified: bool = True
     notes: str | None = None
@@ -37,7 +38,8 @@ class ProspectUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, min_length=5, max_length=30)
-    source: ClientSource | None = None
+    source: str | None = Field(default=None, max_length=40)
+    influencer_id: int | None = None
     notes: str | None = None
     is_qualified: bool | None = None
 
@@ -133,6 +135,8 @@ class ProspectResponse(ORMBase):
     email: str
     phone: str
     source: str | None
+    influencer_id: int | None = None
+    influencer_name: str | None = None
     notes: str | None
     converted_client_id: int | None
     calendly_event_id: int | None

@@ -16,6 +16,9 @@ def get_dashboard_metrics(
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
     merchant_id: ActiveMerchantId,
     sede_id: int | None = Query(None, description="Filtrar métricas por sede (admin global)"),
+    sales_rep_id: int | None = Query(
+        None, description="Métricas personales de un vendedor (supervisor)"
+    ),
 ) -> DashboardMetricsResponse:
     service = DashboardService(db)
     return DashboardMetricsResponse(
@@ -23,5 +26,6 @@ def get_dashboard_metrics(
             current_user,
             merchant_id=merchant_id,
             filter_sede_id=sede_id,
+            sales_rep_id=sales_rep_id,
         )
     )

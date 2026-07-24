@@ -127,6 +127,13 @@ def create_client(
     current_user: Annotated[User, Depends(require_permissions("clients:create"))],
     merchant_id: ActiveMerchantId,
 ) -> ClientResponse:
+    from app.services.sources import require_active_source_code
+
+    try:
+        source = require_active_source_code(db, payload.source, required=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     service = ClientService(db)
     client = service.create_client(
         actor=current_user,
@@ -134,7 +141,7 @@ def create_client(
         last_name=payload.last_name,
         email=str(payload.email),
         phone=payload.phone,
-        source=payload.source.value,
+        source=source,
         merchant_id=payload.merchant_id or merchant_id,
     )
     db.refresh(client, attribute_names=["merchant"])
@@ -253,7 +260,15 @@ def update_client(
     client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    client = service.update_client(actor=current_user, client=client, **payload.model_dump(exclude_unset=True))
+    fields = payload.model_dump(exclude_unset=True)
+    if "source" in fields:
+        from app.services.sources import require_active_source_code
+
+        try:
+            fields["source"] = require_active_source_code(db, fields["source"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    client = service.update_client(actor=current_user, client=client, **fields)
     db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
 

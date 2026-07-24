@@ -112,6 +112,7 @@ class ProspectService:
                 query.options(
                     joinedload(Prospect.assigned_to),
                     joinedload(Prospect.merchant),
+                    joinedload(Prospect.influencer),
                 )
                 .order_by(Prospect.updated_at.desc())
                 .offset((page - 1) * page_size)
@@ -131,6 +132,7 @@ class ProspectService:
                 .options(
                     joinedload(Prospect.assigned_to),
                     joinedload(Prospect.merchant),
+                    joinedload(Prospect.influencer),
                     joinedload(Prospect.history).joinedload(ProspectHistory.changed_by),
                     joinedload(Prospect.calendly_event),
                     joinedload(Prospect.docusign_envelope),
@@ -188,7 +190,9 @@ class ProspectService:
         notes: str | None = None,
         assigned_to_user_id: int | None = None,
         sede_id: int | None = None,
+        influencer_id: int | None = None,
     ) -> Prospect:
+        from app.services.influencers import resolve_prospect_influencer_id
         from app.services.role_access import is_global_admin
         from app.services.sede_scope import effective_sede_id
 
@@ -255,6 +259,16 @@ class ProspectService:
                 detail="No se pudo determinar la sede del prospecto",
             )
 
+        try:
+            resolved_influencer_id = resolve_prospect_influencer_id(
+                self.db,
+                source=source,
+                influencer_id=influencer_id,
+                sede_id=resolved_sede_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
         prospect = Prospect(
             merchant_id=merchant_id,
             sede_id=resolved_sede_id,
@@ -266,6 +280,7 @@ class ProspectService:
             email=normalized_email,
             phone=phone.strip(),
             source=source,
+            influencer_id=resolved_influencer_id,
             notes=notes.strip() if notes else None,
         )
         self.db.add(prospect)
@@ -312,7 +327,11 @@ class ProspectService:
                 exclude_prospect_id=prospect.id,
             )
         for key, value in fields.items():
-            if value is not None and hasattr(prospect, key):
+            if not hasattr(prospect, key):
+                continue
+            if key == "influencer_id":
+                setattr(prospect, key, value)
+            elif value is not None:
                 if isinstance(value, str):
                     setattr(prospect, key, value.strip())
                 else:

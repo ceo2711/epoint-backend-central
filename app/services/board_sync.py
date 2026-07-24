@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
+from app.constants.kanban_columns import KANBAN_COLUMN_TITLE_ALIASES, KANBAN_COLUMN_TITLES
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
@@ -24,8 +24,16 @@ def sync_template_lists(db: Session, template: BoardTemplate) -> None:
         seed_default_template_cards_for_list(db, template_list=template_list)
 
 
+def _apply_column_title_aliases(lists: list[BoardList]) -> None:
+    for board_list in lists:
+        renamed = KANBAN_COLUMN_TITLE_ALIASES.get(board_list.title)
+        if renamed:
+            board_list.title = renamed
+
+
 def sync_board_lists(db: Session, board: Board) -> None:
     existing_lists = list(board.lists)
+    _apply_column_title_aliases(existing_lists)
     cards: list[BoardCard] = []
     for board_list in existing_lists:
         cards.extend(list(board_list.cards))

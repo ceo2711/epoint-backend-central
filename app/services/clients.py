@@ -34,6 +34,7 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
+from app.services.role_access import SALES_AREA_CODE
 
 if TYPE_CHECKING:
     from app.models.board import Board, BoardTemplate
@@ -1144,18 +1145,30 @@ class ClientService:
         return {"deleted_ids": deleted_ids, "failures": failures}
 
     def _get_onboarding_team(self) -> list[User]:
-        return list(
+        """Staff notificado en onboarding (excluye líderes del área de ventas)."""
+        users = list(
             self.db.execute(
                 select(User)
                 .join(Role)
+                .options(joinedload(User.area), joinedload(User.role))
                 .where(
                     Role.code.in_(["ONBOARDING_MANAGER", "AREA_LEADER", "ADMIN", "BRANCH_MANAGER"]),
                     User.is_active.is_(True),
                 )
             )
+            .unique()
             .scalars()
             .all()
         )
+        return [
+            user
+            for user in users
+            if not (
+                user.role.code == "AREA_LEADER"
+                and user.area is not None
+                and user.area.code == SALES_AREA_CODE
+            )
+        ]
 
     def _get_active_advisor(self, client: Client) -> User | None:
         for a in client.assignments:

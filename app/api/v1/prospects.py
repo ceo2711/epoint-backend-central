@@ -60,6 +60,8 @@ def _to_response(prospect) -> ProspectResponse:
         email=prospect.email,
         phone=prospect.phone,
         source=prospect.source,
+        influencer_id=prospect.influencer_id,
+        influencer_name=prospect.influencer.name if getattr(prospect, "influencer", None) else None,
         notes=prospect.notes,
         converted_client_id=prospect.converted_client_id,
         calendly_event_id=prospect.calendly_event_id,
@@ -209,6 +211,13 @@ def create_prospect(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("prospects:create"))],
 ) -> ProspectResponse:
+    from app.services.sources import require_active_source_code
+
+    try:
+        source = require_active_source_code(db, payload.source)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     service = ProspectService(db)
     prospect = service.create_prospect(
         actor=current_user,
@@ -218,10 +227,11 @@ def create_prospect(
         phone=payload.phone,
         merchant_id=payload.merchant_id,
         is_qualified=payload.is_qualified,
-        source=payload.source.value if payload.source else None,
+        source=source,
         notes=payload.notes,
         assigned_to_user_id=payload.assigned_to_user_id,
         sede_id=payload.sede_id,
+        influencer_id=payload.influencer_id,
     )
     detail = service.get_prospect_detail(current_user, prospect.id)
     return _to_response(detail)
@@ -291,8 +301,31 @@ def update_prospect(
     service = ProspectService(db)
     prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
     fields = payload.model_dump(exclude_unset=True)
-    if "source" in fields and fields["source"] is not None:
-        fields["source"] = fields["source"].value
+    if "source" in fields:
+        from app.services.sources import require_active_source_code
+
+        try:
+            fields["source"] = require_active_source_code(db, fields["source"])
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if "source" in fields or "influencer_id" in fields:
+        from app.services.influencers import resolve_prospect_influencer_id
+
+        next_source = fields["source"] if "source" in fields else prospect.source
+        next_influencer_id = (
+            fields["influencer_id"] if "influencer_id" in fields else prospect.influencer_id
+        )
+        try:
+            fields["influencer_id"] = resolve_prospect_influencer_id(
+                db,
+                source=next_source,
+                influencer_id=next_influencer_id,
+                sede_id=prospect.sede_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     prospect = service.update_prospect(actor=current_user, prospect=prospect, **fields)
     detail = service.get_prospect_detail(current_user, prospect.id, merchant_id=active_merchant_id)
     return _to_response(detail)

@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
@@ -64,3 +64,27 @@ def test_create_card_at_position(db_session):
     session.refresh(existing)
     assert card.position == 0
     assert existing.position == 1
+
+
+def test_delete_card_reorders_remaining(db_session):
+    session, todo, _done, existing = db_session
+    service = BoardService(session)
+    second = service.create_card(board_list=todo, title="Task B")
+    third = service.create_card(board_list=todo, title="Task C")
+
+    service.delete_card(card=second)
+
+    session.refresh(existing)
+    session.refresh(third)
+    remaining = (
+        session.execute(
+            select(BoardCard)
+            .where(BoardCard.list_id == todo.id)
+            .order_by(BoardCard.position)
+        )
+        .scalars()
+        .all()
+    )
+    assert [card.title for card in remaining] == ["Task A", "Task C"]
+    assert existing.position == 0
+    assert third.position == 1

@@ -23,6 +23,16 @@ from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 
+AREA_REQUIRED_ROLE_CODES = frozenset({"AREA_LEADER"})
+
+
+def _assert_area_required(role: Role, area_id: int | None) -> None:
+    if role.code in AREA_REQUIRED_ROLE_CODES and area_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El líder de área debe tener un área asignada",
+        )
+
 
 def _staff_users_query():
     """Usuarios internos de la plataforma (empleados), sin cuentas portal de clientes."""
@@ -124,6 +134,7 @@ def create_user(
 
     role = _get_role(db, payload.role_id)
     assert_actor_can_assign_role(current_user, role)
+    _assert_area_required(role, payload.area_id)
     sede_id = resolve_sede_for_user(
         db,
         actor=current_user,
@@ -183,6 +194,9 @@ def update_user(
     if "role_id" in data and data["role_id"] is not None:
         role = _get_role(db, int(data["role_id"]))
         assert_actor_can_assign_role(current_user, role)
+
+    next_area_id = data["area_id"] if "area_id" in data else user.area_id
+    _assert_area_required(role, next_area_id)
 
     sede_in_payload = "sede_id" in data
     if "role_id" in data or sede_in_payload:

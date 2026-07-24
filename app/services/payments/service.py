@@ -32,10 +32,11 @@ from app.services.notifications.service import NotificationService
 from app.services.payments.authorize_provider import AuthorizePaymentProvider
 from app.services.payments.base import PaymentProviderError
 from app.services.payments.paypal_provider import PayPalPaymentProvider
+from app.services.role_access import is_sales_area_leader
 
 logger = logging.getLogger(__name__)
 
-PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
+PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "AREA_LEADER"})
 
 PROVIDER_LABELS = {
     PaymentProvider.AUTHORIZE.value: "Authorize.net",
@@ -61,8 +62,11 @@ class PaymentService:
 
     @staticmethod
     def ensure_access(user: User) -> None:
-        if user.role.code not in PAYMENT_ROLES:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        if user.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP"):
+            return
+        if is_sales_area_leader(user):
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
     @property
     def stub_mode(self) -> bool:
@@ -393,7 +397,9 @@ class PaymentService:
             raise HTTPException(status_code=400, detail="Este pago ya tiene un cliente registrado")
 
         try:
-            source = ClientSource(payload.source).value
+            from app.services.sources import require_active_source_code
+
+            source = require_active_source_code(self.db, payload.source, required=True)
         except ValueError:
             source = ClientSource.OTHER.value
 

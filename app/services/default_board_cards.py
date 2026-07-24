@@ -14,7 +14,7 @@ from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_comment import CardComment
 from app.models.client import Client
-from app.models.enums import TaskStatus
+from app.models.enums import BoardCardLabel, TaskStatus
 from app.models.role import Role
 from app.models.user import User
 
@@ -126,6 +126,7 @@ def create_board_card_from_default(
         requires_credentials=card_def.requires_credentials,
         requires_file_upload=card_def.requires_file_upload,
         status=TaskStatus.PENDIENTE.value,
+        label=BoardCardLabel.PENDIENTE.value,
     )
     db.add(card)
     db.flush()

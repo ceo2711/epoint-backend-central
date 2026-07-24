@@ -2,12 +2,15 @@ import enum
 
 
 class ClientSource(str, enum.Enum):
+    """Legacy enum — el catálogo vivo está en la tabla `sources`."""
+
     WEB_PAGE = "WEB_PAGE"
     WHATSAPP = "WHATSAPP"
     FACEBOOK = "FACEBOOK"
     INSTAGRAM = "INSTAGRAM"
     REFERRAL = "REFERRAL"
     PHONE_CALL = "PHONE_CALL"
+    INFLUENCERS = "INFLUENCERS"
     OTHER = "OTHER"
 
 
@@ -68,6 +71,16 @@ class TaskStatus(str, enum.Enum):
     EN_PROGRESO = "EN_PROGRESO"
     EN_REVISION = "EN_REVISION"
     COMPLETADA = "COMPLETADA"
+
+
+class BoardCardLabel(str, enum.Enum):
+    """Etiqueta visual de la card (independiente del status de workflow)."""
+
+    URGENTE = "URGENTE"
+    RECHAZADA = "RECHAZADA"
+    DENEGADA = "DENEGADA"
+    APROBADA = "APROBADA"
+    PENDIENTE = "PENDIENTE"
 
 
 class AddressType(str, enum.Enum):

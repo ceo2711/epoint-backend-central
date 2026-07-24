@@ -32,9 +32,10 @@ from app.schemas.calendly import (
 from app.schemas.common import MessageResponse
 from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
+from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader
 from app.services.user_serialization import avatar_url_for
 
-CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
+CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "AREA_LEADER"})
 SYNC_PAST_DAYS = 30
 SYNC_FUTURE_DAYS = 180
 AUTO_SYNC_STALE_MINUTES = 3
@@ -60,8 +61,11 @@ class CalendlyService:
 
     @staticmethod
     def ensure_calendar_access(actor: User) -> None:
-        if actor.role.code not in CALENDLY_ROLES:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene acceso al calendario")
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP"):
+            return
+        if is_sales_area_leader(actor):
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene acceso al calendario")
 
     def _ensure_manage_access(self, actor: User) -> None:
         self.ensure_calendar_access(actor)
@@ -484,7 +488,7 @@ class CalendlyService:
                     detail="No puede ver el calendario de otro usuario",
                 )
             return actor.id
-        if actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
+        if can_supervise_sales_reps(actor):
             if user_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -516,7 +520,7 @@ class CalendlyService:
 
     def list_sales_reps(self, actor: User) -> list[CalendlySalesRepItem]:
         self.ensure_calendar_access(actor)
-        if actor.role.code not in ("ADMIN", "BRANCH_MANAGER"):
+        if not can_supervise_sales_reps(actor):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
 
         from app.services.sede_scope import effective_sede_id
@@ -559,9 +563,9 @@ class CalendlyService:
 
     def connect(self, actor: User, payload: CalendlyConnectRequest) -> CalendlyConnectionResponse:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "SALES_REP" and actor.role.code not in ("ADMIN", "BRANCH_MANAGER"):
+        if actor.role.code != "SALES_REP" and not can_supervise_sales_reps(actor):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden conectar Calendly")
-        if actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
+        if can_supervise_sales_reps(actor):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Los administradores deben ver el calendario de cada vendedor; la conexión es por vendedor",

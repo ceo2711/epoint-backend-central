@@ -17,6 +17,7 @@ SOURCE_LABELS: dict[ClientSource, tuple[str, str]] = {
     ClientSource.INSTAGRAM: ("Instagram", "Instagram"),
     ClientSource.REFERRAL: ("Referido", "Referral"),
     ClientSource.PHONE_CALL: ("Llamada telefónica", "Phone call"),
+    ClientSource.INFLUENCERS: ("Influencers", "Influencers"),
     ClientSource.OTHER: ("Otro", "Other"),
 }
 
@@ -27,6 +28,7 @@ SOURCE_ALIASES: dict[ClientSource, tuple[str, ...]] = {
     ClientSource.INSTAGRAM: ("instagram", "ig"),
     ClientSource.REFERRAL: ("referido", "referral", "recomendacion", "recomendación"),
     ClientSource.PHONE_CALL: ("llamada", "telefono", "teléfono", "phone call", "phone"),
+    ClientSource.INFLUENCERS: ("influencer", "influencers", "creador", "creadores"),
     ClientSource.OTHER: ("otro", "other", "otra"),
 }
 

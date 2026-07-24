@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
@@ -11,7 +11,7 @@ from app.models.card_attachment import CardAttachment
 from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.card_comment import CardComment
 from app.models.client import Client
-from app.models.enums import DocumentVerificationStatus, NotificationEventType, TaskStatus
+from app.models.enums import BoardCardLabel, DocumentVerificationStatus, NotificationEventType, TaskStatus
 from app.models.role import Role
 from app.models.user import User
 from app.services.default_board_cards import (
@@ -76,6 +76,7 @@ class BoardService:
                             requires_credentials=t_card.requires_credentials,
                             requires_file_upload=t_card.requires_file_upload,
                             status=TaskStatus.PENDIENTE.value,
+                            label=BoardCardLabel.PENDIENTE.value,
                         )
                     )
             else:
@@ -364,6 +365,7 @@ class BoardService:
             list_id=board_list.id,
             title=clean_title,
             status=TaskStatus.PENDIENTE.value,
+            label=BoardCardLabel.PENDIENTE.value,
             position=insert_at,
         )
         self.db.add(new_card)
@@ -377,6 +379,33 @@ class BoardService:
         self.db.commit()
         self.db.refresh(new_card)
         return new_card
+
+    def delete_card(self, *, card: BoardCard) -> None:
+        board = card.board_list.board
+        list_id = card.list_id
+        card_id = card.id
+        self.db.execute(delete(BoardCard).where(BoardCard.id == card_id))
+        self.db.flush()
+
+        remaining = (
+            self.db.execute(
+                select(BoardCard)
+                .where(BoardCard.list_id == list_id)
+                .order_by(BoardCard.position)
+            )
+            .scalars()
+            .all()
+        )
+        for index, item in enumerate(remaining):
+            item.position = index
+
+        from app.services.client_onboarding_status import sync_client_onboarding_status
+
+        client = self.db.get(Client, board.client_id)
+        if client is not None:
+            sync_client_onboarding_status(self.db, client)
+
+        self.db.commit()
 
     def update_card(
         self,
@@ -392,6 +421,12 @@ class BoardService:
             card.title = clean_title
         if description_md is not None:
             card.description_md = description_md.strip() or None
+        self.db.commit()
+        self.db.refresh(card)
+        return card
+
+    def update_card_label(self, *, card: BoardCard, label: str | None) -> BoardCard:
+        card.label = label
         self.db.commit()
         self.db.refresh(card)
         return card

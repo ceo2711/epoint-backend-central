@@ -2,7 +2,7 @@
 
 KANBAN_COLUMN_TITLES: tuple[str, ...] = (
     "Client TO DO",
-    "Pendientes EpointCredints",
+    "Pendientes EpointCredits",
     "Ideas a realizar",
     "Credenciales",
     "Experian",
@@ -15,3 +15,9 @@ KANBAN_COLUMN_TITLES: tuple[str, ...] = (
     "Business Founding Sequence (2)",
     "Completed",
 )
+
+# Renombres de columnas legacy (typos / copy viejo) → título canónico.
+KANBAN_COLUMN_TITLE_ALIASES: dict[str, str] = {
+    "Pendientes EpointCredints": "Pendientes EpointCredits",
+    "Pendientes EpointCredicts": "Pendientes EpointCredits",
+}

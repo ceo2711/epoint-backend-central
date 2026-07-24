@@ -35,11 +35,12 @@ from app.services.docusign.webhook import (
     verify_connect_signature,
 )
 from app.services.notifications import NotificationService
+from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader
 from app.services.storage import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
-DOCUSIGN_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "ONBOARDING_MANAGER"})
+DOCUSIGN_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "ONBOARDING_MANAGER", "AREA_LEADER"})
 DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
 DOCUSIGN_SENT_DOCUMENT_STATUSES = frozenset({"sent", "delivered", "completed"})
 PREFERRED_TEMPLATE_ROLE_NAMES = ("Cliente", "Client", "Signer", "Firmante")
@@ -100,11 +101,14 @@ class DocusignService:
 
     @staticmethod
     def ensure_access(actor: User) -> None:
-        if actor.role.code not in DOCUSIGN_ROLES:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tiene acceso a contratos DocuSign",
-            )
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "ONBOARDING_MANAGER"):
+            return
+        if is_sales_area_leader(actor):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene acceso a contratos DocuSign",
+        )
 
     @staticmethod
     def _map_connection(settings: Settings) -> DocusignConnectionResponse:
@@ -510,7 +514,7 @@ class DocusignService:
         if actor.role.code == "SALES_REP":
             query = query.where(DocusignEnvelope.sent_by_user_id == actor.id)
         elif sent_by_user_id is not None:
-            if actor.role.code not in ("ADMIN", "BRANCH_MANAGER"):
+            if not can_supervise_sales_reps(actor):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No autorizado",
@@ -526,7 +530,7 @@ class DocusignService:
         sent_by_user_id: int | None = None,
     ) -> list[DocusignEnvelopeResponse]:
         self.ensure_access(actor)
-        if sent_by_user_id is not None and actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
+        if sent_by_user_id is not None and can_supervise_sales_reps(actor):
             self._assert_sales_rep_user(sent_by_user_id)
         rows = self.db.execute(
             self._envelopes_query(actor, merchant_id, sent_by_user_id)
@@ -825,7 +829,7 @@ class DocusignService:
         sent_by_user_id: int | None = None,
     ) -> list[DocusignEnvelopeResponse]:
         self.ensure_access(actor)
-        if sent_by_user_id is not None and actor.role.code in ("ADMIN", "BRANCH_MANAGER"):
+        if sent_by_user_id is not None and can_supervise_sales_reps(actor):
             self._assert_sales_rep_user(sent_by_user_id)
         query = self._envelopes_query(actor, merchant_id, sent_by_user_id)
         rows = self.db.execute(query).unique().scalars().all()

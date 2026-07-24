@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.models.enums import BoardCardLabel
 from app.schemas.client import LocalizedStringList
 from app.schemas.common import ORMBase
 
@@ -43,6 +44,10 @@ class CardStatusUpdate(BaseModel):
     status: str = Field(pattern="^(PENDIENTE|EN_PROGRESO|EN_REVISION|COMPLETADA)$")
 
 
+class CardLabelUpdate(BaseModel):
+    label: BoardCardLabel | None = None
+
+
 class CardMoveUpdate(BaseModel):
     list_id: int = Field(gt=0)
     position: int = Field(ge=0)
@@ -74,6 +79,7 @@ class BoardCardResponse(ORMBase):
     instructions_md: str | None
     external_links: str | None
     status: str
+    label: str | None = None
     position: int
     requires_credentials: bool
     requires_file_upload: bool
