@@ -30,6 +30,19 @@ ALL_UPLOADABLE_TYPES = (
 IDENTITY_GAP_KEY = "IDENTITY_DOCUMENT"
 ADDRESS_GAP_KEY = "ADDRESS_PROOF"
 
+# Estados que exigen que el cliente vuelva a subir el documento: rechazado, o
+# aprobado pero por vencer (no habilita el pase a LISTO_PARA_TRABAJAR).
+REPLACEMENT_STATUSES = frozenset(
+    {
+        DocumentVerificationStatus.RECHAZADO.value,
+        DocumentVerificationStatus.PROXIMO_A_VENCER.value,
+    }
+)
+
+
+def _needs_replacement(doc: Document | None) -> bool:
+    return doc is not None and doc.verification_status in REPLACEMENT_STATUSES
+
 
 def _identity_path_options(uploaded: set[str]) -> list[frozenset[str]]:
     options: list[frozenset[str]] = []
@@ -59,12 +72,12 @@ def _path_is_approved(path: frozenset[str], by_type: dict[str, Document]) -> boo
 
 
 def _path_is_clear_for_reminder(path: frozenset[str], by_type: dict[str, Document]) -> bool:
-    """Uploaded and not rejected (approved or pending review)."""
+    """Subido y sin necesidad de reemplazo (aprobado o pendiente de revisión)."""
     for doc_type in path:
         doc = by_type.get(doc_type)
         if doc is None:
             return False
-        if doc.verification_status == DocumentVerificationStatus.RECHAZADO.value:
+        if _needs_replacement(doc):
             return False
     return True
 
@@ -173,9 +186,7 @@ def _pick_actionable_path(
 
     if license_path and license_path in options and all(doc_type in by_type for doc_type in license_path):
         rejected_on_path = [
-            doc_type
-            for doc_type in license_path
-            if by_type[doc_type].verification_status == DocumentVerificationStatus.RECHAZADO.value
+            doc_type for doc_type in license_path if _needs_replacement(by_type[doc_type])
         ]
         if rejected_on_path:
             if non_license or len(rejected_on_path) == len(license_path):
@@ -183,11 +194,7 @@ def _pick_actionable_path(
             return license_path
 
     for path in options:
-        if any(
-            by_type.get(doc_type) is not None
-            and by_type[doc_type].verification_status == DocumentVerificationStatus.RECHAZADO.value
-            for doc_type in path
-        ):
+        if any(_needs_replacement(by_type.get(doc_type)) for doc_type in path):
             return path
 
     return options[0] if len(options) == 1 else None
@@ -200,45 +207,38 @@ def _category_reminder_gaps(
     path_options_fn,
     group_gap_key: str,
     license_types: tuple[str, str] | None = None,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     options = path_options_fn(uploaded)
     for path in options:
         if _path_is_clear_for_reminder(path, by_type):
-            return [], []
+            return [], [], []
 
     missing: list[str] = []
     rejected: list[str] = []
+    expiring: list[str] = []
 
     if not options:
         if license_types:
             front, back = license_types
             if front in uploaded and back not in uploaded:
-                front_doc = by_type.get(front)
-                if (
-                    front_doc is not None
-                    and front_doc.verification_status == DocumentVerificationStatus.RECHAZADO.value
-                ):
+                if _needs_replacement(by_type.get(front)):
                     missing.append(group_gap_key)
-                    return missing, rejected
+                    return missing, rejected, expiring
                 missing.append(back)
-                return missing, rejected
+                return missing, rejected, expiring
             if back in uploaded and front not in uploaded:
-                back_doc = by_type.get(back)
-                if (
-                    back_doc is not None
-                    and back_doc.verification_status == DocumentVerificationStatus.RECHAZADO.value
-                ):
+                if _needs_replacement(by_type.get(back)):
                     missing.append(group_gap_key)
-                    return missing, rejected
+                    return missing, rejected, expiring
                 missing.append(front)
-                return missing, rejected
+                return missing, rejected, expiring
         missing.append(group_gap_key)
-        return missing, rejected
+        return missing, rejected, expiring
 
     active_path = _pick_actionable_path(options, by_type, license_types)
     if active_path is None:
         missing.append(group_gap_key)
-        return missing, rejected
+        return missing, rejected, expiring
 
     for doc_type in active_path:
         doc = by_type.get(doc_type)
@@ -246,43 +246,48 @@ def _category_reminder_gaps(
             missing.append(doc_type)
         elif doc.verification_status == DocumentVerificationStatus.RECHAZADO.value:
             rejected.append(doc_type)
+        elif doc.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value:
+            expiring.append(doc_type)
 
-    return missing, rejected
+    return missing, rejected, expiring
 
 
-def document_reminder_gaps(documents: list[Document]) -> tuple[list[str], list[str]]:
-    """Pendientes reales para recordatorios: respeta alternativas y excluye rutas inactivas."""
+def document_reminder_gaps(documents: list[Document]) -> tuple[list[str], list[str], list[str]]:
+    """Pendientes reales para recordatorios: faltantes, rechazados y por vencer.
+
+    Respeta las alternativas (licencia vs. pasaporte, utility bill vs. bank
+    statement) y excluye las rutas que el cliente no está usando.
+    """
     by_type = {doc.type: doc for doc in documents}
     uploaded = set(by_type.keys())
     missing: list[str] = []
     rejected: list[str] = []
+    expiring: list[str] = []
 
     ssn = by_type.get(SSN_CARD)
     if ssn is None:
         missing.append(SSN_CARD)
     elif ssn.verification_status == DocumentVerificationStatus.RECHAZADO.value:
         rejected.append(SSN_CARD)
+    elif ssn.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value:
+        expiring.append(SSN_CARD)
 
-    identity_missing, identity_rejected = _category_reminder_gaps(
-        uploaded,
-        by_type,
-        path_options_fn=_identity_path_options,
-        group_gap_key=IDENTITY_GAP_KEY,
-        license_types=LICENSE_TYPES,
-    )
-    missing.extend(identity_missing)
-    rejected.extend(identity_rejected)
+    for path_options_fn, group_gap_key, license_types in (
+        (_identity_path_options, IDENTITY_GAP_KEY, LICENSE_TYPES),
+        (_address_path_options, ADDRESS_GAP_KEY, None),
+    ):
+        cat_missing, cat_rejected, cat_expiring = _category_reminder_gaps(
+            uploaded,
+            by_type,
+            path_options_fn=path_options_fn,
+            group_gap_key=group_gap_key,
+            license_types=license_types,
+        )
+        missing.extend(cat_missing)
+        rejected.extend(cat_rejected)
+        expiring.extend(cat_expiring)
 
-    address_missing, address_rejected = _category_reminder_gaps(
-        uploaded,
-        by_type,
-        path_options_fn=_address_path_options,
-        group_gap_key=ADDRESS_GAP_KEY,
-    )
-    missing.extend(address_missing)
-    rejected.extend(address_rejected)
-
-    return missing, rejected
+    return missing, rejected, expiring
 
 
 def build_documents_status_for_context(

@@ -245,7 +245,7 @@ def test_analyze_gaps_rejected_document(db_session):
 
 
 def test_client_needs_reminder_skips_wrong_status(db_session):
-    client = _make_client(status=ClientStatus.LISTO_PARA_TABLERO.value)
+    client = _make_client(status=ClientStatus.LISTO_PARA_TRABAJAR.value)
     db_session.add(client)
     db_session.commit()
     _add_active_portal_user(db_session, client)

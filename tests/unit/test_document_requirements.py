@@ -79,9 +79,10 @@ def test_reminder_gaps_ignore_rejected_license_when_passport_pending():
         _doc(PASSPORT, "PENDIENTE"),
         _doc(UTILITY_BILL, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == []
     assert rejected == []
+    assert expiring == []
 
 
 def test_reminder_gaps_ignore_rejected_license_when_passport_approved():
@@ -92,9 +93,10 @@ def test_reminder_gaps_ignore_rejected_license_when_passport_approved():
         _doc(PASSPORT, "APROBADO"),
         _doc(BANK_STATEMENT, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == []
     assert rejected == []
+    assert expiring == []
 
 
 def test_reminder_gaps_ignore_pending_utility_when_bank_approved():
@@ -104,9 +106,10 @@ def test_reminder_gaps_ignore_pending_utility_when_bank_approved():
         _doc(UTILITY_BILL, "PENDIENTE"),
         _doc(BANK_STATEMENT, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == []
     assert rejected == []
+    assert expiring == []
 
 
 def test_reminder_gaps_show_identity_group_when_license_rejected_without_alternative():
@@ -116,9 +119,10 @@ def test_reminder_gaps_show_identity_group_when_license_rejected_without_alterna
         _doc(LICENSE_BACK, "RECHAZADO"),
         _doc(UTILITY_BILL, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == [IDENTITY_GAP_KEY]
     assert rejected == []
+    assert expiring == []
 
 
 def test_reminder_gaps_show_rejected_passport_when_only_identity_upload():
@@ -127,9 +131,10 @@ def test_reminder_gaps_show_rejected_passport_when_only_identity_upload():
         _doc(PASSPORT, "RECHAZADO"),
         _doc(UTILITY_BILL, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == []
     assert rejected == [PASSPORT]
+    assert expiring == []
 
 
 def test_reminder_gaps_show_missing_license_back_when_front_pending():
@@ -138,9 +143,10 @@ def test_reminder_gaps_show_missing_license_back_when_front_pending():
         _doc(LICENSE_FRONT, "PENDIENTE"),
         _doc(UTILITY_BILL, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == [LICENSE_BACK]
     assert rejected == []
+    assert expiring == []
 
 
 def test_reminder_gaps_show_identity_group_when_license_front_rejected_and_back_missing():
@@ -149,6 +155,69 @@ def test_reminder_gaps_show_identity_group_when_license_front_rejected_and_back_
         _doc(LICENSE_FRONT, "RECHAZADO"),
         _doc(UTILITY_BILL, "APROBADO"),
     ]
-    missing, rejected = document_reminder_gaps(docs)
+    missing, rejected, expiring = document_reminder_gaps(docs)
     assert missing == [IDENTITY_GAP_KEY]
     assert rejected == []
+    assert expiring == []
+
+
+def test_expiring_document_blocks_ready_to_work():
+    """Un documento por vencer no habilita el pase a LISTO_PARA_TRABAJAR."""
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "PROXIMO_A_VENCER"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    assert all_required_documents_approved(docs) is False
+
+
+def test_expiring_document_is_reported_as_pending():
+    """Si bloquea, el cliente tiene que verlo en sus pendientes para poder resubirlo."""
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "PROXIMO_A_VENCER"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected, expiring = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+    assert expiring == [LICENSE_FRONT]
+
+
+def test_expiring_ssn_is_reported_as_pending():
+    docs = [
+        _doc(SSN_CARD, "PROXIMO_A_VENCER"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected, expiring = document_reminder_gaps(docs)
+    assert expiring == [SSN_CARD]
+
+
+def test_expiring_license_ignored_when_passport_approved():
+    """Con una alternativa aprobada, la licencia por vencer no es un pendiente."""
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "PROXIMO_A_VENCER"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected, expiring = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+    assert expiring == []
+    assert all_required_documents_approved(docs) is True
+
+
+def test_expiring_address_proof_is_reported_as_pending():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "PROXIMO_A_VENCER"),
+    ]
+    missing, rejected, expiring = document_reminder_gaps(docs)
+    assert expiring == [UTILITY_BILL]
+    assert all_required_documents_approved(docs) is False

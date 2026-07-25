@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 
+    # Direcciones: por defecto se usa Photon (OpenStreetMap), que no requiere credenciales.
+    # Definir esta clave solo si se quiere el upgrade a Google Places.
+    google_maps_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_MAPS_API_KEY", "GOOGLE_PLACES_API_KEY"),
+    )
+
     # Notifications
     notifications_dry_run: bool = True
     resend_api_key: str = ""
@@ -146,6 +153,10 @@ class Settings(BaseSettings):
             and self.docusign_private_key.strip()
             and self.docusign_base_uri.strip()
         )
+
+    @property
+    def google_maps_configured(self) -> bool:
+        return bool(self.google_maps_api_key.strip())
 
     @property
     def stripe_configured(self) -> bool:

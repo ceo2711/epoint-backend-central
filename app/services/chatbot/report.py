@@ -9,7 +9,7 @@ CLIENT_STATUS_LABELS: dict[str, tuple[str, str]] = {
     "APROBADO_PARA_ONBOARDING": ("Aprobado para onboarding", "Approved for onboarding"),
     "EN_CARGA_DATOS": ("En carga de datos", "Loading data"),
     "DOCUMENTOS_EN_REVISION": ("Documentos en revisión", "Documents under review"),
-    "LISTO_PARA_TABLERO": ("Listo para tablero", "Ready for board"),
+    "LISTO_PARA_TRABAJAR": ("Listo para trabajar", "Ready to work"),
     "ONBOARDING_EN_PROGRESO": ("Onboarding en progreso", "Onboarding in progress"),
     "ONBOARDING_COMPLETADO": ("Onboarding completado", "Onboarding completed"),
     "INACTIVO": ("Inactivo", "Inactive"),

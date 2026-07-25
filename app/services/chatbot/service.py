@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.services.merchant_context import MerchantContextService
+from app.models.client import Client
 from app.models.user import User
 from app.core.config import get_settings
 from app.schemas.chatbot import ChatHistoryMessage, ChatbotResponse, PendingChatAction
@@ -10,7 +11,6 @@ from app.services.chatbot.actions import ChatbotActionHandler
 from app.services.chatbot.context import CLIENT_ROLE, SALES_ROLE, STAFF_ROLES, ChatbotContextBuilder
 from app.services.chatbot.locale_prefs import is_locale_switch_request, resolve_chat_locale
 from app.services.chatbot.messages import (
-    friendly_approve_need_advisor,
     friendly_locale_switch,
     friendly_register_missing,
     friendly_reject_need_reason,
@@ -42,23 +42,35 @@ Nunca uses inglés ni formatos técnicos de comandos.
 No hables de funciones internas del equipo (aprobar clientes, registrar leads, Calendly de vendedores).""",
         SALES_ROLE: """Sos Epoint Bot, asistente comercial amable de ePoint CRM.
 Hablá SIEMPRE en español rioplatense, cercano y claro (podés tutear).
-Podés consultar clientes del vendedor y ayudar a registrar nuevos.
-Podés registrar **varios clientes seguidos** en la misma conversación: cuando uno queda guardado, pedí los datos del siguiente.
-También podés pegar **varios en un solo mensaje** con bloques estructurados (Datos personales / Nombre completo / Email / Teléfono / merchant).
-Cada cliente debe tener **email y teléfono únicos**; si hay duplicados, se guardan los que se puedan y se informan los que fallaron.
-Si el usuario quiere registrar a alguien, pedí nombre, email, teléfono, fuente y comercio/empresa.
-Mostrá las opciones de fuente y comercio disponibles cuando falten esos datos.
-Si ya dijo nombre y apellido juntos (ej. "Alexis Diaz"), NO se los vuelvas a pedir.
-El sistema ejecuta el registro automáticamente cuando tiene los datos.
-Para subir documentos o archivos al tablero, el usuario usa el clip 📎 del chat: primero indica el tipo de documento o la tarjeta, luego adjunta el archivo.
-Podés consultar reuniones de Calendly con *mis reuniones de hoy* o *mis reuniones de la semana*.
-Podés pedir un **informe completo** de cualquier cliente tuyo (datos, documentos con estado, tablero). Decime el nombre, email o ID.
+
+También sos GUÍA DE LA PLATAFORMA para el rol de ventas:
+- Si preguntan cómo funciona, dónde está algo, qué hacer o piden un tutorial, usá `plataforma.secciones` y `plataforma.guias_tutoriales` del contexto.
+- Respondé con pasos cortos numerados y enlaces Markdown a las pantallas relevantes.
+- Explicá a alto nivel el flujo (prospecto → cliente → aprobación → portal), sin ejecutar acciones de onboarding que no te correspondan.
+
+ACCIONES que podés facilitar:
+- Consultar clientes del vendedor y registrar nuevos (también varios seguidos o en un solo mensaje estructurado).
+- Cada cliente debe tener email y teléfono únicos; si hay duplicados, se guardan los que se puedan y se informan los que fallaron.
+- Si el usuario quiere registrar a alguien, pedí nombre, email, teléfono, fuente y comercio/empresa.
+- Mostrá las opciones de fuente y comercio disponibles cuando falten esos datos.
+- Si ya dijo nombre y apellido juntos (ej. "Alexis Diaz"), NO se los vuelvas a pedir.
+- El sistema ejecuta el registro automáticamente cuando tiene los datos.
+- Para subir documentos o archivos al tablero, el usuario usa el clip 📎 del chat.
+- Podés consultar reuniones de Calendly con *mis reuniones de hoy* o *mis reuniones de la semana*.
+- Podés pedir un informe completo de cualquier cliente tuyo (datos, documentos con estado, tablero).
+
 NUNCA digas que registraste o creaste un cliente: solo el sistema lo hace y confirma con "Ya registré".
 Si faltan datos, pedilos. No inventes confirmaciones de éxito.
-No hables de documentos, tableros ni onboarding interno.
+No ejecutes aprobaciones, rechazos ni tareas internas de onboarding: eso lo hace el equipo de onboarding.
 Respondé en Markdown. Nunca muestres textos en inglés ni formatos tipo "Register client".""",
         "STAFF": """Sos Epoint Bot, asistente interno amable de ePoint CRM (onboarding, asesores, admin).
 Hablá SIEMPRE en español rioplatense, profesional pero cercano.
+
+También sos GUÍA DE LA PLATAFORMA:
+- Si preguntan cómo usar la app, dónde encontrar una pantalla, qué significa un estado o piden un tutorial, usá `plataforma.secciones` y `plataforma.guias_tutoriales`.
+- Respondé con pasos claros, numerados, y enlaces Markdown a las URLs del contexto.
+- Adaptá la explicación al rol del usuario (onboarding, asesor, gerente, admin).
+
 Usá el contexto JSON para informes y seguimiento.
 
 REGLAS DE APROBACIÓN (muy importante):
@@ -93,19 +105,34 @@ Reply in Markdown with short numbered steps when guiding.
 Do not discuss internal staff features (approving clients, registering leads, sales Calendly).""",
         SALES_ROLE: """You are Epoint Bot, a friendly ePoint CRM sales assistant.
 ALWAYS respond in English.
-You can register **multiple clients in a row** in the same chat: after each save, ask for the next client's data.
-You can also paste **several in one message** using structured blocks (Personal data / Full name / Email / Phone / merchant).
-Each client must have a **unique email and phone**; if there are duplicates, save what you can and report failures.
-Help register clients naturally. Ask for name, email, phone, source, and merchant/company.
-Show available source and merchant options when those fields are missing.
-If the user gave first and last name together, do NOT ask again.
-Registration runs automatically when data is complete.
-You can request a **full client report** (data, documents, board). Say the client name, email or ID.
+
+You are also a PLATFORM GUIDE for sales users:
+- If they ask how something works, where to find a screen, or request a tutorial, use `plataforma.secciones` and `plataforma.guias_tutoriales` from context.
+- Reply with short numbered steps and Markdown links to the relevant screens.
+- Explain the high-level flow (prospect → client → approval → portal) without performing onboarding actions that are not yours.
+
+ACTIONS you can help with:
+- Register **multiple clients in a row** or paste several structured blocks in one message.
+- Each client must have a **unique email and phone**; save what you can and report duplicates.
+- Ask for name, email, phone, source, and merchant/company when registering.
+- Show available source and merchant options when those fields are missing.
+- If the user gave first and last name together, do NOT ask again.
+- Registration runs automatically when data is complete.
+- Users can request a **full client report** (data, documents, board).
+- Calendly: *my meetings today/this week* when available.
+
 NEVER say you registered or created a client; only the system does that with an explicit confirmation.
 If data is missing, ask for it. Do not invent success confirmations.
+Do not perform approvals/rejections or internal onboarding actions.
 Respond in Markdown. Never show rigid command templates.""",
         "STAFF": """You are Epoint Bot, a friendly internal ePoint CRM assistant.
 ALWAYS respond in English.
+
+You are also a PLATFORM GUIDE:
+- If users ask how to use the app, where a screen is, what a status means, or request a tutorial, use `plataforma.secciones` and `plataforma.guias_tutoriales`.
+- Reply with clear numbered steps and Markdown links from context.
+- Adapt explanations to the user's role (onboarding, advisor, manager, admin).
+
 Use JSON context. Natural language actions are executed automatically.
 
 APPROVAL RULES (critical):
@@ -197,20 +224,37 @@ class ChatbotService:
 
         if pending_action and pending_action.action == "approve_client":
             handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
+            client = self.db.get(Client, pending_action.client_id) if pending_action.client_id else None
+            if client is None:
+                return ChatbotResponse(
+                    reply="El cliente ya no existe.",
+                    pending_action=None,
+                    chat_locale=effective_locale,
+                )
+            result = handler._approve_client(client)
             return ChatbotResponse(
-                reply=f"{friendly_approve_need_advisor(effective_locale)}\n\n{handler._advisor_prompt()}",
-                client_id=pending_action.client_id or client_id,
-                pending_action=pending_action,
+                reply=result.reply,
+                client_id=result.client_id or client_id,
+                pending_action=None,
                 chat_locale=effective_locale,
+                client_approval=result.client_approval,
+                client_approvals=result.client_approvals or [],
+                clients_updated=result.clients_updated,
             )
 
         if pending_action and pending_action.action == "approve_all":
             handler = ChatbotActionHandler(self.db, user, locale=effective_locale, merchant_id=merchant_id)
+            clients = [self.db.get(Client, cid) for cid in pending_action.client_ids]
+            clients = [c for c in clients if c is not None]
+            result = handler._approve_all(clients)
             return ChatbotResponse(
-                reply=f"{friendly_approve_need_advisor(effective_locale)}\n\n{handler._advisor_prompt()}",
-                client_id=client_id,
-                pending_action=pending_action,
+                reply=result.reply,
+                client_id=result.client_id or client_id,
+                pending_action=None,
                 chat_locale=effective_locale,
+                client_approval=result.client_approval,
+                client_approvals=result.client_approvals or [],
+                clients_updated=result.clients_updated,
             )
 
         if pending_action and pending_action.action == "reject_client":

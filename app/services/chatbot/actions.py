@@ -161,23 +161,20 @@ class ChatbotActionHandler:
                     pending_action=pending_action,
                 )
             if pending_action.action == "approve_client":
-                return ActionResult(
-                    handled=True,
-                    reply=self._advisor_prompt(),
-                    pending_action=pending_action,
-                )
+                client = self.db.get(Client, pending_action.client_id)
+                if client is None:
+                    return ActionResult(handled=True, reply="El cliente ya no existe.", pending_action=None)
+                return self._approve_client(client)
+            if pending_action.action == "approve_all":
+                clients = [self.db.get(Client, cid) for cid in pending_action.client_ids]
+                clients = [c for c in clients if c is not None]
+                return self._approve_all(clients)
             if pending_action.action == "reject_client":
                 client = self.db.get(Client, pending_action.client_id)
                 name = client.full_name if client else "el cliente"
                 return ActionResult(
                     handled=True,
                     reply=friendly_reject_one_intro(self.locale, full_name=name),
-                    pending_action=pending_action,
-                )
-            if pending_action.action == "approve_all":
-                return ActionResult(
-                    handled=True,
-                    reply=self._advisor_prompt() + "\n\nSe asignará el mismo asesor a todos.",
                     pending_action=pending_action,
                 )
             if pending_action.action == "reject_all":
@@ -1066,53 +1063,39 @@ class ChatbotActionHandler:
             )
 
         issues = self.validate_registration_data(client)
-
-        advisor = self._resolve_advisor("")
-        if advisor is None:
-            return ActionResult(
-                handled=True,
-                reply=friendly_approve_one_intro(self.locale, full_name=client.full_name, issues=issues)
-                + "\n\n"
-                + self._advisor_prompt(),
-                pending_action=PendingChatAction(action="approve_client", client_id=client_id),
-            )
-
-        return self._approve_client(client, advisor.id)
+        if issues:
+            intro = friendly_approve_one_intro(self.locale, full_name=client.full_name, issues=issues)
+            result = self._approve_client(client)
+            if result.reply:
+                result.reply = f"{intro}\n\n{result.reply}"
+            return result
+        return self._approve_client(client)
 
     async def _continue_approve_one(self, pending: PendingChatAction, message: str) -> ActionResult:
+        del message
         client = self.db.get(Client, pending.client_id)
         if client is None:
             return ActionResult(handled=True, reply="El cliente ya no existe.", pending_action=None)
+        return self._approve_client(client)
 
-        advisor = self._resolve_advisor(message)
-        if advisor is None:
-            return ActionResult(
-                handled=True,
-                reply="No pude identificar el asesor.\n\n" + self._advisor_prompt(),
-                pending_action=pending,
-            )
-        return self._approve_client(client, advisor.id)
-
-    def _approve_client(self, client: Client, advisor_user_id: int) -> ActionResult:
+    def _approve_client(self, client: Client, advisor_user_id: int | None = None) -> ActionResult:
+        del advisor_user_id
         try:
             client, temp_password = self.clients.approve_client(
                 actor=self.user,
                 client=client,
-                advisor_user_id=advisor_user_id,
                 send_welcome_notifications=True,
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
             return ActionResult(handled=True, reply=f"No pude aprobar: **{detail}**")
 
-        advisor = self.db.get(User, advisor_user_id)
-        advisor_name = f"{advisor.first_name} {advisor.last_name}" if advisor else str(advisor_user_id)
         approval = ClientApprovalResult(
             client_id=client.id,
             client_name=client.full_name,
             client_email=client.email,
             temp_password=temp_password,
-            advisor_name=advisor_name,
+            advisor_name="Pendiente",
         )
         return ActionResult(
             handled=True,
@@ -1120,7 +1103,6 @@ class ChatbotActionHandler:
                 self.locale,
                 full_name=client.full_name,
                 client_id=client.id,
-                advisor_name=advisor_name,
             ),
             client_id=client.id,
             pending_action=None,
@@ -1174,31 +1156,10 @@ class ChatbotActionHandler:
         pending = self._pending_clients()
         if not pending:
             return ActionResult(handled=True, reply="No hay clientes pendientes de revisión para aprobar.")
-
-        advisor = self._resolve_advisor("")
-        if advisor is None:
-            return ActionResult(
-                handled=True,
-                reply=(
-                    f"Hay **{len(pending)}** cliente(s) pendientes. "
-                    + self._advisor_prompt()
-                    + "\n\nSe asignará el mismo asesor a todos."
-                ),
-                pending_action=PendingChatAction(
-                    action="approve_all",
-                    client_ids=[client.id for client in pending],
-                ),
-            )
-        return self._approve_all(pending, advisor.id)
+        return self._approve_all(pending)
 
     async def _continue_approve_all(self, pending: PendingChatAction, message: str) -> ActionResult:
-        advisor = self._resolve_advisor(message)
-        if advisor is None:
-            return ActionResult(
-                handled=True,
-                reply="No pude identificar el asesor.\n\n" + self._advisor_prompt(),
-                pending_action=pending,
-            )
+        del message
         clients = [self.db.get(Client, client_id) for client_id in pending.client_ids]
         clients = [client for client in clients if client is not None]
         if clients:
@@ -1212,16 +1173,14 @@ class ChatbotActionHandler:
                 .scalars()
                 .all()
             )
-        return self._approve_all(clients, advisor.id)
+        return self._approve_all(clients)
 
-    def _approve_all(self, clients: list[Client], advisor_user_id: int) -> ActionResult:
+    def _approve_all(self, clients: list[Client], advisor_user_id: int | None = None) -> ActionResult:
+        del advisor_user_id
         approved: list[str] = []
         failed: list[str] = []
         approvals: list[ClientApprovalResult] = []
         last_client_id: int | None = None
-
-        advisor = self.db.get(User, advisor_user_id)
-        advisor_name = f"{advisor.first_name} {advisor.last_name}" if advisor else str(advisor_user_id)
 
         pending_clients = [
             client
@@ -1233,7 +1192,6 @@ class ChatbotActionHandler:
         successes, bulk_failures = self.clients.bulk_approve_clients(
             actor=self.user,
             clients=clients,
-            advisor_user_id=advisor_user_id,
             send_welcome_notifications=send_welcome_notifications,
         )
 
@@ -1246,7 +1204,7 @@ class ChatbotActionHandler:
                     client_name=client.full_name,
                     client_email=client.email,
                     temp_password=temp_password,
-                    advisor_name=advisor_name,
+                    advisor_name="Pendiente",
                 )
             )
 
@@ -1260,25 +1218,30 @@ class ChatbotActionHandler:
                     self.locale,
                     full_name=client.full_name,
                     client_id=client.id,
-                    advisor_name=advisor_name,
                 )
             ]
             if failed:
-                parts.append(f"\n\n⚠️ **No aprobados:** {len(failed)}\n" + "\n".join(failed))
+                parts.append(
+                    f"\n\n⚠️ **No aprobados:** {len(failed)}\n" + "\n".join(failed)
+                )
         else:
             parts = [f"## Aprobación masiva\n\n✅ **Aprobados:** {len(approved)}"]
             if approved:
                 parts.append("\n".join(approved))
             if failed:
-                parts.append(f"\n\n⚠️ **No aprobados:** {len(failed)}\n" + "\n".join(failed))
+                parts.append(
+                    f"\n\n⚠️ **No aprobados:** {len(failed)}\n" + "\n".join(failed)
+                )
             if approved and len(approved) > 1:
                 parts.append(
                     t(
                         self.locale,
                         "\n\n_Los correos y WhatsApp de bienvenida **no se envían** en aprobación masiva. "
-                        "Las **contraseñas temporales** quedan disponibles en el detalle de cada cliente aprobado._",
+                        "Las **contraseñas temporales** quedan disponibles en el detalle de cada cliente aprobado. "
+                        "El asesor se asignará al completar datos y documentos._",
                         "\n\n_Welcome emails and WhatsApp are **not sent** on bulk approval. "
-                        "**Temporary passwords** are available on each approved client's detail page._",
+                        "**Temporary passwords** are available on each approved client's detail page. "
+                        "An advisor will be assigned when data and documents are complete._",
                     )
                 )
         return ActionResult(

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_user_permissions
 from app.core.config import get_settings
+from app.core.encryption import encrypt_value
 from app.core.security import (
     create_2fa_pending_token,
     create_access_token,
@@ -82,12 +83,26 @@ class AuthService:
             if active_merchant is None and len(merchants) == 1:
                 active_merchant = merchants[0]
                 active_merchant_id = active_merchant.id
+
+        eligibility: dict = {
+            "can_manage_sub_sellers": False,
+            "is_sub_seller": bool(user.parent_user_id),
+            "previous_month_sales": None,
+        }
+        if user.role.code == "SALES_REP":
+            from app.services.sub_sellers import SubSellerService
+
+            eligibility = SubSellerService(self.db).eligibility(user)
+
         return UserMeResponse(
             **base.model_dump(),
             permissions=permissions,
             merchants=merchant_briefs,
             active_merchant_id=active_merchant_id,
             active_merchant=MerchantBrief.model_validate(active_merchant) if active_merchant else None,
+            can_manage_sub_sellers=bool(eligibility.get("can_manage_sub_sellers")),
+            is_sub_seller=bool(eligibility.get("is_sub_seller")),
+            previous_month_sales=eligibility.get("previous_month_sales"),
         )
 
     def set_active_merchant(self, user: User, merchant_id: int) -> UserMeResponse:
@@ -373,15 +388,14 @@ class AuthService:
 
         user.password_hash = hash_password(payload.new_password)
         user.must_change_password = False
-        self._clear_client_portal_temp_password(user)
+        self._sync_client_portal_password(user, payload.new_password)
         self.db.commit()
         return MessageResponse(message="Contraseña actualizada correctamente")
 
-    def _clear_client_portal_temp_password(self, user: User) -> None:
-        """Si el cliente ya eligió su propia clave, la temporal deja de ser válida."""
+    def _sync_client_portal_password(self, user: User, plain_password: str) -> None:
+        """Guarda la contraseña de portal cifrada para que el staff de onboarding pueda verla."""
         role_code = user.role.code if user.role is not None else None
         if role_code is None:
-            # Asegurar rol cargado en sesiones parciales
             self.db.refresh(user, attribute_names=["role"])
             role_code = user.role.code if user.role is not None else None
         if role_code != CLIENT_ROLE_CODE or user.client_id is None:
@@ -389,8 +403,8 @@ class AuthService:
         from app.models.client import Client
 
         client = self.db.get(Client, user.client_id)
-        if client is not None and client.portal_temp_password_encrypted is not None:
-            client.portal_temp_password_encrypted = None
+        if client is not None:
+            client.portal_temp_password_encrypted = encrypt_value(plain_password)
 
     def request_password_reset(self, payload: ForgotPasswordRequest) -> MessageResponse:
         user = (
@@ -476,7 +490,7 @@ class AuthService:
 
         user.password_hash = hash_password(payload.new_password)
         user.must_change_password = False
-        self._clear_client_portal_temp_password(user)
+        self._sync_client_portal_password(user, payload.new_password)
         reset_row.used_at = now
 
         sessions = self.db.execute(

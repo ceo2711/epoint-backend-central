@@ -302,19 +302,22 @@ def friendly_approve_success(
     *,
     full_name: str,
     client_id: int,
-    advisor_name: str,
+    advisor_name: str | None = None,
 ) -> str:
+    del advisor_name
     return t(
         locale,
         (
             f"✅ Cliente **{full_name}** (#{client_id}) aprobado.\n\n"
-            f"- Asesor asignado: **{advisor_name}**\n"
+            "- Ya puede entrar al portal a cargar sus datos y documentos.\n"
+            "- El asesor se asignará automáticamente cuando complete datos y documentos.\n"
             "- Se envió la bienvenida por email y WhatsApp.\n"
             "- La contraseña temporal aparece en el modal de confirmación."
         ),
         (
             f"✅ Client **{full_name}** (#{client_id}) approved.\n\n"
-            f"- Assigned advisor: **{advisor_name}**\n"
+            "- They can now sign in to the portal to upload their data and documents.\n"
+            "- An advisor will be assigned automatically once data and documents are complete.\n"
             "- Welcome email and WhatsApp were sent.\n"
             "- The temporary password is shown in the confirmation modal."
         ),

@@ -52,7 +52,7 @@ ONBOARDING_STATUSES = (
     ClientStatus.APROBADO_PARA_ONBOARDING.value,
     ClientStatus.EN_CARGA_DATOS.value,
     ClientStatus.DOCUMENTOS_EN_REVISION.value,
-    ClientStatus.LISTO_PARA_TABLERO.value,
+    ClientStatus.LISTO_PARA_TRABAJAR.value,
     ClientStatus.ONBOARDING_EN_PROGRESO.value,
     ClientStatus.ONBOARDING_COMPLETADO.value,
 )
@@ -226,7 +226,7 @@ class DashboardService:
                 ClientStatus.APROBADO_PARA_ONBOARDING.value,
                 ClientStatus.EN_CARGA_DATOS.value,
                 ClientStatus.DOCUMENTOS_EN_REVISION.value,
-                ClientStatus.LISTO_PARA_TABLERO.value,
+                ClientStatus.LISTO_PARA_TRABAJAR.value,
             }
             summary = {
                 "pending_review": clients_by_status.get(ClientStatus.PENDIENTE_DE_REVISION.value, 0),

@@ -35,17 +35,19 @@ def client_to_response(client: Client) -> ClientResponse:
             last_name=seller.last_name,
             email=seller.email,
         )
-    advisor = None
+    advisors: list[AdvisorBrief] = []
     for assignment in getattr(client, "assignments", []) or []:
         if assignment.unassigned_at is None and assignment.advisor is not None:
             advisor_user = assignment.advisor
-            advisor = AdvisorBrief(
-                id=advisor_user.id,
-                first_name=advisor_user.first_name,
-                last_name=advisor_user.last_name,
-                email=advisor_user.email,
+            advisors.append(
+                AdvisorBrief(
+                    id=advisor_user.id,
+                    first_name=advisor_user.first_name,
+                    last_name=advisor_user.last_name,
+                    email=advisor_user.email,
+                )
             )
-            break
+    advisor = advisors[0] if advisors else None
     return ClientResponse(
         id=client.id,
         status=client.status,
@@ -64,6 +66,7 @@ def client_to_response(client: Client) -> ClientResponse:
         registered_by_user_id=client.registered_by_user_id,
         registered_by=registered_by,
         advisor=advisor,
+        advisors=advisors,
         created_at=client.created_at,
         docusign_contract_signed_at=client.docusign_contract_signed_at,
         signed_contract=client_signed_contract_brief(client),

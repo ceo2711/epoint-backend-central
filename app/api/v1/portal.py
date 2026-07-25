@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -10,8 +10,11 @@ from app.models.enums import DocumentVerificationStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.schemas.client import (
+    AddressAutocompleteResponse,
     AddressCreate,
+    AddressDetailsResponse,
     AddressResponse,
+    AddressSuggestion,
     ClientDetailResponse,
     ClientResponse,
     ClientSsnResponse,
@@ -22,6 +25,7 @@ from app.schemas.client import (
 )
 from app.schemas.common import MessageResponse
 from app.serializers.client import client_to_response
+from app.services.address import AddressProviderError, get_address_provider
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
 
@@ -119,6 +123,58 @@ def update_profile(
     )
     db.refresh(client, attribute_names=["merchant"])
     return client_to_response(client)
+
+
+@router.get("/addresses/autocomplete", response_model=AddressAutocompleteResponse)
+def autocomplete_address(
+    current_user: CurrentUser,
+    q: str = Query(..., min_length=3, max_length=200, description="Texto a autocompletar"),
+    session_token: str | None = Query(default=None, max_length=64),
+) -> AddressAutocompleteResponse:
+    """Sugiere direcciones reales mientras el cliente escribe."""
+    _require_client_user(current_user)
+    try:
+        suggestions = get_address_provider().autocomplete(q, session_token=session_token)
+    except AddressProviderError:
+        # Degradación suave: si el proveedor falla, no bloqueamos la carga de datos.
+        return AddressAutocompleteResponse(suggestions=[])
+    return AddressAutocompleteResponse(
+        suggestions=[
+            AddressSuggestion(
+                place_id=s.place_id,
+                description=s.description,
+                main_text=s.main_text,
+                secondary_text=s.secondary_text,
+                street=s.street,
+                city=s.city,
+                state=s.state,
+                zip_code=s.zip_code,
+            )
+            for s in suggestions
+        ]
+    )
+
+
+@router.get("/addresses/details", response_model=AddressDetailsResponse)
+def address_details(
+    current_user: CurrentUser,
+    place_id: str = Query(..., min_length=1, max_length=300),
+    session_token: str | None = Query(default=None, max_length=64),
+) -> AddressDetailsResponse:
+    """Devuelve los campos estructurados de una sugerencia que no vino resuelta."""
+    _require_client_user(current_user)
+    try:
+        details = get_address_provider().place_details(place_id, session_token=session_token)
+    except AddressProviderError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+    return AddressDetailsResponse(
+        place_id=details.place_id,
+        formatted_address=details.formatted_address,
+        street=details.street,
+        city=details.city,
+        state=details.state,
+        zip_code=details.zip_code,
+    )
 
 
 @router.post("/addresses", response_model=AddressResponse, status_code=status.HTTP_201_CREATED)

@@ -89,7 +89,11 @@ class ProspectService:
             query = query.where(Prospect.converted_client_id.is_(None))
         if sales_rep_id is not None:
             if user.role.code == "SALES_REP" and sales_rep_id != user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+                from app.services.sub_sellers import SubSellerService
+
+                team_ids = SubSellerService(self.db).list_team_user_ids(user)
+                if sales_rep_id not in team_ids:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
             query = query.where(Prospect.assigned_to_user_id == sales_rep_id)
         if status_filter:
             query = query.where(Prospect.status == status_filter)
@@ -208,8 +212,14 @@ class ProspectService:
         self._assert_phone_available(phone, merchant_id=merchant_id)
 
         if actor.role.code == "SALES_REP":
-            owner_id = actor.id
-            if assigned_to_user_id is not None and assigned_to_user_id != actor.id:
+            from app.services.sub_sellers import SubSellerService
+
+            team_ids = SubSellerService(self.db).list_team_user_ids(actor)
+            if assigned_to_user_id is None:
+                owner_id = actor.id
+            elif assigned_to_user_id in team_ids:
+                owner_id = assigned_to_user_id
+            else:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
         else:
             if assigned_to_user_id is None:
@@ -838,7 +848,10 @@ class ProspectService:
             query = query.where(Prospect.sede_id == filter_sede_id)
 
         if user.role.code == "SALES_REP":
-            query = query.where(Prospect.assigned_to_user_id == user.id)
+            from app.services.sub_sellers import SubSellerService
+
+            team_ids = SubSellerService(self.db).list_team_user_ids(user)
+            query = query.where(Prospect.assigned_to_user_id.in_(team_ids))
         return query
 
     def get_pipeline_for_client(
@@ -885,7 +898,11 @@ class ProspectService:
         elif not self.merchant_ctx.user_can_access_merchant(user, prospect.merchant_id):
             raise HTTPException(status_code=404, detail="Prospecto no encontrado")
         if user.role.code == "SALES_REP" and prospect.assigned_to_user_id != user.id:
-            raise HTTPException(status_code=404, detail="Prospecto no encontrado")
+            from app.services.sub_sellers import SubSellerService
+
+            team_ids = SubSellerService(self.db).list_team_user_ids(user)
+            if prospect.assigned_to_user_id not in team_ids:
+                raise HTTPException(status_code=404, detail="Prospecto no encontrado")
         from app.services.sede_scope import effective_sede_id
 
         sede_id = effective_sede_id(user)

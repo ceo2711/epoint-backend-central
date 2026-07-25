@@ -49,7 +49,9 @@ def _require_staff_client_workspace(
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return client
 
-BOARD_STAFF_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR"})
+BOARD_STAFF_ROLES = frozenset(
+    {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
+)
 BOARD_CARD_DELETE_ROLES = frozenset({"ONBOARDING_MANAGER", "ADVISOR"})
 
 
@@ -71,16 +73,16 @@ def _require_board_card_delete(user: User) -> None:
 
 
 def _require_card_label_editor(user: User, client: Client, db) -> None:
-    """Solo onboarding o el asesor designado del cliente pueden setear labels."""
+    """Solo onboarding o un asesor asignado del cliente pueden setear labels."""
     if user.role.code == "ONBOARDING_MANAGER":
         return
     if user.role.code == "ADVISOR":
-        advisor = ClientService(db)._get_active_advisor(client)
-        if advisor is not None and advisor.id == user.id:
+        advisors = ClientService(db)._get_active_advisors(client)
+        if any(advisor.id == user.id for advisor in advisors):
             return
     raise HTTPException(
         status_code=403,
-        detail="Solo onboarding o el asesor designado pueden cambiar el label de la card",
+        detail="Solo onboarding o un asesor asignado pueden cambiar el label de la card",
     )
 
 

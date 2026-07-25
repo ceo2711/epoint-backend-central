@@ -8,6 +8,7 @@ ADMIN_ROLE = "ADMIN"
 BRANCH_MANAGER_ROLE = "BRANCH_MANAGER"
 AREA_LEADER_ROLE = "AREA_LEADER"
 SALES_AREA_CODE = "VENTAS"
+ONBOARDING_AREA_CODE = "ONBOARDING"
 
 
 def is_global_admin(user: User) -> bool:
@@ -38,9 +39,19 @@ def is_sales_area_leader(user: User) -> bool:
     return is_area_leader(user) and user_area_code(user) == SALES_AREA_CODE
 
 
+def is_onboarding_area_leader(user: User) -> bool:
+    """Líder de área de asesores / onboarding."""
+    return is_area_leader(user) and user_area_code(user) == ONBOARDING_AREA_CODE
+
+
 def can_supervise_sales_reps(user: User) -> bool:
     """Puede ver/filtrar el trabajo de vendedores de su alcance (sede)."""
     return is_sede_admin(user) or is_sales_area_leader(user)
+
+
+def can_filter_clients_by_sales_rep(user: User) -> bool:
+    """Filtro por vendedor en clientes: gerente/admin, líder ventas o líder onboarding."""
+    return can_supervise_sales_reps(user) or is_onboarding_area_leader(user)
 
 
 def bypasses_permission(user: User, permission: str) -> bool:

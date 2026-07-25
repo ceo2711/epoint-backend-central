@@ -30,6 +30,7 @@ class UserResponse(ORMBase):
     sede_id: int | None = None
     sede: SedeBrief | None = None
     client_id: int | None = None
+    parent_user_id: int | None = None
     must_change_password: bool
     totp_enabled: bool = False
     is_active: bool
@@ -66,6 +67,21 @@ class UserMeResponse(UserResponse):
     merchants: list[MerchantBrief] = []
     active_merchant_id: int | None = None
     active_merchant: MerchantBrief | None = None
+    can_manage_sub_sellers: bool = False
+    is_sub_seller: bool = False
+    previous_month_sales: int | None = None
+
+
+class SubSellerCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    phone: str | None = None
+
+
+class SubSellerActiveUpdate(BaseModel):
+    is_active: bool
 
 
 class SetActiveMerchantRequest(BaseModel):

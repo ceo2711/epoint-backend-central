@@ -59,7 +59,9 @@ class ClientReject(BaseModel):
 
 
 class ClientApprove(BaseModel):
-    advisor_user_id: int
+    """Body vacío (compat). El asesor se asigna al pasar a Listo para trabajar."""
+
+    advisor_user_id: int | None = None
 
 
 class ClientAssignAdvisor(BaseModel):
@@ -110,6 +112,7 @@ class ClientResponse(ORMBase):
     registered_by_user_id: int
     registered_by: AdvisorBrief | None = None
     advisor: AdvisorBrief | None = None
+    advisors: list[AdvisorBrief] = Field(default_factory=list)
     created_at: datetime
     docusign_contract_signed_at: datetime | None = None
     signed_contract: ClientSignedContractBrief | None = None
@@ -151,6 +154,32 @@ class AddressResponse(ORMBase):
     zip_code: str
     residence_since_month: int | None
     residence_since_year: int | None
+
+
+class AddressSuggestion(BaseModel):
+    place_id: str
+    description: str
+    main_text: str
+    secondary_text: str
+    # Vienen completos cuando el proveedor resuelve la dirección en la misma llamada;
+    # si están vacíos, el cliente debe pedir /addresses/details.
+    street: str = ""
+    city: str = ""
+    state: str = ""
+    zip_code: str = ""
+
+
+class AddressAutocompleteResponse(BaseModel):
+    suggestions: list[AddressSuggestion] = []
+
+
+class AddressDetailsResponse(BaseModel):
+    place_id: str
+    formatted_address: str
+    street: str = ""
+    city: str = ""
+    state: str = ""
+    zip_code: str = ""
 
 
 class VehicleCreate(BaseModel):

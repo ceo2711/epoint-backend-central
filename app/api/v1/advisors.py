@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from app.api.deps import DbSession, require_permissions
@@ -10,12 +10,17 @@ from app.schemas.client import AdvisorBrief
 
 router = APIRouter(prefix="/advisors", tags=["Asesores"])
 
+_ADVISOR_LIST_ROLES = frozenset({"ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER", "ADVISOR"})
+
 
 @router.get("", response_model=list[AdvisorBrief])
 def list_advisors(
     db: DbSession,
-    _current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
 ) -> list[AdvisorBrief]:
+    if current_user.role.code not in _ADVISOR_LIST_ROLES:
+        raise HTTPException(status_code=403, detail="No autorizado a listar asesores")
+
     advisors = (
         db.execute(
             select(User)

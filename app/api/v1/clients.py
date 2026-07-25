@@ -437,6 +437,7 @@ def approve_client(
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
     merchant_id: ActiveMerchantId,
 ) -> ClientApproveResponse:
+    del payload  # body vacío / advisor_user_id ignorado (compat)
     service = ClientService(db)
     if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -444,7 +445,7 @@ def approve_client(
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     client, temp_password = service.approve_client(
-        actor=current_user, client=client, advisor_user_id=payload.advisor_user_id
+        actor=current_user, client=client
     )
     return ClientApproveResponse(client=_to_response(client), temp_password=temp_password)
 
@@ -457,8 +458,9 @@ def assign_client_advisor(
     current_user: Annotated[User, Depends(require_permissions("clients:approve"))],
     merchant_id: ActiveMerchantId,
 ) -> AdvisorBrief:
+    """Reemplaza todos los asesores por uno (uso onboarding). Preferir POST /advisors para agregar."""
     if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"):
-        raise HTTPException(status_code=403, detail="Solo onboarding puede gestionar el asesor asignado")
+        raise HTTPException(status_code=403, detail="Solo onboarding puede reemplazar el asesor asignado")
 
     service = ClientService(db)
     if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
@@ -478,6 +480,59 @@ def assign_client_advisor(
         last_name=advisor.last_name,
         email=advisor.email,
     )
+
+
+@router.post("/{client_id}/advisors", response_model=AdvisorBrief)
+def add_client_advisor(
+    client_id: int,
+    payload: ClientAssignAdvisor,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> AdvisorBrief:
+    service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    client = service.get_client_detail(client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    service.require_can_manage_client_advisors(current_user, client)
+
+    advisor = service.add_advisor(
+        actor=current_user,
+        client=client,
+        advisor_user_id=payload.advisor_user_id,
+    )
+    return AdvisorBrief(
+        id=advisor.id,
+        first_name=advisor.first_name,
+        last_name=advisor.last_name,
+        email=advisor.email,
+    )
+
+
+@router.delete("/{client_id}/advisors/{advisor_user_id}", response_model=MessageResponse)
+def remove_client_advisor(
+    client_id: int,
+    advisor_user_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> MessageResponse:
+    service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    client = service.get_client_detail(client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    service.require_can_manage_client_advisors(current_user, client)
+
+    service.remove_advisor(
+        actor=current_user,
+        client=client,
+        advisor_user_id=advisor_user_id,
+    )
+    return MessageResponse(message="Asesor desasignado")
 
 
 @router.post("/{client_id}/reset-portal-password", response_model=ClientPortalPasswordResponse)

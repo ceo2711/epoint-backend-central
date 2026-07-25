@@ -126,6 +126,11 @@ class BoardService:
         client: Client,
     ) -> BoardCard:
         card.status = status
+
+        from app.services.client_onboarding_status import sync_client_onboarding_status
+
+        sync_client_onboarding_status(self.db, client, board_activity=True)
+
         if status == TaskStatus.COMPLETADA.value:
             portal_user = self.db.execute(
                 select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT")
@@ -270,30 +275,28 @@ class BoardService:
         portal_user = self.db.execute(
             select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT")
         ).scalar_one_or_none()
-        advisor = client_service._get_active_advisor(client)
+        advisors = client_service._get_active_advisors(client)
 
         recipients: list[User] = []
         role = author.role.code
 
         if is_internal:
-            if role == "ONBOARDING_MANAGER" and advisor:
-                recipients = [advisor]
+            if role == "ONBOARDING_MANAGER":
+                recipients = list(advisors)
         elif role == "CLIENT":
-            if advisor:
-                recipients = [advisor]
+            recipients = list(advisors)
         elif role == "ADVISOR":
             if portal_user:
                 recipients = [portal_user]
+            recipients.extend(a for a in advisors if a.id != author.id)
         elif role == "ONBOARDING_MANAGER":
             if portal_user:
                 recipients.append(portal_user)
-            if advisor:
-                recipients.append(advisor)
+            recipients.extend(advisors)
         else:
             if portal_user:
                 recipients.append(portal_user)
-            if advisor:
-                recipients.append(advisor)
+            recipients.extend(advisors)
 
         seen: set[int] = set()
         unique: list[User] = []
@@ -341,7 +344,7 @@ class BoardService:
 
         client = self.db.get(Client, board.client_id)
         if client is not None:
-            sync_client_onboarding_status(self.db, client)
+            sync_client_onboarding_status(self.db, client, board_activity=True)
 
         self.db.commit()
         self.db.refresh(card)
@@ -403,7 +406,7 @@ class BoardService:
 
         client = self.db.get(Client, board.client_id)
         if client is not None:
-            sync_client_onboarding_status(self.db, client)
+            sync_client_onboarding_status(self.db, client, board_activity=True)
 
         self.db.commit()
 

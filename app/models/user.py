@@ -39,6 +39,12 @@ class User(Base):
     sede_id: Mapped[int | None] = mapped_column(
         ForeignKey("sedes.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Jerarquía de vendedores: un sub-vendedor apunta a su vendedor padre (un solo nivel).
+    parent_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -55,6 +61,17 @@ class User(Base):
     area: Mapped["Area | None"] = relationship(back_populates="users")
     sede: Mapped["Sede | None"] = relationship(back_populates="users")
     active_merchant: Mapped["Merchant | None"] = relationship(foreign_keys=[active_merchant_id])
+    parent: Mapped["User | None"] = relationship(
+        "User",
+        remote_side="User.id",
+        foreign_keys=[parent_user_id],
+        back_populates="sub_sellers",
+    )
+    sub_sellers: Mapped[List["User"]] = relationship(
+        "User",
+        foreign_keys=[parent_user_id],
+        back_populates="parent",
+    )
     sessions: Mapped[List["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )

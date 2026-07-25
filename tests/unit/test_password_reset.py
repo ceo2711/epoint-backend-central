@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 from app.core.security import generate_password_reset_token, hash_password, hash_password_reset_token, verify_password
+from app.models.client import Client
 from app.models.password_reset_token import PasswordResetToken
 from app.models.role import Role
 from app.models.session import UserSession
@@ -19,7 +20,13 @@ from app.services.auth import AuthService, PASSWORD_RESET_SENT_MESSAGE
 @pytest.fixture()
 def db_session():
     engine = create_engine("sqlite:///:memory:")
-    tables = [Role.__table__, User.__table__, UserSession.__table__, PasswordResetToken.__table__]
+    tables = [
+        Role.__table__,
+        User.__table__,
+        UserSession.__table__,
+        PasswordResetToken.__table__,
+        Client.__table__,
+    ]
     Base.metadata.create_all(engine, tables=tables)
     session = sessionmaker(bind=engine)()
     admin_role = Role(id=1, code="ADMIN", name="Admin", description="")

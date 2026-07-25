@@ -154,11 +154,16 @@ def run_document_verification(document_id: int) -> dict:
                     payload={"document_id": document.id, "client_id": client.id},
                 )
         elif document.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value and portal_users:
+            # Un documento por vencer no habilita el pase a LISTO_PARA_TRABAJAR:
+            # el aviso tiene que pedir explícitamente el reemplazo.
             notifications.notify(
                 event_type=NotificationEventType.DOCUMENT_EXPIRING_SOON.value,
                 users=portal_users,
                 title="Documento próximo a vencer",
-                body=f"Tu {document.type} vence el {document.expires_at}",
+                body=(
+                    f"Tu documento {document.type} vence el {document.expires_at}. "
+                    "Subí uno vigente desde el portal para poder continuar con el onboarding."
+                ),
                 payload={"document_id": document.id, "client_id": client.id},
             )
 

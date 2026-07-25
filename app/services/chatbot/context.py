@@ -12,6 +12,7 @@ from app.models.enums import ClientStatus, DocumentType, TaskStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.services.chatbot.approval_rules import validate_approval_requirements
+from app.services.chatbot.guides import build_platform_guide_context
 from app.services.chatbot.registration_options import source_label
 from app.services.boards import BoardService
 from app.services.clients import ClientService
@@ -133,10 +134,20 @@ class ChatbotContextBuilder:
                 include_actions=self._can_create(),
                 client_id=resolved_client_id,
             )
+            payload["plataforma"] = build_platform_guide_context(
+                role=role,
+                base_url=self.settings.portal_base_url,
+                message=message,
+            )
             return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
         if role in STAFF_ROLES:
             payload = self._build_staff_payload(resolved_client_id, include_approval_data=self._can_approve())
+            payload["plataforma"] = build_platform_guide_context(
+                role=role,
+                base_url=self.settings.portal_base_url,
+                message=message,
+            )
             return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
         payload = {"note": "Rol sin contexto específico configurado."}

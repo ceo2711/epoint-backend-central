@@ -83,21 +83,31 @@ PROFILE_FIELD_LABELS_EN: dict[str, str] = {
 REJECTED_SUFFIX_ES = " (rechazado — volver a subir)"
 REJECTED_SUFFIX_EN = " (rejected — please re-upload)"
 
+EXPIRING_SUFFIX_ES = " (vence pronto — subir uno vigente)"
+EXPIRING_SUFFIX_EN = " (expiring soon — please upload a valid one)"
+
 
 @dataclass(slots=True)
 class OnboardingReminderGaps:
     profile_items: list[str] = field(default_factory=list)
     missing_documents: list[str] = field(default_factory=list)
     rejected_documents: list[str] = field(default_factory=list)
+    expiring_documents: list[str] = field(default_factory=list)
 
     @property
     def needs_reminder(self) -> bool:
-        return bool(self.profile_items or self.missing_documents or self.rejected_documents)
+        return bool(
+            self.profile_items
+            or self.missing_documents
+            or self.rejected_documents
+            or self.expiring_documents
+        )
 
     def all_pending_labels(self, *, locale: str = "es") -> list[str]:
         items = list(self.profile_items)
         items.extend(self.missing_documents)
         items.extend(self.rejected_documents)
+        items.extend(self.expiring_documents)
         return items
 
 
@@ -129,6 +139,11 @@ def _rejected_label(doc_type: str, locale: str = "es") -> str:
     return f"{_document_label(doc_type, locale)}{suffix}"
 
 
+def _expiring_label(doc_type: str, locale: str = "es") -> str:
+    suffix = EXPIRING_SUFFIX_EN if locale == "en" else EXPIRING_SUFFIX_ES
+    return f"{_document_label(doc_type, locale)}{suffix}"
+
+
 def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") -> OnboardingReminderGaps:
     locale = _normalize_locale(locale)
     profile_labels = _profile_labels(locale)
@@ -154,13 +169,16 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
     documents = list(
         db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
     )
-    missing_types, rejected_types = document_reminder_gaps(documents)
+    missing_types, rejected_types, expiring_types = document_reminder_gaps(documents)
 
     for gap_type in missing_types:
         gaps.missing_documents.append(_document_label(gap_type, locale))
 
     for doc_type in rejected_types:
         gaps.rejected_documents.append(_rejected_label(doc_type, locale))
+
+    for doc_type in expiring_types:
+        gaps.expiring_documents.append(_expiring_label(doc_type, locale))
 
     return gaps
 

@@ -72,7 +72,7 @@ def test_approve_all_sets_clients_updated():
     )
     db.get.return_value = advisor
 
-    result = handler._approve_all([client], advisor_user_id=7)
+    result = handler._approve_all([client])
 
     assert result.clients_updated is True
     assert result.client_approval is not None
@@ -81,7 +81,6 @@ def test_approve_all_sets_clients_updated():
     handler.clients.bulk_approve_clients.assert_called_once_with(
         actor=handler.user,
         clients=[client],
-        advisor_user_id=7,
         send_welcome_notifications=True,
     )
 
@@ -204,22 +203,20 @@ def test_approve_client_returns_approval_metadata():
     advisor.last_name = "Lopez"
 
     handler.clients.approve_client = MagicMock(return_value=(client, "TempPass123!"))
-    db.get.return_value = advisor
 
-    result = handler._approve_client(client, advisor_user_id=7)
+    result = handler._approve_client(client)
 
     assert result.client_approval == ClientApprovalResult(
         client_id=42,
         client_name="Juan Perez",
         client_email="juan@mail.com",
         temp_password="TempPass123!",
-        advisor_name="Ana Lopez",
+        advisor_name="Pendiente",
     )
     assert result.client_approvals == [result.client_approval]
     assert result.pending_action is None
     handler.clients.approve_client.assert_called_once_with(
         actor=handler.user,
         client=client,
-        advisor_user_id=7,
         send_welcome_notifications=True,
     )

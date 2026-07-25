@@ -190,7 +190,7 @@ def _find_portal_client_credentials(client: httpx.Client, admin_token: str) -> t
         "EN_CARGA_DATOS",
         "APROBADO_PARA_ONBOARDING",
         "DOCUMENTOS_EN_REVISION",
-        "LISTO_PARA_TABLERO",
+        "LISTO_PARA_TRABAJAR",
         "ONBOARDING_EN_PROGRESO",
         "ONBOARDING_COMPLETADO",
     }

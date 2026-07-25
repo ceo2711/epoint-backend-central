@@ -34,7 +34,7 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
-from app.services.role_access import SALES_AREA_CODE
+from app.services.role_access import SALES_AREA_CODE, is_onboarding_area_leader
 
 if TYPE_CHECKING:
     from app.models.board import Board, BoardTemplate
@@ -129,7 +129,10 @@ class ClientService:
             query = query.where(Client.sede_id == filter_sede_id)
 
         if user.role.code == "SALES_REP":
-            query = query.where(Client.registered_by_user_id == user.id)
+            from app.services.sub_sellers import SubSellerService
+
+            team_ids = SubSellerService(self.db).list_team_user_ids(user)
+            query = query.where(Client.registered_by_user_id.in_(team_ids))
         elif user.role.code == "ADVISOR":
             query = query.where(
                 Client.id.in_(
@@ -173,7 +176,11 @@ class ClientService:
             )
         if sales_rep_id is not None:
             if user.role.code == "SALES_REP" and sales_rep_id != user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+                from app.services.sub_sellers import SubSellerService
+
+                team_ids = SubSellerService(self.db).list_team_user_ids(user)
+                if sales_rep_id not in team_ids:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
             query = query.where(Client.registered_by_user_id == sales_rep_id)
         if status_filter:
             query = query.where(Client.status == status_filter)
@@ -218,7 +225,7 @@ class ClientService:
             ClientStatus.APROBADO_PARA_ONBOARDING.value,
             ClientStatus.EN_CARGA_DATOS.value,
             ClientStatus.DOCUMENTOS_EN_REVISION.value,
-            ClientStatus.LISTO_PARA_TABLERO.value,
+            ClientStatus.LISTO_PARA_TRABAJAR.value,
         }
 
         scoped = self._scoped_clients_query(
@@ -659,7 +666,7 @@ class ClientService:
         client: Client,
         commit: bool = True,
     ) -> bool:
-        """Revisa datos mínimos y aprueba automáticamente asignando un asesor."""
+        """Revisa datos mínimos y aprueba automáticamente (sin asignar asesor aún)."""
         if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
             return False
 
@@ -674,27 +681,13 @@ class ClientService:
             )
             return False
 
-        advisor = self.pick_least_loaded_advisor()
-        if advisor is None:
-            logger.warning(
-                "Auto-aprobación omitida para cliente #%s: no hay asesores activos",
-                client.id,
-            )
-            return False
-
         self.approve_client(
             actor=actor,
             client=client,
-            advisor_user_id=advisor.id,
             send_welcome_notifications=True,
             commit=commit,
         )
-        logger.info(
-            "Cliente #%s auto-aprobado y asignado al asesor #%s (%s)",
-            client.id,
-            advisor.id,
-            advisor.email,
-        )
+        logger.info("Cliente #%s auto-aprobado (asesor se asignará al completar docs)", client.id)
         return True
 
     def approve_client(
@@ -702,30 +695,21 @@ class ClientService:
         *,
         actor: User,
         client: Client,
-        advisor_user_id: int,
         send_welcome_notifications: bool = True,
         commit: bool = True,
         board_template: "BoardTemplate | None" = None,
+        advisor_user_id: int | None = None,
     ) -> tuple[Client, str]:
+        """Aprueba al cliente para onboarding. No asigna asesor ni crea tablero todavía.
+
+        El asesor y el tablero se asignan al pasar a LISTO_PARA_TRABAJAR
+        (datos + documentos verificados).
+        `advisor_user_id` se ignora (compatibilidad con clientes/API antiguos).
+        """
+        del board_template, advisor_user_id  # compat / no usados en approve
+
         if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
             raise HTTPException(status_code=400, detail="Solo clientes pendientes pueden aprobarse")
-
-        advisor = self.db.get(User, advisor_user_id)
-        if advisor is None or advisor.role.code != "ADVISOR":
-            raise HTTPException(status_code=400, detail="Asesor inválido")
-
-        # Desactivar asignación previa
-        for assignment in client.assignments:
-            if assignment.unassigned_at is None:
-                assignment.unassigned_at = datetime.now(timezone.utc)
-
-        self.db.add(
-            ClientAssignment(
-                client_id=client.id,
-                advisor_user_id=advisor_user_id,
-                assigned_by_user_id=actor.id,
-            )
-        )
 
         client.status = ClientStatus.APROBADO_PARA_ONBOARDING.value
         client.approved_at = datetime.now(timezone.utc)
@@ -801,9 +785,8 @@ class ClientService:
             action="CLIENT_APPROVED",
             entity_type="client",
             entity_id=client.id,
-            metadata={"advisor_id": advisor_user_id},
+            metadata={},
         )
-        self.ensure_board(client, board_template=board_template)
         if commit:
             self.db.commit()
             self.db.refresh(client)
@@ -811,26 +794,70 @@ class ClientService:
             self.db.flush()
         return client, temp_password
 
+    def promote_to_ready_to_work(self, client: Client) -> User | None:
+        """Marca Listo para trabajar, asigna asesor si falta y crea el tablero.
+
+        Se llama cuando datos + documentos requeridos están verificados con éxito.
+        No hace commit.
+        """
+        client.status = ClientStatus.LISTO_PARA_TRABAJAR.value
+
+        advisor: User | None = None
+        active = self._get_active_advisors(client)
+        if active:
+            advisor = active[0]
+        else:
+            advisor = self.pick_least_loaded_advisor()
+            if advisor is None:
+                logger.warning(
+                    "Cliente #%s listo para trabajar sin asesores activos disponibles",
+                    client.id,
+                )
+            else:
+                assigned_by = client.approved_by_user_id or advisor.id
+                self.db.add(
+                    ClientAssignment(
+                        client_id=client.id,
+                        advisor_user_id=advisor.id,
+                        assigned_by_user_id=assigned_by,
+                    )
+                )
+                self.audit.log(
+                    actor=None,
+                    action="CLIENT_ADVISOR_AUTO_ASSIGNED",
+                    entity_type="client",
+                    entity_id=client.id,
+                    metadata={"advisor_id": advisor.id, "trigger": "LISTO_PARA_TRABAJAR"},
+                )
+                logger.info(
+                    "Cliente #%s listo para trabajar → asesor #%s (%s)",
+                    client.id,
+                    advisor.id,
+                    advisor.email,
+                )
+
+        try:
+            self.try_create_board(client=client)
+        except Exception:
+            logger.exception(
+                "No se pudo crear el tablero al pasar cliente #%s a LISTO_PARA_TRABAJAR",
+                client.id,
+            )
+
+        return advisor
+
     def bulk_approve_clients(
         self,
         *,
         actor: User,
         clients: list[Client],
-        advisor_user_id: int,
         send_welcome_notifications: bool = False,
+        advisor_user_id: int | None = None,
     ) -> tuple[list[tuple[Client, str]], list[tuple[Client, str]]]:
         """Aprueba varios clientes en una sola transacción (más rápido que uno por uno)."""
+        del advisor_user_id  # compat: ya no se asigna asesor en approve
         if not clients:
             return [], []
-
-        advisor = self.db.get(User, advisor_user_id)
-        if advisor is None or advisor.role.code != "ADVISOR":
-            raise HTTPException(status_code=400, detail="Asesor inválido")
-
-        try:
-            board_template = self.boards.get_active_template()
-        except ValueError:
-            board_template = None
 
         successes: list[tuple[Client, str]] = []
         failures: list[tuple[Client, str]] = []
@@ -843,10 +870,8 @@ class ClientService:
                 approved_client, temp_password = self.approve_client(
                     actor=actor,
                     client=client,
-                    advisor_user_id=advisor_user_id,
                     send_welcome_notifications=send_welcome_notifications,
                     commit=False,
-                    board_template=board_template,
                 )
                 successes.append((approved_client, temp_password))
             except HTTPException as exc:
@@ -869,6 +894,7 @@ class ClientService:
         client: Client,
         advisor_user_id: int,
     ) -> User:
+        """Reemplaza todos los asesores activos por uno solo (compat / onboarding)."""
         if client.approved_at is None:
             raise HTTPException(
                 status_code=400,
@@ -879,13 +905,14 @@ class ClientService:
         if advisor is None or advisor.role.code != "ADVISOR" or not advisor.is_active:
             raise HTTPException(status_code=400, detail="Asesor inválido")
 
-        current = self._get_active_advisor(client)
-        if current and current.id == advisor_user_id:
+        current_ids = {a.id for a in self._get_active_advisors(client)}
+        if current_ids == {advisor_user_id}:
             return advisor
 
+        now = datetime.now(timezone.utc)
         for assignment in client.assignments:
             if assignment.unassigned_at is None:
-                assignment.unassigned_at = datetime.now(timezone.utc)
+                assignment.unassigned_at = now
 
         self.db.add(
             ClientAssignment(
@@ -902,25 +929,124 @@ class ClientService:
             metadata={"advisor_id": advisor_user_id},
         )
         self.db.commit()
+        self.db.refresh(client)
         return advisor
 
-    def get_stored_portal_temp_password(self, client: Client) -> str | None:
-        if not client.portal_temp_password_encrypted:
-            return None
+    def add_advisor(
+        self,
+        *,
+        actor: User,
+        client: Client,
+        advisor_user_id: int,
+    ) -> User:
+        if client.approved_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Solo clientes aprobados pueden tener asesor asignado",
+            )
 
-        portal_user = self.db.execute(
-            select(User).where(User.client_id == client.id, User.is_active.is_(True))
-        ).scalar_one_or_none()
-        # Si el cliente ya cambió la clave, la temporal guardada ya no es válida.
-        if portal_user is not None and not portal_user.must_change_password:
-            client.portal_temp_password_encrypted = None
-            self.db.commit()
+        advisor = self.db.get(User, advisor_user_id)
+        if advisor is None or advisor.role.code != "ADVISOR" or not advisor.is_active:
+            raise HTTPException(status_code=400, detail="Asesor inválido")
+
+        active = self._get_active_advisors(client)
+        if any(row.id == advisor_user_id for row in active):
+            return advisor
+
+        self.db.add(
+            ClientAssignment(
+                client_id=client.id,
+                advisor_user_id=advisor_user_id,
+                assigned_by_user_id=actor.id,
+            )
+        )
+        self.audit.log(
+            actor=actor,
+            action="CLIENT_ADVISOR_ADDED",
+            entity_type="client",
+            entity_id=client.id,
+            metadata={"advisor_id": advisor_user_id},
+        )
+        self.db.commit()
+        return advisor
+
+    def _client_requires_advisor(self, client: Client) -> bool:
+        """A partir de Listo para trabajar el cliente debe conservar al menos un asesor."""
+        return client.status in {
+            ClientStatus.LISTO_PARA_TRABAJAR.value,
+            ClientStatus.ONBOARDING_EN_PROGRESO.value,
+            ClientStatus.ONBOARDING_COMPLETADO.value,
+        }
+
+    def remove_advisor(
+        self,
+        *,
+        actor: User,
+        client: Client,
+        advisor_user_id: int,
+    ) -> None:
+        if client.approved_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Solo clientes aprobados pueden tener asesor asignado",
+            )
+
+        active = [
+            assignment
+            for assignment in client.assignments
+            if assignment.unassigned_at is None
+        ]
+        target = next((row for row in active if row.advisor_user_id == advisor_user_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="El asesor no está asignado a este cliente")
+
+        if len(active) <= 1 and self._client_requires_advisor(client):
+            raise HTTPException(
+                status_code=400,
+                detail="El cliente debe conservar al menos un asesor asignado",
+            )
+
+        target.unassigned_at = datetime.now(timezone.utc)
+        self.audit.log(
+            actor=actor,
+            action="CLIENT_ADVISOR_REMOVED",
+            entity_type="client",
+            entity_id=client.id,
+            metadata={"advisor_id": advisor_user_id},
+        )
+        self.db.commit()
+
+    def actor_can_manage_client_advisors(self, actor: User, client: Client) -> bool:
+        role = actor.role.code if actor.role else None
+        if role in {"ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"}:
+            return True
+        if is_onboarding_area_leader(actor):
+            return True
+        if role == "ADVISOR":
+            return any(
+                assignment.unassigned_at is None and assignment.advisor_user_id == actor.id
+                for assignment in client.assignments
+            )
+        return False
+
+    def require_can_manage_client_advisors(self, actor: User, client: Client) -> None:
+        if not self.actor_can_manage_client_advisors(actor, client):
+            raise HTTPException(
+                status_code=403,
+                detail="Solo onboarding o un asesor asignado pueden gestionar los asesores del cliente",
+            )
+
+    def get_stored_portal_temp_password(self, client: Client) -> str | None:
+        """Devuelve la contraseña de portal recuperable (temporal o la última conocida)."""
+        if not client.portal_temp_password_encrypted:
             return None
 
         try:
             return decrypt_value(client.portal_temp_password_encrypted)
         except Exception:
-            logger.exception("No se pudo descifrar la contraseña temporal del portal para cliente #%s", client.id)
+            logger.exception(
+                "No se pudo descifrar la contraseña del portal para cliente #%s", client.id
+            )
             return None
 
     def get_portal_access_info(self, client: Client) -> dict:
@@ -1030,8 +1156,8 @@ class ClientService:
 
     def on_documents_complete(self, *, client: Client) -> None:
         onboarding = self._get_onboarding_team()
-        advisor = self._get_active_advisor(client)
-        recipients = onboarding + ([advisor] if advisor else [])
+        advisors = self._get_active_advisors(client)
+        recipients = onboarding + advisors
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_DATA_COMPLETE.value,
             users=recipients,
@@ -1171,10 +1297,21 @@ class ClientService:
         ]
 
     def _get_active_advisor(self, client: Client) -> User | None:
-        for a in client.assignments:
-            if a.unassigned_at is None:
-                return a.advisor
-        return None
+        advisors = self._get_active_advisors(client)
+        return advisors[0] if advisors else None
+
+    def _get_active_advisors(self, client: Client) -> list[User]:
+        advisors: list[User] = []
+        seen: set[int] = set()
+        for assignment in client.assignments:
+            if assignment.unassigned_at is not None:
+                continue
+            advisor = assignment.advisor
+            if advisor is None or advisor.id in seen:
+                continue
+            seen.add(advisor.id)
+            advisors.append(advisor)
+        return advisors
 
     def get_mentionable_users(
         self,
@@ -1186,14 +1323,13 @@ class ClientService:
         portal_user = self.db.execute(
             select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT", User.is_active.is_(True))
         ).scalar_one_or_none()
-        advisor = self._get_active_advisor(client)
+        advisors = self._get_active_advisors(client)
         onboarding_team = self._get_onboarding_team()
 
         candidates: list[User] = []
         if include_client and portal_user:
             candidates.append(portal_user)
-        if advisor:
-            candidates.append(advisor)
+        candidates.extend(advisors)
         candidates.extend(onboarding_team)
 
         seen: set[int] = set()
@@ -1277,7 +1413,10 @@ class ClientService:
         if user.role.code == "CLIENT":
             return user.client_id == client_id
         if user.role.code == "SALES_REP":
-            return row.registered_by_user_id == user.id
+            from app.services.sub_sellers import SubSellerService
+
+            team_ids = SubSellerService(self.db).list_team_user_ids(user)
+            return row.registered_by_user_id in team_ids
         if user.role.code == "ADVISOR":
             assignment = self.db.execute(
                 select(ClientAssignment.id).where(
@@ -1290,8 +1429,10 @@ class ClientService:
         return True
 
     def user_can_view_client_onboarding_data(self, user: User, client_id: int) -> bool:
-        """Documentos, perfil extendido, portal, tablero: admin, gerente, onboarding y asesor asignado."""
+        """Documentos, perfil extendido, portal, tablero: admin, gerente, onboarding, líder onboarding y asesor asignado."""
         if user.role.code in ("ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"):
+            return self.user_can_access_client(user, client_id)
+        if is_onboarding_area_leader(user):
             return self.user_can_access_client(user, client_id)
         if user.role.code == "ADVISOR":
             return self.user_can_access_client(user, client_id)

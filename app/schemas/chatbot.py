@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -94,6 +95,7 @@ class ChatbotRequest(BaseModel):
     chat_locale: str | None = None
     pending_action: PendingChatAction | None = None
     calendly_selection: ChatCalendlySelection | None = None
+    conversation_id: int | None = None
 
 
 class ChatbotResponse(BaseModel):
@@ -107,3 +109,33 @@ class ChatbotResponse(BaseModel):
     calendly_options: ChatCalendlyOptions | None = None
     clients_updated: bool = False
     calendly_updated: bool = False
+    conversation_id: int | None = None
+
+
+class ChatConversationSummary(BaseModel):
+    id: int
+    title: str
+    chat_locale: str
+    message_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatConversationMessageOut(BaseModel):
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class ChatConversationDetail(BaseModel):
+    id: int
+    title: str
+    chat_locale: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ChatConversationMessageOut] = Field(default_factory=list)
+
+
+class ChatConversationCreate(BaseModel):
+    chat_locale: str | None = None

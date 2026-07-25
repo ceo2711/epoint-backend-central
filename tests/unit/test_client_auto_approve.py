@@ -45,12 +45,10 @@ class TestTryAutoApprovePendingClient:
         ):
             assert service.try_auto_approve_pending_client(actor=MagicMock(), client=client) is False
 
-    def test_approves_when_valid_and_advisor_available(self):
+    def test_approves_when_valid(self):
         service = ClientService(MagicMock())
         client = SimpleNamespace(id=9, status=ClientStatus.PENDIENTE_DE_REVISION.value)
         actor = MagicMock()
-        advisor = _advisor(3)
-        service.pick_least_loaded_advisor = MagicMock(return_value=advisor)
         service.approve_client = MagicMock(return_value=(client, "TempPass1!"))
 
         with patch(
@@ -63,7 +61,6 @@ class TestTryAutoApprovePendingClient:
         service.approve_client.assert_called_once_with(
             actor=actor,
             client=client,
-            advisor_user_id=3,
             send_welcome_notifications=True,
             commit=False,
         )

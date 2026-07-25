@@ -9,6 +9,7 @@ from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.card_comment import CardComment
 from app.models.calendly_connection import CalendlyConnection
 from app.models.calendly_event import CalendlyEvent
+from app.models.chat_conversation import ChatConversation, ChatConversationMessage
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
 from app.models.credential_submission import CredentialSubmission
@@ -49,6 +50,8 @@ __all__ = [
     "CardComment",
     "CalendlyConnection",
     "CalendlyEvent",
+    "ChatConversation",
+    "ChatConversationMessage",
     "Client",
     "ClientAssignment",
     "CredentialSubmission",
