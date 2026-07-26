@@ -1,0 +1,14 @@
+---
+description: Cargar contexto del agente especializado ePoint CRM Backend
+alwaysApply: true
+---
+
+# Agente Backend
+
+Este workspace es el backend de ePoint CRM (FastAPI).
+
+Antes de cambios no triviales, seguí:
+- `agent/CONTEXT.md`
+- `agent/RULES.md`
+
+Respuestas al usuario en español salvo que pida otro idioma.
