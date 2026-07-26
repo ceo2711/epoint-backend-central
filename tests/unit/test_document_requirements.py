@@ -1,6 +1,7 @@
 from app.services.document_requirements import (
     ADDRESS_GAP_KEY,
     BANK_STATEMENT,
+    GREEN_CARD,
     IDENTITY_GAP_KEY,
     LICENSE_BACK,
     LICENSE_FRONT,
@@ -8,6 +9,7 @@ from app.services.document_requirements import (
     SSN_CARD,
     UTILITY_BILL,
     all_required_documents_approved,
+    document_needs_client_action,
     document_reminder_gaps,
     document_upload_gaps,
     is_upload_requirement_met,
@@ -210,6 +212,71 @@ def test_expiring_license_ignored_when_passport_approved():
     assert rejected == []
     assert expiring == []
     assert all_required_documents_approved(docs) is True
+
+
+def test_reminder_gaps_ignore_rejected_green_card_when_license_approved():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "APROBADO"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(GREEN_CARD, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    missing, rejected, expiring = document_reminder_gaps(docs)
+    assert missing == []
+    assert rejected == []
+    assert expiring == []
+
+
+def test_rejected_green_card_needs_no_action_when_license_approved():
+    """No se avisa por una alternativa rechazada si otra ya cubre la categoría."""
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "APROBADO"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(GREEN_CARD, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    assert document_needs_client_action(docs, GREEN_CARD) is False
+
+
+def test_rejected_green_card_needs_action_without_alternative():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(GREEN_CARD, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    assert document_needs_client_action(docs, GREEN_CARD) is True
+
+
+def test_rejected_license_needs_action_when_alternative_also_rejected():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(LICENSE_FRONT, "RECHAZADO"),
+        _doc(LICENSE_BACK, "APROBADO"),
+        _doc(GREEN_CARD, "RECHAZADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    assert document_needs_client_action(docs, LICENSE_FRONT) is True
+
+
+def test_rejected_bank_statement_needs_no_action_when_utility_approved():
+    docs = [
+        _doc(SSN_CARD, "APROBADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+        _doc(BANK_STATEMENT, "RECHAZADO"),
+    ]
+    assert document_needs_client_action(docs, BANK_STATEMENT) is False
+
+
+def test_rejected_ssn_always_needs_action():
+    docs = [
+        _doc(SSN_CARD, "RECHAZADO"),
+        _doc(PASSPORT, "APROBADO"),
+        _doc(UTILITY_BILL, "APROBADO"),
+    ]
+    assert document_needs_client_action(docs, SSN_CARD) is True
 
 
 def test_expiring_address_proof_is_reported_as_pending():

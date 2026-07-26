@@ -30,6 +30,15 @@ ALL_UPLOADABLE_TYPES = (
 IDENTITY_GAP_KEY = "IDENTITY_DOCUMENT"
 ADDRESS_GAP_KEY = "ADDRESS_PROOF"
 
+# Rutas posibles de cada categoría con alternativas (independientes de lo subido).
+IDENTITY_PATHS: tuple[frozenset[str], ...] = (
+    frozenset(LICENSE_TYPES),
+    *(frozenset({doc_type}) for doc_type in ALT_IDENTITY_TYPES),
+)
+ADDRESS_PATHS: tuple[frozenset[str], ...] = tuple(
+    frozenset({doc_type}) for doc_type in ADDRESS_TYPES
+)
+
 # Estados que exigen que el cliente vuelva a subir el documento: rechazado, o
 # aprobado pero por vencer (no habilita el pase a LISTO_PARA_TRABAJAR).
 REPLACEMENT_STATUSES = frozenset(
@@ -78,6 +87,33 @@ def _path_is_clear_for_reminder(path: frozenset[str], by_type: dict[str, Documen
         if doc is None:
             return False
         if _needs_replacement(doc):
+            return False
+    return True
+
+
+def _category_paths_for(doc_type: str) -> tuple[frozenset[str], ...] | None:
+    if any(doc_type in path for path in IDENTITY_PATHS):
+        return IDENTITY_PATHS
+    if any(doc_type in path for path in ADDRESS_PATHS):
+        return ADDRESS_PATHS
+    return None
+
+
+def document_needs_client_action(documents: list[Document], doc_type: str) -> bool:
+    """Si el cliente tiene que hacer algo con este documento (resubirlo, reemplazarlo).
+
+    Devuelve False cuando otra alternativa de la misma categoría ya cubre el
+    requisito: si la licencia está aprobada, una green card rechazada no es un
+    pendiente. El SSN no tiene alternativas, así que siempre requiere acción.
+    """
+    paths = _category_paths_for(doc_type)
+    if paths is None:
+        return True
+    by_type = {doc.type: doc for doc in documents}
+    for path in paths:
+        if doc_type in path:
+            continue
+        if _path_is_clear_for_reminder(path, by_type):
             return False
     return True
 

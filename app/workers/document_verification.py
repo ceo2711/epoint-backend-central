@@ -12,6 +12,7 @@ from app.models.document import Document
 from app.models.document_verification import DocumentVerification
 from app.models.enums import DocumentVerificationStatus, NotificationEventType
 from app.models.user import User
+from app.services.document_requirements import document_needs_client_action
 from app.services.document_verification_messages import (
     build_approval_messages,
     build_rejection_messages,
@@ -143,9 +144,20 @@ def run_document_verification(document_id: int) -> dict:
         notifications = NotificationService(db)
         portal_users = list(db.execute(select(User).where(User.client_id == client.id)).scalars().all())
 
+        client_documents = list(
+            db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
+        )
+        # Una alternativa ya cubierta (licencia aprobada) deja de ser un pendiente:
+        # no hay que avisar por la green card rechazada.
+        needs_client_action = document_needs_client_action(client_documents, document.type)
+
         if not approved:
             rejection_es = [item["es"] for item in rejection_messages]
-            if portal_users and previous_status != DocumentVerificationStatus.RECHAZADO.value:
+            if (
+                portal_users
+                and needs_client_action
+                and previous_status != DocumentVerificationStatus.RECHAZADO.value
+            ):
                 notifications.notify(
                     event_type=NotificationEventType.DOCUMENT_REJECTED.value,
                     users=portal_users,
@@ -153,7 +165,11 @@ def run_document_verification(document_id: int) -> dict:
                     body=f"Tu documento {document.type} no pasó la verificación: {', '.join(rejection_es) or 'revisar calidad'}",
                     payload={"document_id": document.id, "client_id": client.id},
                 )
-        elif document.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value and portal_users:
+        elif (
+            document.verification_status == DocumentVerificationStatus.PROXIMO_A_VENCER.value
+            and portal_users
+            and needs_client_action
+        ):
             # Un documento por vencer no habilita el pase a LISTO_PARA_TRABAJAR:
             # el aviso tiene que pedir explícitamente el reemplazo.
             notifications.notify(

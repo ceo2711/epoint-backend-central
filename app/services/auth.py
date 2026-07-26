@@ -57,7 +57,7 @@ PASSWORD_RESET_SENT_MESSAGE = (
 )
 CLIENT_ROLE_CODE = "CLIENT"
 AVATAR_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
-AVATAR_MAX_BYTES = 5 * 1024 * 1024
+AVATAR_MAX_BYTES = 10 * 1024 * 1024
 AVATAR_EXT_BY_MIME = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -330,7 +330,7 @@ class AuthService:
         if len(file_bytes) > AVATAR_MAX_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El avatar no puede superar los 5 MB",
+                detail="El avatar no puede superar los 10 MB",
             )
 
         mime_type = resolve_content_type(content_type, filename)
