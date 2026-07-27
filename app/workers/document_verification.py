@@ -1,4 +1,4 @@
-"""Verificación IA de documentos — único lugar donde se invoca Gemini/LangChain."""
+"""Verificación IA de documentos — único lugar donde se invoca Gemini."""
 
 import json
 import logging

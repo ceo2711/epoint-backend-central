@@ -1,7 +1,7 @@
 import asyncio
 import json
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
@@ -10,7 +10,13 @@ from sqlalchemy import func, select
 from app.api.deps import CurrentUser, DbSession
 from app.models.notification import Notification
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.notification import NotificationMarkRead, NotificationResponse
+from app.schemas.notification import (
+    NotificationDelete,
+    NotificationMarkRead,
+    NotificationResponse,
+    PushDeviceTokenRegister,
+    PushDeviceTokenUnregister,
+)
 from app.services.notifications import NotificationService
 from app.services.notifications.hub import notification_hub
 
@@ -18,6 +24,7 @@ router = APIRouter(prefix="/notifications", tags=["Notificaciones"])
 
 STREAM_POLL_SECONDS = 2
 STREAM_HEARTBEAT_SECONDS = 25
+NOTIFICATION_RETENTION_DAYS = 5
 
 
 @router.get("/stream")
@@ -70,6 +77,8 @@ def list_notifications(
 ) -> PaginatedResponse[NotificationResponse]:
     service = NotificationService(db)
     query = service.apply_in_app_scope(select(Notification), current_user)
+    since = datetime.now(timezone.utc) - timedelta(days=NOTIFICATION_RETENTION_DAYS)
+    query = query.where(Notification.created_at >= since)
     if unread_only:
         query = query.where(Notification.read_at.is_(None))
 
@@ -110,3 +119,48 @@ def mark_read(
         n.read_at = now
     db.commit()
     return MessageResponse(message=f"{len(notifications)} notificación(es) marcada(s) como leída(s)")
+
+
+@router.post("/delete", response_model=MessageResponse)
+def delete_notifications(
+    payload: NotificationDelete,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    service = NotificationService(db)
+    query = service.apply_in_app_scope(
+        select(Notification).where(Notification.id.in_(payload.notification_ids)),
+        current_user,
+    )
+    notifications = db.execute(query).scalars().all()
+    for n in notifications:
+        db.delete(n)
+    db.commit()
+    return MessageResponse(message=f"{len(notifications)} notificación(es) eliminada(s)")
+
+
+@router.post("/device-token", response_model=MessageResponse)
+def register_device_token(
+    payload: PushDeviceTokenRegister,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    NotificationService(db).register_device_token(
+        user_id=current_user.id,
+        token=payload.token,
+        platform=payload.platform,
+    )
+    return MessageResponse(message="Device token registrado")
+
+
+@router.post("/device-token/unregister", response_model=MessageResponse)
+def unregister_device_token(
+    payload: PushDeviceTokenUnregister,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    removed = NotificationService(db).unregister_device_token(
+        user_id=current_user.id,
+        token=payload.token,
+    )
+    return MessageResponse(message=f"{removed} token(s) eliminado(s)")

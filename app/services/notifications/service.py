@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.notification import Notification
+from app.models.push_device_token import PushDeviceToken
 from app.models.user import User
-from app.services.notifications.providers import EmailProvider, InAppProvider, WhatsAppProvider
+from app.services.notifications.providers import (
+    EmailProvider,
+    ExpoPushProvider,
+    InAppProvider,
+    WhatsAppProvider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +22,14 @@ logger = logging.getLogger(__name__)
 EVENT_CHANNELS: dict[str, list[str]] = {
     "NEW_CLIENT_PENDING_REVIEW": ["IN_APP", "EMAIL"],
     "CLIENT_REJECTED": ["IN_APP", "EMAIL"],
-    "CLIENT_APPROVED": ["IN_APP"],
-    "DOCUMENT_REJECTED": ["IN_APP", "EMAIL", "WHATSAPP"],
-    "DOCUMENT_EXPIRING_SOON": ["IN_APP", "EMAIL", "WHATSAPP"],
+    "CLIENT_APPROVED": ["IN_APP", "PUSH"],
+    "DOCUMENT_REJECTED": ["IN_APP", "EMAIL", "WHATSAPP", "PUSH"],
+    "DOCUMENT_EXPIRING_SOON": ["IN_APP", "EMAIL", "WHATSAPP", "PUSH"],
+    "BOARD_ATTACHMENT_REJECTED": ["IN_APP", "EMAIL", "PUSH"],
     "CLIENT_DATA_COMPLETE": ["IN_APP", "EMAIL"],
     "CLIENT_ONBOARDING_INCOMPLETE": ["IN_APP", "EMAIL", "WHATSAPP"],
-    "TASK_COMPLETED": ["IN_APP", "EMAIL"],
-    "TASK_COMMENTED": ["IN_APP", "EMAIL"],
+    "TASK_COMPLETED": ["IN_APP", "EMAIL", "PUSH"],
+    "TASK_COMMENTED": ["IN_APP", "EMAIL", "PUSH"],
     "CALENDLY_EVENT_SCHEDULED": ["IN_APP"],
     "DOCUSIGN_ENVELOPE_COMPLETED": ["IN_APP"],
     "PAYMENT_LINK_COMPLETED": ["IN_APP", "EMAIL"],
@@ -38,6 +45,7 @@ class NotificationService:
             "EMAIL": EmailProvider(),
             "WHATSAPP": WhatsAppProvider(),
         }
+        self._push = ExpoPushProvider()
 
     def notify(
         self,
@@ -63,6 +71,14 @@ class NotificationService:
                 )
                 continue
             for channel in active_channels:
+                if channel == "PUSH":
+                    self._send_push(
+                        user=user,
+                        title=title,
+                        body=(channel_bodies or {}).get(channel, body),
+                        payload=payload,
+                    )
+                    continue
                 channel_body = (channel_bodies or {}).get(channel, body)
                 notification = self._dispatch(
                     user=user,
@@ -83,6 +99,81 @@ class NotificationService:
         else:
             self.db.flush()
         return created
+
+    def register_device_token(self, *, user_id: int, token: str, platform: str) -> PushDeviceToken:
+        normalized = token.strip()
+        platform_norm = platform.strip().lower()
+        existing = self.db.execute(
+            select(PushDeviceToken).where(PushDeviceToken.token == normalized)
+        ).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if existing:
+            existing.user_id = user_id
+            existing.platform = platform_norm
+            existing.updated_at = now
+            existing.last_seen_at = now
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+
+        row = PushDeviceToken(
+            user_id=user_id,
+            token=normalized,
+            platform=platform_norm,
+            last_seen_at=now,
+        )
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+    def unregister_device_token(self, *, user_id: int, token: str) -> int:
+        rows = (
+            self.db.execute(
+                select(PushDeviceToken).where(
+                    PushDeviceToken.user_id == user_id,
+                    PushDeviceToken.token == token.strip(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            self.db.delete(row)
+        self.db.commit()
+        return len(rows)
+
+    def _send_push(
+        self,
+        *,
+        user: User,
+        title: str,
+        body: str,
+        payload: dict[str, Any] | None,
+    ) -> None:
+        tokens = (
+            self.db.execute(
+                select(PushDeviceToken.token).where(PushDeviceToken.user_id == user.id)
+            )
+            .scalars()
+            .all()
+        )
+        if not tokens:
+            return
+
+        if self.settings.notifications_dry_run:
+            logger.info(
+                "[DRY RUN] PUSH → user %s (%s tokens): %s — %s",
+                user.id,
+                len(tokens),
+                title,
+                body[:120],
+            )
+            return
+
+        ok = self._push.send_to_tokens(list(tokens), title, body, payload)
+        if not ok:
+            logger.warning("Push fallido para usuario %s", user.id)
 
     def apply_in_app_scope(self, query, user: User):
         """Restringe notificaciones in-app al usuario autenticado (y a su cliente si es portal)."""

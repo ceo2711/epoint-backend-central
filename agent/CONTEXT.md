@@ -7,7 +7,7 @@ URL: `https://dev-epoint-crm-backend-3807e7e86dca.herokuapp.com`
 
 - Python 3.12 · FastAPI 0.115 · Uvicorn · SQLAlchemy 2 · Alembic · Postgres 16
 - Auth: JWT + Argon2 + TOTP 2FA · Storage: S3/MinIO/Bucketeer
-- IA docs: Gemini 2.5 Flash (LangChain) · Email: Resend · WhatsApp: Twilio
+- IA docs: Gemini 2.5 Flash (`google-genai`) · Email: Resend · WhatsApp: Twilio
 - Pagos: Authorize.net (default), PayPal; Stripe legacy
 - Background: **hilos en la API** (`workers/enqueue.py`). Celery/Redis = legacy, no requerido
 
@@ -66,7 +66,7 @@ tests/{unit,api}/
 | Alternativas de docs | Si licencia aprobada, no avisar por green card rechazada (`document_needs_client_action`) |
 | Board Kanban | `services/boards.py`, `constants/kanban_columns.py` |
 | Pagos | `services/payments/` + webhooks; docs en `docs/` |
-| Notificaciones | hub + email/WhatsApp; `NOTIFICATIONS_DRY_RUN` |
+| Notificaciones | hub + email/WhatsApp/PUSH Expo; `push_device_tokens`; `NOTIFICATIONS_DRY_RUN` |
 | Chatbot | acciones reales; no inventar confirmaciones |
 | Onboarding reminders | scheduler inline + lock Postgres |
 

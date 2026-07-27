@@ -26,6 +26,7 @@ from app.models.payment_settings import PaymentSettings
 from app.models.permission import Permission, RolePermission
 from app.models.prospect import Prospect
 from app.models.prospect_history import ProspectHistory
+from app.models.push_device_token import PushDeviceToken
 from app.models.role import Role
 from app.models.sede import Sede
 from app.models.sent_email import SentEmail
@@ -67,6 +68,7 @@ __all__ = [
     "PaymentSettings",
     "Prospect",
     "ProspectHistory",
+    "PushDeviceToken",
     "Permission",
     "Role",
     "RolePermission",

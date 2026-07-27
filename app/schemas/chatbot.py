@@ -139,3 +139,7 @@ class ChatConversationDetail(BaseModel):
 
 class ChatConversationCreate(BaseModel):
     chat_locale: str | None = None
+
+
+class ChatConversationUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)

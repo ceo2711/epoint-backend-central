@@ -61,3 +61,75 @@ class WhatsAppProvider(NotificationChannelProvider):
             body=body,
             payload=payload,
         )
+
+
+class ExpoPushProvider:
+    """Envía notificaciones push vía Expo Push API."""
+
+    ENDPOINT = "https://exp.host/--/api/v2/push/send"
+    ANDROID_CHANNEL_ID = "epoint-default"
+
+    def send_to_tokens(
+        self,
+        tokens: list[str],
+        title: str,
+        body: str,
+        payload: dict[str, Any] | None = None,
+    ) -> bool:
+        if not tokens:
+            return False
+        try:
+            import httpx
+
+            messages = [
+                {
+                    "to": token,
+                    "title": title,
+                    "body": body,
+                    "sound": "default",
+                    "priority": "high",
+                    "channelId": self.ANDROID_CHANNEL_ID,
+                    "data": payload or {},
+                }
+                for token in tokens
+            ]
+            # Expo acepta hasta ~100 mensajes por request
+            ok = True
+            with httpx.Client(timeout=15.0) as client:
+                for i in range(0, len(messages), 100):
+                    chunk = messages[i : i + 100]
+                    response = client.post(
+                        self.ENDPOINT,
+                        json=chunk,
+                        headers={
+                            "Accept": "application/json",
+                            "Accept-Encoding": "gzip, deflate",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    if response.status_code >= 400:
+                        logger.warning(
+                            "Expo push HTTP %s: %s",
+                            response.status_code,
+                            response.text[:300],
+                        )
+                        ok = False
+                        continue
+                    try:
+                        data = response.json()
+                        tickets = data.get("data") if isinstance(data, dict) else data
+                        if isinstance(tickets, list):
+                            for ticket in tickets:
+                                if isinstance(ticket, dict) and ticket.get("status") == "error":
+                                    logger.warning(
+                                        "Expo push ticket error: %s — %s",
+                                        ticket.get("message"),
+                                        ticket.get("details"),
+                                    )
+                                    ok = False
+                    except Exception:
+                        logger.debug("No se pudo parsear respuesta Expo push")
+            return ok
+        except Exception:
+            logger.exception("Error enviando push Expo")
+            return False

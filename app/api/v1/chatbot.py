@@ -6,9 +6,11 @@ from app.schemas.chatbot import (
     ChatConversationDetail,
     ChatConversationMessageOut,
     ChatConversationSummary,
+    ChatConversationUpdate,
     ChatbotRequest,
     ChatbotResponse,
 )
+from app.schemas.common import MessageResponse
 from app.services.chat_conversations import ChatConversationService
 from app.services.chatbot import ChatbotService
 
@@ -81,6 +83,29 @@ def get_conversation(
     service = ChatConversationService(db)
     conversation = service.get_for_user(current_user, conversation_id)
     return _detail(conversation)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ChatConversationSummary)
+def update_conversation(
+    conversation_id: int,
+    body: ChatConversationUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> ChatConversationSummary:
+    service = ChatConversationService(db)
+    conversation = service.rename(current_user, conversation_id, body.title)
+    counts = service.message_counts([conversation.id])
+    return _summary(conversation, counts.get(conversation.id, 0))
+
+
+@router.delete("/conversations/{conversation_id}", response_model=MessageResponse)
+def delete_conversation(
+    conversation_id: int,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageResponse:
+    ChatConversationService(db).delete_for_user(current_user, conversation_id)
+    return MessageResponse(message="Conversación eliminada")
 
 
 @router.post("/message", response_model=ChatbotResponse)

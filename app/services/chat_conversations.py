@@ -130,6 +130,29 @@ class ChatConversationService:
         self.db.refresh(conversation)
         return conversation
 
+    def rename(self, user: User, conversation_id: int, title: str) -> ChatConversation:
+        conversation = self.get_for_user(user, conversation_id)
+        clean = " ".join(title.strip().split())
+        if not clean:
+            raise HTTPException(status_code=400, detail="El título no puede estar vacío")
+        conversation.title = clean[:120]
+        conversation.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(conversation)
+        return conversation
+
+    def delete_for_user(self, user: User, conversation_id: int) -> None:
+        conversation = self.db.execute(
+            select(ChatConversation).where(
+                ChatConversation.id == conversation_id,
+                ChatConversation.user_id == user.id,
+            )
+        ).scalar_one_or_none()
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        self.db.delete(conversation)
+        self.db.commit()
+
     def message_counts(self, conversation_ids: list[int]) -> dict[int, int]:
         if not conversation_ids:
             return {}

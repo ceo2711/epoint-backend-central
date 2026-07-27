@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = True
     s3_storage_prefix: str = ""
 
-    # Gemini / LangChain
+    # Gemini / google-genai
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 

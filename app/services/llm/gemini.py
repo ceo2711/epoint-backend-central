@@ -1,4 +1,3 @@
-import base64
 import logging
 from typing import Any
 
@@ -11,16 +10,16 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiLLMService:
-    """Servicio LangChain para Gemini Flash 2.5 — texto y visión de documentos.
+    """Servicio Gemini vía google-genai (SDK oficial actual).
 
-    LangChain se importa solo al primer uso (análisis de documento), no al arrancar la API.
+    El SDK se importa solo al primer uso, no al arrancar la API.
     """
 
     def __init__(self) -> None:
         settings = get_settings()
         self.model_name = settings.gemini_model
         self._api_key = settings.gemini_api_key or ""
-        self._llm: Any = None
+        self._client: Any = None
 
         if not self._api_key:
             logger.warning("GEMINI_API_KEY no configurada — el servicio LLM estará deshabilitado")
@@ -29,24 +28,39 @@ class GeminiLLMService:
     def is_available(self) -> bool:
         return bool(self._api_key)
 
-    def _get_llm(self) -> Any:
+    def _get_client(self) -> Any:
         if not self._api_key:
             raise RuntimeError("Servicio Gemini no disponible: configure GEMINI_API_KEY")
-        if self._llm is None:
-            from langchain_google_genai import ChatGoogleGenerativeAI
+        if self._client is None:
+            from google import genai
 
-            self._llm = ChatGoogleGenerativeAI(
-                model=self.model_name,
-                google_api_key=self._api_key,
-                temperature=0.1,
-            )
-        return self._llm
+            self._client = genai.Client(api_key=self._api_key)
+        return self._client
+
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        text = getattr(response, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
+        parts: list[str] = []
+        for candidate in getattr(response, "candidates", None) or []:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                part_text = getattr(part, "text", None)
+                if part_text:
+                    parts.append(str(part_text))
+        return "".join(parts)
 
     async def analyze_text(self, prompt: str) -> str:
-        from langchain_core.messages import HumanMessage
+        from google.genai import types
 
-        response = await self._get_llm().ainvoke([HumanMessage(content=prompt)])
-        return self._extract_content(response.content)
+        client = self._get_client()
+        response = await client.aio.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+        return self._extract_text(response)
 
     async def chat(
         self,
@@ -55,36 +69,37 @@ class GeminiLLMService:
         messages: list[dict[str, str]],
         temperature: float = 0.35,
     ) -> str:
-        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        from google.genai import types
 
-        llm = self._get_chat_llm(temperature)
-        history: list = [SystemMessage(content=system_prompt)]
+        contents: list[types.Content] = []
         for item in messages:
             role = item.get("role")
             content = item.get("content", "")
             if role == "user":
-                history.append(HumanMessage(content=content))
+                contents.append(
+                    types.Content(role="user", parts=[types.Part.from_text(text=content)])
+                )
             elif role == "assistant":
-                history.append(AIMessage(content=content))
+                contents.append(
+                    types.Content(role="model", parts=[types.Part.from_text(text=content)])
+                )
 
-        response = await llm.ainvoke(history)
-        return self._extract_content(response.content)
+        if not contents:
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text="")])]
 
-    def _get_chat_llm(self, temperature: float) -> Any:
-        if not self._api_key:
-            raise RuntimeError("Servicio Gemini no disponible: configure GEMINI_API_KEY")
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        return ChatGoogleGenerativeAI(
+        client = self._get_client()
+        response = await client.aio.models.generate_content(
             model=self.model_name,
-            google_api_key=self._api_key,
-            temperature=temperature,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                system_instruction=system_prompt,
+            ),
         )
+        return self._extract_text(response)
 
     def analyze_document_sync(self, *, image_url: str, prompt: str) -> str:
         """Analiza documento desde URL (presigned S3) con visión multimodal."""
-        from langchain_core.messages import HumanMessage
-
         with httpx.Client(timeout=60.0) as client:
             resp = client.get(image_url)
             resp.raise_for_status()
@@ -94,7 +109,7 @@ class GeminiLLMService:
         return self.analyze_document_bytes(content=content, media_type=media_type, prompt=prompt)
 
     def analyze_document_bytes(self, *, content: bytes, media_type: str, prompt: str) -> str:
-        from langchain_core.messages import HumanMessage
+        from google.genai import types
 
         vision_images = prepare_vision_images(content, media_type)
         if len(vision_images) > 1:
@@ -103,24 +118,19 @@ class GeminiLLMService:
                 "Each image is one page. Analyze all pages together."
             )
 
-        message_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        parts: list[types.Part] = [types.Part.from_text(text=prompt)]
         for image_bytes, image_media_type in vision_images:
-            b64 = base64.b64encode(image_bytes).decode("utf-8")
-            message_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{image_media_type};base64,{b64}"},
-                }
+            parts.append(
+                types.Part.from_bytes(data=image_bytes, mime_type=image_media_type)
             )
 
-        message = HumanMessage(content=message_content)
-        response = self._get_llm().invoke([message])
-        return self._extract_content(response.content)
-
-    def _extract_content(self, content: Any) -> str:
-        if isinstance(content, list):
-            return "".join(str(part) for part in content)
-        return str(content)
+        client = self._get_client()
+        response = client.models.generate_content(
+            model=self.model_name,
+            contents=types.Content(role="user", parts=parts),
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+        return self._extract_text(response)
 
     async def health_check(self) -> dict:
         if not self.is_available:
