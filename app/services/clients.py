@@ -1296,6 +1296,26 @@ class ClientService:
             )
         ]
 
+    def _get_mentionable_onboarding(self, client: Client) -> list[User]:
+        """Solo ONBOARDING_MANAGER (sin admin/gerente). Preferir la misma sede del cliente."""
+        users = list(
+            self.db.execute(
+                select(User)
+                .join(Role)
+                .options(joinedload(User.role))
+                .where(Role.code == "ONBOARDING_MANAGER", User.is_active.is_(True))
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        sede_id = client.sede_id
+        if sede_id is not None:
+            scoped = [user for user in users if user.sede_id == sede_id]
+            if scoped:
+                return scoped
+        return users
+
     def _get_active_advisor(self, client: Client) -> User | None:
         advisors = self._get_active_advisors(client)
         return advisors[0] if advisors else None
@@ -1320,17 +1340,21 @@ class ClientService:
         current_user: User,
         include_client: bool = True,
     ) -> list[User]:
+        """Participantes del hilo del cliente: portal + asesores asignados + onboarding de la sede."""
         portal_user = self.db.execute(
-            select(User).join(Role).where(User.client_id == client.id, Role.code == "CLIENT", User.is_active.is_(True))
+            select(User)
+            .join(Role)
+            .options(joinedload(User.role))
+            .where(User.client_id == client.id, Role.code == "CLIENT", User.is_active.is_(True))
         ).scalar_one_or_none()
         advisors = self._get_active_advisors(client)
-        onboarding_team = self._get_onboarding_team()
+        onboarding = self._get_mentionable_onboarding(client)
 
         candidates: list[User] = []
         if include_client and portal_user:
             candidates.append(portal_user)
         candidates.extend(advisors)
-        candidates.extend(onboarding_team)
+        candidates.extend(onboarding)
 
         seen: set[int] = set()
         unique: list[User] = []
@@ -1362,6 +1386,8 @@ class ClientService:
         mentioned: list[User] = []
         seen: set[int] = set()
         for user_id in user_ids:
+            if user_id == current_user.id:
+                continue
             user = allowed.get(user_id)
             if user and user_id not in seen:
                 seen.add(user_id)

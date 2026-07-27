@@ -299,7 +299,9 @@ def list_mentionable_users(
         raise HTTPException(status_code=403)
     cs = ClientService(db)
     if current_user.role.code != "CLIENT":
-        client = _require_staff_client_workspace(db, current_user, client_id, merchant_id)
+        # Valida acceso y luego carga relaciones (asesores) para el autocomplete
+        _require_staff_client_workspace(db, current_user, client_id, merchant_id)
+        client = cs.get_client_detail(client_id)
     else:
         client = cs.get_client_detail(client_id)
     if client is None:

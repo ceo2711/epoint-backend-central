@@ -171,8 +171,9 @@ class BoardService:
         attachments: list[tuple[str, str, bytes]] | None = None,
     ):
         from app.models.card_comment import CardComment
+        from app.utils.comment_mentions import strip_self_mentions
 
-        clean_body = body.strip()
+        clean_body = strip_self_mentions(body.strip(), author.id)
         files = attachments or []
         if not clean_body and not files:
             raise ValueError("El comentario o al menos un archivo es obligatorio")
@@ -230,7 +231,7 @@ class BoardService:
         mentioned_users = ClientService(self.db).validate_mention_user_ids(
             client=client,
             current_user=author,
-            user_ids=extract_mention_user_ids(body),
+            user_ids=extract_mention_user_ids(body, exclude_user_id=author.id),
             is_internal=is_internal,
         )
         explicit_mention_ids = {user.id for user in mentioned_users if user.id != author.id}
