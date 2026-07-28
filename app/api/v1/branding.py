@@ -10,7 +10,7 @@ _BRANDING_DIR = Path(__file__).resolve().parents[2] / "static" / "branding"
 _ASSETS: dict[str, tuple[str, str]] = {
     "logo": ("epoint-logo.png", "image/png"),
     "google-play-badge": ("google-play-badge.png", "image/png"),
-    "app-store-badge": ("app-store-badge.png", "image/png"),
+    "app-store-badge": ("app-store-badge-v2.png", "image/png"),
 }
 
 

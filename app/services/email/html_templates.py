@@ -85,7 +85,7 @@ def resolve_branding_asset_url(
     filename_by_slug = {
         "logo": "epoint-logo.png",
         "google-play-badge": "google-play-badge.png",
-        "app-store-badge": "app-store-badge.png",
+        "app-store-badge": "app-store-badge-v2.png",
     }
     filename = filename_by_slug.get(slug)
     if not filename:
