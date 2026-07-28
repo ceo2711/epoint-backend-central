@@ -5,8 +5,9 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import CurrentUser, DbSession
 from app.models.address import Address
 from app.models.client import Client
+from app.models.client_assignment import ClientAssignment
 from app.models.document import Document
-from app.models.enums import DocumentVerificationStatus
+from app.models.enums import ClientStatus, DocumentVerificationStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.schemas.client import (
@@ -26,6 +27,7 @@ from app.schemas.client import (
 from app.schemas.common import MessageResponse
 from app.serializers.client import client_to_response
 from app.services.address import AddressProviderError, get_address_provider
+from app.services.client_onboarding_status import sync_client_onboarding_status
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
 
@@ -47,6 +49,7 @@ def _load_client(db, client_id: int) -> Client | None:
                 joinedload(Client.addresses),
                 joinedload(Client.vehicles),
                 joinedload(Client.documents).joinedload(Document.verifications),
+                joinedload(Client.assignments).joinedload(ClientAssignment.advisor),
             )
             .where(Client.id == client_id)
         )
@@ -55,12 +58,26 @@ def _load_client(db, client_id: int) -> Client | None:
     )
 
 
+def _sync_and_commit_if_changed(db, client: Client) -> None:
+    """Avanza onboarding (datos→docs→listo) si corresponde."""
+    if client.status not in {
+        ClientStatus.EN_CARGA_DATOS.value,
+        ClientStatus.DOCUMENTOS_EN_REVISION.value,
+    }:
+        return
+    if sync_client_onboarding_status(db, client):
+        db.commit()
+        db.refresh(client)
+
+
 @router.get("/me", response_model=ClientDetailResponse)
 def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
     client_id = _require_client_user(current_user)
     client = _load_client(db, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    _sync_and_commit_if_changed(db, client)
+    client = _load_client(db, client_id) or client
     doc_service = DocumentService(db)
     base = client_to_response(client)
     return ClientDetailResponse(
@@ -121,6 +138,7 @@ def update_profile(
         ssn=payload.ssn,
         date_of_birth=payload.date_of_birth,
     )
+    _sync_and_commit_if_changed(db, client)
     db.refresh(client, attribute_names=["merchant"])
     return client_to_response(client)
 
@@ -188,12 +206,17 @@ def add_address(payload: AddressCreate, current_user: CurrentUser, db: DbSession
             setattr(existing, field, value)
         db.commit()
         db.refresh(existing)
-        return AddressResponse.model_validate(existing)
-    addr = Address(client_id=client_id, **payload.model_dump())
-    db.add(addr)
-    db.commit()
-    db.refresh(addr)
-    return AddressResponse.model_validate(addr)
+    else:
+        addr = Address(client_id=client_id, **payload.model_dump())
+        db.add(addr)
+        db.commit()
+        db.refresh(addr)
+        existing = addr
+
+    client = db.get(Client, client_id)
+    if client is not None:
+        _sync_and_commit_if_changed(db, client)
+    return AddressResponse.model_validate(existing)
 
 
 @router.post("/vehicles", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
@@ -207,9 +230,14 @@ def add_vehicle(payload: VehicleCreate, current_user: CurrentUser, db: DbSession
             setattr(existing, field, value)
         db.commit()
         db.refresh(existing)
-        return VehicleResponse.model_validate(existing)
-    vehicle = Vehicle(client_id=client_id, **payload.model_dump())
-    db.add(vehicle)
-    db.commit()
-    db.refresh(vehicle)
-    return VehicleResponse.model_validate(vehicle)
+    else:
+        vehicle = Vehicle(client_id=client_id, **payload.model_dump())
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+        existing = vehicle
+
+    client = db.get(Client, client_id)
+    if client is not None:
+        _sync_and_commit_if_changed(db, client)
+    return VehicleResponse.model_validate(existing)

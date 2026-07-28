@@ -553,6 +553,10 @@ class ClientService:
     def _purge_portal_user(self, portal_user: User) -> None:
         """Elimina por completo el usuario del portal (2FA, sesiones, notificaciones, etc.)."""
         uid = portal_user.id
+        # Limpiar 2FA antes del DELETE por si alguna FK falla a mitad de camino.
+        portal_user.totp_enabled = False
+        portal_user.totp_secret_encrypted = None
+        portal_user.totp_confirmed_at = None
         self.db.execute(delete(Notification).where(Notification.user_id == uid))
         self.db.execute(delete(UserSession).where(UserSession.user_id == uid))
         self.db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == uid))
@@ -581,7 +585,9 @@ class ClientService:
         if portal_user is None:
             email_user = (
                 self.db.execute(
-                    select(User).options(joinedload(User.role)).where(User.email == client.email)
+                    select(User)
+                    .options(joinedload(User.role))
+                    .where(func.lower(User.email) == client.email.lower())
                 )
                 .unique()
                 .scalar_one_or_none()

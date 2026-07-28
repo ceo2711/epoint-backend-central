@@ -70,6 +70,41 @@ def _seed_required_docs(db_session, client_id: int) -> None:
         db_session.add(_approved_doc(client_id, doc_type))
 
 
+def test_sync_advances_from_en_carga_datos_when_data_and_docs_ready(db_session):
+    """Si el cliente completa datos después de subir docs, debe promoverse igual."""
+    client = _make_client(db_session, status=ClientStatus.EN_CARGA_DATOS.value)
+    _seed_required_docs(db_session, client.id)
+    db_session.commit()
+
+    from unittest.mock import patch
+
+    with patch(
+        "app.services.clients.ClientService.check_data_complete",
+        return_value=True,
+    ), patch(
+        "app.services.clients.ClientService.promote_to_ready_to_work",
+        side_effect=lambda c: setattr(c, "status", ClientStatus.LISTO_PARA_TRABAJAR.value),
+    ):
+        assert sync_client_onboarding_status(db_session, client) is True
+    assert client.status == ClientStatus.LISTO_PARA_TRABAJAR.value
+
+
+def test_sync_moves_en_carga_to_revision_when_data_complete_docs_pending(db_session):
+    client = _make_client(db_session, status=ClientStatus.EN_CARGA_DATOS.value)
+    db_session.commit()
+
+    from unittest.mock import patch
+
+    with patch(
+        "app.services.clients.ClientService.check_data_complete",
+        return_value=True,
+    ), patch(
+        "app.services.clients.ClientService.on_documents_complete",
+    ):
+        assert sync_client_onboarding_status(db_session, client) is True
+    assert client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value
+
+
 def test_sync_advances_to_listo_para_trabajar_when_docs_approved(db_session):
     client = _make_client(db_session)
     _seed_required_docs(db_session, client.id)

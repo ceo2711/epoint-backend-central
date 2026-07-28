@@ -47,16 +47,20 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
 
 Critical rules:
 - Always respect Today's date from the context block when judging whether dates are past, current, or future.
-- document_type_matches is the most important field. Set it to false if the file is NOT the exact document type requested, even when quality is good.
-- detected_document_type must describe what you actually see, not what was requested.
+- Prefer APPROVING imperfect but usable phone photos. Reject only for: wrong primary document type, unreadable blur, clearly different person, or clearly expired ID.
+- Judge the DOMINANT / PRIMARY document in the frame. If another paper is partially visible underneath or in the background, IGNORE it.
+- document_type_matches: true when the primary subject is the requested type (or a close accepted alternative for that slot). false only when the primary subject is clearly something else.
+- detected_document_type must describe the primary document you see.
+- is_complete: true unless large parts of the primary document are missing from the frame. Background clutter does not make it incomplete.
+- is_color: true for normal camera photos/scans; do not reject for mild color cast or near-grayscale.
+- corners_cut: true ONLY when a major corner of the primary document is cropped out of the photo.
 - detected_name must be the name as printed on the document (or null if none).
-- name_matches: true when it is clearly the same person (middle names may be abbreviated/omitted; minor OCR typos allowed). false only for a clearly different person. For DRIVERS_LICENSE_BACK, set name_matches=true when the image is clearly the license back.
-- address_matches: true only for utility bills / bank statements when the service/mailing address is visible and plausible.
-- is_expired: only for ID documents with a real expiration date (license, passport, green card, work permit). For SSN cards, utility bills, and bank statements always set is_expired=false and expires_at=null.
+- name_matches: Prefer true for the same person (abbreviations/OCR typos OK). false only for a clearly different person. For DRIVERS_LICENSE_BACK, set name_matches=true when the image is clearly the license back.
+- address_matches: Prefer true when any service/mailing address is visible on utility bills / bank statements.
+- is_expired: only for ID documents with a real expiration date visible (license FRONT, passport, green card, work permit). For SSN cards, utility bills, bank statements, and driver's license BACK always set is_expired=false and expires_at=null unless a clear past expiration is visible on that side.
 - Every reason must include both "en" and "es".
-- If rejected, rejection_reasons must explain the main issue (wrong document type, missing name, poor quality, etc.).
-- If approved, approval_reasons must cite verified facts (type matched, name found, etc.) — never claim a match that is false.
-- Criteria: readable, complete, in color, no cropped corners, correct document type, and (when applicable) not expired."""
+- If rejected, rejection_reasons must explain the main issue.
+- If approved, approval_reasons must cite verified facts — never claim a match that is false."""
 
 
 def run_document_verification(document_id: int) -> dict:

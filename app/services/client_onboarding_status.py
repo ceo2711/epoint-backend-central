@@ -81,6 +81,31 @@ def sync_client_onboarding_status(
     docs = list(db.execute(select(Document).where(Document.client_id == client.id)).scalars().all())
     docs_ok = all_required_documents_approved(docs)
 
+    # Datos completos después de subir docs: salir de EN_CARGA_DATOS aunque no haya
+    # un upload nuevo (antes solo avanzaba en confirm_upload).
+    if client.status == ClientStatus.EN_CARGA_DATOS.value:
+        from app.services.clients import ClientService
+
+        client_service = ClientService(db)
+        if client_service.check_data_complete(client):
+            if docs_ok:
+                try:
+                    client_service.promote_to_ready_to_work(client)
+                except Exception:
+                    logger.exception(
+                        "No se pudo promover cliente #%s a LISTO_PARA_TRABAJAR",
+                        client.id,
+                    )
+                    if client.status == ClientStatus.EN_CARGA_DATOS.value:
+                        client.status = ClientStatus.LISTO_PARA_TRABAJAR.value
+            else:
+                client.status = ClientStatus.DOCUMENTOS_EN_REVISION.value
+                client_service.on_documents_complete(client=client)
+                logger.info(
+                    "Cliente #%s pasa a DOCUMENTOS_EN_REVISION: datos completos, docs en revisión",
+                    client.id,
+                )
+
     if client.status in DEMOTE_WHEN_DOCS_INCOMPLETE and not docs_ok:
         client.status = ClientStatus.DOCUMENTOS_EN_REVISION.value
         logger.info(

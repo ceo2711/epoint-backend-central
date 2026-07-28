@@ -57,6 +57,34 @@ def test_license_back_approved_without_name_match():
     assert is_verification_approved(result, "DRIVERS_LICENSE_BACK") is True
 
 
+def test_license_back_approved_when_background_doc_mentioned():
+    """No rechazar dorso válido solo porque Gemini menciona otro papel detrás."""
+    result = _quality_pass_result(
+        detected_document_type="driver license back with ssn card underneath",
+        name_matches=False,
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_BACK") is True
+
+
+def test_license_back_still_rejected_when_primary_is_ssn():
+    result = _quality_pass_result(
+        detected_document_type="ssn card",
+        name_matches=False,
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_BACK") is False
+
+
+def test_license_back_ignores_expired_hallucination():
+    """El dorso no usa is_expired; ignorar alucinaciones de vencimiento."""
+    result = _quality_pass_result(
+        detected_document_type="driver license back",
+        name_matches=False,
+        is_expired=True,
+        expires_at="2020-01-01",
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_BACK") is True
+
+
 def test_license_front_rejected_when_name_missing():
     result = _quality_pass_result(
         detected_document_type="driver license front",
@@ -117,6 +145,28 @@ def test_utility_bill_soft_name_match_ocr_typo():
         )
         is True
     )
+
+
+def test_soft_quality_flags_do_not_block_approval():
+    """Esquinas/color/complete no deben tumbar un doc del tipo correcto y legible."""
+    result = _quality_pass_result(
+        is_complete=False,
+        is_color=False,
+        corners_cut=True,
+        address_matches=False,
+        detected_document_type="Electric Utility Bill",
+        name_matches=True,
+    )
+    assert is_verification_approved(result, "UTILITY_BILL") is True
+
+
+def test_utility_bill_approved_without_strict_address_flag():
+    result = _quality_pass_result(
+        detected_document_type="utility bill",
+        name_matches=True,
+        address_matches=False,
+    )
+    assert is_verification_approved(result, "UTILITY_BILL") is True
 
 
 def test_build_document_type_context_includes_expected_type():
