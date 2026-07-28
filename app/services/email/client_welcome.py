@@ -7,7 +7,7 @@ from app.services.email.html_templates import logo_url_for_emails, render_html_t
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import client_approved_email_body
 
-WELCOME_EMAIL_SUBJECT = "¡Bienvenido a ePoint!"
+WELCOME_EMAIL_SUBJECT = "¡Bienvenido a Epoint!"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ def send_client_welcome_email(payload: ClientWelcomeEmailPayload) -> bool:
         EMAIL=recipient,
         TEMP_PASSWORD=payload.temp_password,
         PORTAL_LOGIN_URL=payload.portal_login_url,
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
         MERCHANT_LINE=(
             f"Tu cuenta corresponde a {payload.merchant_name}."
             if payload.merchant_name

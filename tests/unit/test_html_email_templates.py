@@ -5,6 +5,7 @@ from app.services.email.html_templates import (
     logo_url_for_emails,
     pending_items_html,
     render_html_template,
+    resolve_email_logo_url,
 )
 
 
@@ -66,8 +67,40 @@ def test_pending_items_html_escapes_special_chars():
     assert "<script>" not in html
 
 
-def test_logo_url_for_emails():
-    assert logo_url_for_emails("https://app.example.com/") == "https://app.example.com/epoint-logo.png"
+def test_logo_url_for_emails_prefers_backend_public_endpoint():
+    assert (
+        resolve_email_logo_url(
+            email_logo_url="",
+            backend_public_url="https://api.example.com",
+            api_prefix="/api/v1",
+            portal_base_url="http://localhost:3000",
+        )
+        == "https://api.example.com/api/v1/branding/logo"
+    )
+
+
+def test_logo_url_for_emails_honors_explicit_override():
+    assert (
+        resolve_email_logo_url(
+            email_logo_url="https://cdn.example.com/logo.png",
+            backend_public_url="https://api.example.com",
+            api_prefix="/api/v1",
+            portal_base_url="http://localhost:3000",
+        )
+        == "https://cdn.example.com/logo.png"
+    )
+
+
+def test_logo_url_for_emails_falls_back_to_frontend_asset():
+    assert (
+        resolve_email_logo_url(
+            email_logo_url="",
+            backend_public_url="",
+            api_prefix="/api/v1",
+            portal_base_url="https://app.example.com",
+        )
+        == "https://app.example.com/epoint-logo.png"
+    )
 
 
 def test_missing_template_raises():

@@ -33,7 +33,7 @@ def client_approved_email_body(
         merchant_block = f"\nTu cuenta corresponde a {merchant_name}.\n"
     return f"""Hola {first_name},
 {merchant_block}
-¡Bienvenido/a a ePoint!
+¡Bienvenido/a a Epoint!
 
 Tu solicitud fue aprobada. Ya podés ingresar al portal del cliente para completar tus datos personales y subir la documentación requerida.
 
@@ -45,10 +45,10 @@ Contraseña temporal: {temp_password}
 
 En tu primer ingreso deberás cambiar la contraseña temporal.
 
-Si tenés alguna consulta, respondé a este correo o contactá a tu asesor ePoint.
+Si tenés alguna consulta, respondé a este correo o contactá a tu asesor Epoint.
 
 Saludos,
-Equipo ePoint
+Equipo Epoint
 """
 
 
@@ -60,7 +60,7 @@ def client_approved_whatsapp_body(
     portal_login_url: str,
 ) -> str:
     return (
-        f"Hola {first_name}, ¡bienvenido/a a ePoint! Tu cuenta fue aprobada.\n\n"
+        f"Hola {first_name}, ¡bienvenido/a a Epoint! Tu cuenta fue aprobada.\n\n"
         f"Ingresá al portal para cargar tus datos y documentos:\n"
         f"{portal_login_url}\n\n"
         f"Usuario: {email}\n"
@@ -96,7 +96,7 @@ def onboarding_reminder_email_body(
     if locale.lower().startswith("en"):
         return f"""Hi {first_name},
 
-We're writing from ePoint to remind you that you still have pending items to complete your onboarding.
+We're writing from Epoint to remind you that you still have pending items to complete your onboarding.
 
 To continue, sign in to the portal and complete the following:
 
@@ -106,14 +106,14 @@ Client portal: {portal_login_url}
 
 If you already uploaded a document, it may be under review. If it was rejected, please upload it again from the documents section.
 
-If you have any questions, reply to this email or contact your ePoint advisor.
+If you have any questions, reply to this email or contact your Epoint advisor.
 
 Best regards,
-ePoint Team
+Epoint Team
 """
     return f"""Hola {first_name},
 
-Te escribimos desde ePoint para recordarte amablemente que aún tenés pendiente completar tu onboarding en la plataforma.
+Te escribimos desde Epoint para recordarte amablemente que aún tenés pendiente completar tu onboarding en la plataforma.
 
 Para continuar con tu proceso, ingresá al portal y completá lo siguiente:
 
@@ -123,10 +123,10 @@ Portal del cliente: {portal_login_url}
 
 Si ya subiste algún documento, puede estar en revisión. Si fue rechazado, volvé a subirlo desde la sección de documentos.
 
-Ante cualquier duda, respondé a este correo o contactá a tu asesor ePoint.
+Ante cualquier duda, respondé a este correo o contactá a tu asesor Epoint.
 
 Saludos,
-Equipo ePoint
+Equipo Epoint
 """
 
 
@@ -140,13 +140,13 @@ def onboarding_reminder_whatsapp_body(
     items_block = "\n".join(f"• {item}" for item in pending_items)
     if locale.lower().startswith("en"):
         return (
-            f"Hi {first_name}, this is a reminder from ePoint that you still have pending onboarding items.\n\n"
+            f"Hi {first_name}, this is a reminder from Epoint that you still have pending onboarding items.\n\n"
             f"Pending:\n{items_block}\n\n"
             f"Sign in to the portal:\n{portal_login_url}\n\n"
             "If a document was rejected, please upload it again from the platform."
         )
     return (
-        f"Hola {first_name}, te recordamos desde ePoint que aún tenés pendiente completar tu onboarding.\n\n"
+        f"Hola {first_name}, te recordamos desde Epoint que aún tenés pendiente completar tu onboarding.\n\n"
         f"Pendiente:\n{items_block}\n\n"
         f"Ingresá al portal:\n{portal_login_url}\n\n"
         "Si algún documento fue rechazado, volvé a subirlo desde la plataforma."
@@ -178,10 +178,10 @@ Monto a pagar: {amount_formatted}
 Completá tu pago en el siguiente enlace:
 {payment_url}
 
-Si tenés alguna consulta sobre este pago, respondé a este correo o contactá a tu asesor ePoint.
+Si tenés alguna consulta sobre este pago, respondé a este correo o contactá a tu asesor Epoint.
 
 Saludos,
-Equipo ePoint
+Equipo Epoint
 """
 
 
@@ -196,14 +196,14 @@ def client_conversion_welcome_email_body(
         merchant_block = f"\nTu proceso corresponde a {merchant_name}.\n"
     return f"""Hola {first_name},
 {merchant_block}
-¡Bienvenido/a a ePoint!
+¡Bienvenido/a a Epoint!
 
 Confirmamos que tu pago de {amount_formatted} se procesó exitosamente y que completaste todos los requisitos iniciales.
 
 Tu perfil pasará ahora a revisión por parte de nuestro equipo de Onboarding. Una vez que sea aprobado, nos contactaremos con vos por este mismo medio para informarte los próximos pasos.
 
 Gracias por elegirnos.
-Equipo ePoint
+Equipo Epoint
 """
 
 
@@ -215,7 +215,7 @@ def password_reset_email_body(
 ) -> str:
     return f"""Hola {first_name},
 
-Recibimos una solicitud para restablecer la contraseña de tu cuenta en ePoint.
+Recibimos una solicitud para restablecer la contraseña de tu cuenta en Epoint.
 
 Para elegir una nueva contraseña, abrí el siguiente enlace (válido por {expire_minutes} minutos):
 
@@ -224,5 +224,5 @@ Para elegir una nueva contraseña, abrí el siguiente enlace (válido por {expir
 Si no solicitaste este cambio, ignorá este correo. Tu contraseña actual seguirá siendo la misma.
 
 Saludos,
-Equipo ePoint
+Equipo Epoint
 """

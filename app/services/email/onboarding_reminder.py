@@ -14,8 +14,8 @@ from app.services.notifications.templates import onboarding_reminder_email_body
 
 logger = logging.getLogger(__name__)
 
-REMINDER_EMAIL_SUBJECT = "Recordatorio: completá tu onboarding en ePoint"
-REMINDER_EMAIL_SUBJECT_EN = "Reminder: complete your ePoint onboarding"
+REMINDER_EMAIL_SUBJECT = "Recordatorio: completá tu onboarding en Epoint"
+REMINDER_EMAIL_SUBJECT_EN = "Reminder: complete your Epoint onboarding"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +50,7 @@ def send_onboarding_reminder_email(payload: OnboardingReminderEmailPayload) -> b
         FIRST_NAME=payload.first_name,
         PENDING_ITEMS_HTML=items_html,
         PORTAL_LOGIN_URL=payload.portal_login_url,
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
     )
     return send_resend_text_email(
         intended_recipient=recipient,

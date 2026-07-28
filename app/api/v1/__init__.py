@@ -1,9 +1,10 @@
 from fastapi import APIRouter
 
-from app.api.v1 import advisors, areas, auth, boards, calendly, chatbot, clients, dashboard, documents, docusign, health, influencers, merchants, notifications, onboarding_reminders, payments, portal, prospects, roles, sedes, sources, sub_sellers, users
+from app.api.v1 import advisors, areas, auth, boards, branding, calendly, chatbot, clients, dashboard, documents, docusign, health, influencers, merchants, notifications, onboarding_reminders, payments, portal, prospects, roles, sedes, sources, sub_sellers, users
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(branding.router)
 api_router.include_router(auth.router)
 api_router.include_router(advisors.router)
 api_router.include_router(users.router)

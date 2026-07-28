@@ -30,14 +30,14 @@ def test_send_client_welcome_email_via_resend(mock_send: MagicMock, monkeypatch)
     monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "false")
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
     monkeypatch.setenv("EMAIL_FROM", "onboarding@resend.dev")
-    monkeypatch.setenv("EMAIL_FROM_NAME", "ePoint CRM")
+    monkeypatch.setenv("EMAIL_FROM_NAME", "Epoint Corporation")
     mock_send.return_value = {"id": "email_123"}
 
     assert send_client_welcome_email(_sample_payload()) is True
     mock_send.assert_called_once()
     call_args = mock_send.call_args[0][0]
     assert call_args["to"] == ["cliente@ejemplo.com"]
-    assert call_args["subject"] == "¡Bienvenido a ePoint!"
+    assert call_args["subject"] == "¡Bienvenido a Epoint!"
     assert "Juan" in call_args["text"]
     assert "html" in call_args
     assert "Juan" in call_args["html"]

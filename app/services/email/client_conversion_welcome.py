@@ -10,7 +10,7 @@ from app.services.email.payment_link import format_payment_amount
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import client_conversion_welcome_email_body
 
-CLIENT_CONVERSION_WELCOME_EMAIL_SUBJECT = "¡Bienvenido/a a ePoint! Tu perfil está en revisión"
+CLIENT_CONVERSION_WELCOME_EMAIL_SUBJECT = "¡Bienvenido/a a Epoint! Tu perfil está en revisión"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +43,7 @@ def send_client_conversion_welcome_email(payload: ClientConversionWelcomeEmailPa
         "client_conversion_welcome",
         FIRST_NAME=html.escape(payload.first_name),
         AMOUNT_FORMATTED=amount_formatted,
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
         MERCHANT_LINE=html.escape(merchant_line),
     )
     return send_resend_text_email(

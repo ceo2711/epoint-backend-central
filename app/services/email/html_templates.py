@@ -6,6 +6,8 @@ import html
 from functools import lru_cache
 from pathlib import Path
 
+from app.core.config import Settings
+
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "html"
 
 
@@ -47,6 +49,29 @@ def pending_items_html(items: list[str]) -> str:
     return "".join(rows)
 
 
-def logo_url_for_emails(frontend_base_url: str) -> str:
-    base = frontend_base_url.rstrip("/")
-    return f"{base}/epoint-logo.png"
+def resolve_email_logo_url(
+    *,
+    email_logo_url: str,
+    backend_public_url: str,
+    api_prefix: str,
+    portal_base_url: str,
+) -> str:
+    override = email_logo_url.strip()
+    if override:
+        return override.rstrip("/")
+
+    backend_base = backend_public_url.strip().rstrip("/")
+    if backend_base:
+        prefix = api_prefix if api_prefix.startswith("/") else f"/{api_prefix}"
+        return f"{backend_base}{prefix}/branding/logo"
+
+    return f"{portal_base_url.rstrip('/')}/epoint-logo.png"
+
+
+def logo_url_for_emails(settings: Settings) -> str:
+    return resolve_email_logo_url(
+        email_logo_url=settings.email_logo_url,
+        backend_public_url=settings.backend_public_url,
+        api_prefix=settings.api_prefix,
+        portal_base_url=settings.portal_base_url,
+    )

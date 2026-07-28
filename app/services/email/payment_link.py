@@ -9,7 +9,7 @@ from app.services.email.html_templates import logo_url_for_emails, render_html_t
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import payment_link_email_body
 
-PAYMENT_LINK_EMAIL_SUBJECT = "Tu link de pago ePoint"
+PAYMENT_LINK_EMAIL_SUBJECT = "Tu link de pago Epoint"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +67,7 @@ def send_payment_link_email(payload: PaymentLinkEmailPayload) -> bool:
         AMOUNT_FORMATTED=amount_formatted,
         PAYMENT_URL=payload.payment_url,
         PROVIDER_LABEL=payload.provider_label,
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
         MERCHANT_LINE=merchant_line,
         DESCRIPTION_BLOCK=_description_block(payload.description),
     )

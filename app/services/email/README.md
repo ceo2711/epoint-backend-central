@@ -54,7 +54,7 @@ from app.core.config import get_settings
 from app.services.notifications.templates import client_approved_email_body
 
 settings = get_settings()
-subject = "¡Bienvenido a ePoint!"
+subject = "¡Bienvenido a Epoint!"
 body = client_approved_email_body(
     first_name=payload.first_name,
     email=payload.recipient_email,
@@ -85,7 +85,7 @@ En `.env` (local) y en Heroku (`dev-epoint-crm-backend` → Settings → Config 
 ```env
 SENDGRID_API_KEY=SG.xxx
 EMAIL_FROM=notificaciones@tudominio.com
-EMAIL_FROM_NAME=ePoint CRM
+EMAIL_FROM_NAME=Epoint Corporation
 NOTIFICATIONS_DRY_RUN=false
 ```
 
@@ -127,7 +127,7 @@ def send_client_welcome_email(payload: ClientWelcomeEmailPayload) -> bool:
         message = Mail(
             from_email=(settings.email_from, settings.email_from_name),
             to_emails=payload.recipient_email,
-            subject="¡Bienvenido a ePoint!",
+            subject="¡Bienvenido a Epoint!",
             plain_text_content=body,
         )
         SendGridAPIClient(settings.sendgrid_api_key).send(message)

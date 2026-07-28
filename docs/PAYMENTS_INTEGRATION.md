@@ -142,14 +142,14 @@ Al crear un link desde el detalle del prospecto:
 
 ## Email al cliente
 
-Al generar un link (desde Pagos o desde un prospecto), el CRM puede enviar automáticamente un correo brandeado de **ePoint** al email del cliente.
+Al generar un link (desde Pagos o desde un prospecto), el CRM puede enviar automáticamente un correo brandeado de **Epoint** al email del cliente.
 
 ### Variables de entorno (Resend)
 
 ```env
 RESEND_API_KEY=re_xxxxxxxx
 EMAIL_FROM=pagos@tu-dominio.com
-EMAIL_FROM_NAME=ePoint Central
+EMAIL_FROM_NAME=Epoint Corporation
 EMAIL_DEV_REDIRECT_TO=          # opcional: redirige todos los emails en dev
 NOTIFICATIONS_DRY_RUN=true      # simula envíos sin mandar nada real
 FRONTEND_URL=https://tu-frontend.com
@@ -157,7 +157,7 @@ FRONTEND_URL=https://tu-frontend.com
 
 ### Contenido del email
 
-- Logo y branding ePoint (misma plantilla que bienvenida y reset de contraseña)
+- Logo y branding Epoint (misma plantilla que bienvenida y reset de contraseña)
 - Nombre del cliente, monto y concepto (si hay descripción)
 - Botón **Completar pago** con el link personalizado
 - Link de respaldo en texto plano

@@ -7,7 +7,7 @@ from app.services.email.html_templates import logo_url_for_emails, render_html_t
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import password_reset_email_body
 
-PASSWORD_RESET_EMAIL_SUBJECT = "Restablecé tu contraseña en ePoint"
+PASSWORD_RESET_EMAIL_SUBJECT = "Restablecé tu contraseña en Epoint"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ def send_password_reset_email(payload: PasswordResetEmailPayload) -> bool:
         FIRST_NAME=payload.first_name,
         RESET_URL=payload.reset_url,
         EXPIRE_MINUTES=str(payload.expire_minutes),
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
     )
     return send_resend_text_email(
         intended_recipient=recipient,

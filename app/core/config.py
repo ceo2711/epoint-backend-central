@@ -80,7 +80,13 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     sendgrid_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
-    email_from_name: str = "ePoint CRM"
+    email_from_name: str = "Epoint Corporation"
+    # URL absoluta del logo en emails. Si está vacía, se usa el endpoint público del backend
+    # o, en su defecto, {FRONTEND_URL}/epoint-logo.png (debe ser accesible desde internet).
+    email_logo_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("EMAIL_LOGO_URL"),
+    )
     # En sandbox de Resend, redirige todos los emails a esta dirección verificada.
     email_dev_redirect_to: str = ""
     twilio_account_sid: str = ""

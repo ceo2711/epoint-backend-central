@@ -70,7 +70,7 @@ def send_custom_message_email(payload: CustomMessageEmailPayload) -> bool:
     text_body = (
         f"Hola {payload.first_name},\n\n"
         f"{message_html_to_text(safe_message)}\n\n"
-        f"{payload.sender_name}\nePoint Corporation"
+        f"{payload.sender_name}\nEpoint Corporation"
     )
     html_body = render_html_template(
         "custom_message",
@@ -78,7 +78,7 @@ def send_custom_message_email(payload: CustomMessageEmailPayload) -> bool:
         FIRST_NAME=html_lib.escape(payload.first_name),
         MESSAGE_HTML=safe_message,
         SENDER_NAME=html_lib.escape(payload.sender_name),
-        LOGO_URL=logo_url_for_emails(settings.frontend_url),
+        LOGO_URL=logo_url_for_emails(settings),
     )
     return send_resend_text_email(
         intended_recipient=recipient,
