@@ -65,8 +65,64 @@ def test_license_front_rejected_when_name_missing():
     assert is_verification_approved(result, "DRIVERS_LICENSE_FRONT") is False
 
 
+def test_ssn_approved_even_if_ai_marks_expired():
+    """Las tarjetas SSN no vencen; ignorar alucinaciones de is_expired."""
+    result = _quality_pass_result(
+        is_expired=True,
+        expires_at="2024-03-01",
+        rejection_reasons=[
+            {"en": "Expired", "es": "Vencido"},
+        ],
+    )
+    assert is_verification_approved(result, "SSN_CARD") is True
+
+
+def test_license_still_rejected_when_expired():
+    result = _quality_pass_result(
+        detected_document_type="driver license front",
+        is_expired=True,
+        expires_at="2024-03-01",
+    )
+    assert is_verification_approved(result, "DRIVERS_LICENSE_FRONT") is False
+
+
+def test_utility_bill_ignores_expired_flag():
+    result = _quality_pass_result(
+        detected_document_type="Electric Utility Bill",
+        is_expired=True,
+        name_matches=True,
+        address_matches=True,
+    )
+    assert is_verification_approved(result, "UTILITY_BILL") is True
+
+
+def test_utility_bill_soft_name_match_ocr_typo():
+    result = _quality_pass_result(
+        detected_document_type="Electric Utility Bill",
+        name_matches=False,
+        address_matches=True,
+        detected_name="Eliangli L Viamonte Rivas",
+        rejection_reasons=[
+            {
+                "en": "The customer name on the document ('Eliangli L Viamonte Rivas') does not match.",
+                "es": "El nombre no coincide.",
+            }
+        ],
+    )
+    assert (
+        is_verification_approved(
+            result,
+            "UTILITY_BILL",
+            client_name="Eliangi Liduvina Viamonte Rivas",
+        )
+        is True
+    )
+
+
 def test_build_document_type_context_includes_expected_type():
     context = build_document_type_context("SSN_CARD", "Alexis Guanique")
     assert "SSN_CARD" in context
     assert "Alexis Guanique" in context
     assert "Social Security" in context
+    assert "do NOT expire" in context or "never expire" in context
+    assert "Today's date" in context

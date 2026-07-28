@@ -116,7 +116,10 @@ class ClientResponse(ORMBase):
     created_at: datetime
     docusign_contract_signed_at: datetime | None = None
     signed_contract: ClientSignedContractBrief | None = None
-
+    board_unlocked: bool = Field(
+        default=False,
+        description="True cuando el cliente ya puede ver/usar el tablero del portal",
+    )
 
 class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False

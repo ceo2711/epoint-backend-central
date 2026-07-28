@@ -34,7 +34,7 @@ class TestTryAutoApprovePendingClient:
     def test_skips_when_not_pending(self):
         service = ClientService(MagicMock())
         client = SimpleNamespace(id=9, status=ClientStatus.EN_CARGA_DATOS.value)
-        assert service.try_auto_approve_pending_client(actor=MagicMock(), client=client) is False
+        assert service.try_auto_approve_pending_client(actor=MagicMock(), client=client) is None
 
     def test_skips_when_validation_fails(self):
         service = ClientService(MagicMock())
@@ -43,7 +43,7 @@ class TestTryAutoApprovePendingClient:
             "app.services.chatbot.approval_rules.validate_approval_requirements",
             return_value=["Email vacío"],
         ):
-            assert service.try_auto_approve_pending_client(actor=MagicMock(), client=client) is False
+            assert service.try_auto_approve_pending_client(actor=MagicMock(), client=client) is None
 
     def test_approves_when_valid(self):
         service = ClientService(MagicMock())
@@ -55,12 +55,12 @@ class TestTryAutoApprovePendingClient:
             "app.services.chatbot.approval_rules.validate_approval_requirements",
             return_value=[],
         ):
-            ok = service.try_auto_approve_pending_client(actor=actor, client=client, commit=False)
+            password = service.try_auto_approve_pending_client(actor=actor, client=client, commit=False)
 
-        assert ok is True
+        assert password == "TempPass1!"
         service.approve_client.assert_called_once_with(
             actor=actor,
             client=client,
-            send_welcome_notifications=True,
+            send_welcome_notifications=False,
             commit=False,
         )

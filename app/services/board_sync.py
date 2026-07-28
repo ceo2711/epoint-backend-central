@@ -7,7 +7,11 @@ from app.constants.kanban_columns import KANBAN_COLUMN_TITLE_ALIASES, KANBAN_COL
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
-from app.services.default_board_cards import seed_default_template_cards_for_list
+from app.models.client import Client
+from app.services.default_board_cards import (
+    merge_missing_default_cards_to_board_list,
+    seed_default_template_cards_for_list,
+)
 
 
 def sync_template_lists(db: Session, template: BoardTemplate) -> None:
@@ -70,6 +74,14 @@ def sync_board_lists(db: Session, board: Board) -> None:
             card.position = index
 
 
+def sync_board_default_cards(db: Session, board: Board) -> None:
+    client = db.get(Client, board.client_id)
+    for board_list in board.lists:
+        merge_missing_default_cards_to_board_list(
+            db, board_list=board_list, client=client
+        )
+
+
 def sync_all_boards(db: Session) -> None:
     template = db.execute(
         select(BoardTemplate)
@@ -84,3 +96,4 @@ def sync_all_boards(db: Session) -> None:
     ).unique().scalars().all()
     for board in boards:
         sync_board_lists(db, board)
+        sync_board_default_cards(db, board)

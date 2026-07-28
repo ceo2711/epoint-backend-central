@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     # Pagos — general
     payments_enabled: bool = True
     payments_default_provider: str = "authorize"
+    # Si True, los links públicos muestran "Pagar" y aprueban sin cobro real.
+    payment_test: bool = False
 
     # Pagos — Stripe (legacy, no expuesto en UI)
     stripe_secret_key: str = ""

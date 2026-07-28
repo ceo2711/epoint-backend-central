@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -7,6 +8,11 @@ from app.core.config import get_settings
 from app.services.document_media import prepare_vision_images
 
 logger = logging.getLogger(__name__)
+
+# 503 (alta demanda) y 429 (rate limit) suelen ser temporales.
+_RETRYABLE_STATUS_CODES = frozenset({429, 503})
+_MAX_GENERATE_ATTEMPTS = 4
+_RETRY_BASE_SECONDS = 1.5
 
 
 class GeminiLLMService:
@@ -50,6 +56,41 @@ class GeminiLLMService:
                 if part_text:
                     parts.append(str(part_text))
         return "".join(parts)
+
+    @staticmethod
+    def _is_retryable_api_error(exc: BaseException) -> bool:
+        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        if code in _RETRYABLE_STATUS_CODES:
+            return True
+        message = str(exc).lower()
+        return "high demand" in message or "try again later" in message or "unavailable" in message
+
+    def _generate_content_with_retry(self, *, contents: Any, config: Any) -> Any:
+        """Llama a Gemini con reintentos ante 429/503 (demanda / rate limit)."""
+        client = self._get_client()
+        last_exc: BaseException | None = None
+        for attempt in range(1, _MAX_GENERATE_ATTEMPTS + 1):
+            try:
+                return client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config,
+                )
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= _MAX_GENERATE_ATTEMPTS or not self._is_retryable_api_error(exc):
+                    raise
+                delay = _RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+                logger.warning(
+                    "Gemini temporalmente no disponible (intento %s/%s): %s — reintento en %.1fs",
+                    attempt,
+                    _MAX_GENERATE_ATTEMPTS,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+        assert last_exc is not None
+        raise last_exc
 
     async def analyze_text(self, prompt: str) -> str:
         from google.genai import types
@@ -124,9 +165,7 @@ class GeminiLLMService:
                 types.Part.from_bytes(data=image_bytes, mime_type=image_media_type)
             )
 
-        client = self._get_client()
-        response = client.models.generate_content(
-            model=self.model_name,
+        response = self._generate_content_with_retry(
             contents=types.Content(role="user", parts=parts),
             config=types.GenerateContentConfig(temperature=0.1),
         )

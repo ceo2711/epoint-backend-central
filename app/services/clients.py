@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 
 
 def _generate_temp_password(length: int = 12) -> str:
-    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    # Sin # & / ? = : @ — evitan cortes al copiar desde mails/HTML/URLs.
+    alphabet = string.ascii_letters + string.digits + "!@$%"
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
@@ -396,12 +397,12 @@ class ClientService:
             entity_id=client.id,
         )
 
-        auto_approved = self.try_auto_approve_pending_client(
+        portal_temp_password = self.try_auto_approve_pending_client(
             actor=actor,
             client=client,
             commit=False,
         )
-        if not auto_approved:
+        if portal_temp_password is None:
             onboarding_users = self._get_onboarding_team()
             self.notifications.notify(
                 event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
@@ -413,6 +414,8 @@ class ClientService:
 
         self.db.commit()
         self.db.refresh(client)
+        if portal_temp_password is not None:
+            self._send_client_portal_welcome(client, portal_temp_password)
         return client
 
     def update_client(
@@ -482,12 +485,12 @@ class ClientService:
             event_types=[NotificationEventType.CLIENT_REJECTED.value],
             user_ids=[actor.id],
         )
-        auto_approved = self.try_auto_approve_pending_client(
+        portal_temp_password = self.try_auto_approve_pending_client(
             actor=actor,
             client=client,
             commit=False,
         )
-        if not auto_approved:
+        if portal_temp_password is None:
             onboarding_users = self._get_onboarding_team()
             self.notifications.notify(
                 event_type=NotificationEventType.NEW_CLIENT_PENDING_REVIEW.value,
@@ -498,6 +501,8 @@ class ClientService:
             )
         self.db.commit()
         self.db.refresh(client)
+        if portal_temp_password is not None:
+            self._send_client_portal_welcome(client, portal_temp_password)
         return client
 
     def reject_client(self, *, actor: User, client: Client, reason: str) -> Client:
@@ -665,10 +670,15 @@ class ClientService:
         actor: User,
         client: Client,
         commit: bool = True,
-    ) -> bool:
-        """Revisa datos mínimos y aprueba automáticamente (sin asignar asesor aún)."""
+    ) -> str | None:
+        """Revisa datos mínimos y aprueba automáticamente.
+
+        Returns:
+            Contraseña temporal si se aprobó; ``None`` si no aplicó auto-aprobación.
+            Con ``commit=False`` el caller debe enviar el welcome **después** de su commit.
+        """
         if client.status != ClientStatus.PENDIENTE_DE_REVISION.value:
-            return False
+            return None
 
         from app.services.chatbot.approval_rules import validate_approval_requirements
 
@@ -679,16 +689,47 @@ class ClientService:
                 client.id,
                 "; ".join(issues),
             )
-            return False
+            return None
 
-        self.approve_client(
+        _client, temp_password = self.approve_client(
             actor=actor,
             client=client,
-            send_welcome_notifications=True,
+            # Con commit=False el welcome lo dispara el caller tras persistir.
+            send_welcome_notifications=commit,
             commit=commit,
         )
         logger.info("Cliente #%s auto-aprobado (asesor se asignará al completar docs)", client.id)
-        return True
+        return temp_password
+
+    def _send_client_portal_welcome(self, client: Client, temp_password: str) -> None:
+        """Email + WhatsApp con credenciales. Llamar solo después de un commit exitoso."""
+        settings = get_settings()
+        portal_login_url = settings.portal_login_url
+        merchant_name: str | None = None
+        if client.merchant_id:
+            merchant_row = self.db.get(Merchant, client.merchant_id)
+            merchant_name = merchant_row.name if merchant_row else None
+
+        send_client_welcome_email(
+            ClientWelcomeEmailPayload(
+                recipient_email=client.email,
+                first_name=client.first_name,
+                temp_password=temp_password,
+                portal_login_url=portal_login_url,
+                client_id=client.id,
+                merchant_name=merchant_name,
+            )
+        )
+        send_client_welcome_whatsapp(
+            ClientWelcomeWhatsAppPayload(
+                recipient_phone=client.phone,
+                first_name=client.first_name,
+                email=client.email,
+                temp_password=temp_password,
+                portal_login_url=portal_login_url,
+                client_id=client.id,
+            )
+        )
 
     def approve_client(
         self,
@@ -705,6 +746,10 @@ class ClientService:
         El asesor y el tablero se asignan al pasar a LISTO_PARA_TRABAJAR
         (datos + documentos verificados).
         `advisor_user_id` se ignora (compatibilidad con clientes/API antiguos).
+
+        Las credenciales por email/WhatsApp se envían **después** del commit
+        (si ``commit=True``). Con ``commit=False``, el caller debe llamar
+        ``_send_client_portal_welcome`` tras persistir.
         """
         del board_template, advisor_user_id  # compat / no usados en approve
 
@@ -729,39 +774,6 @@ class ClientService:
 
         settings = get_settings()
         portal_login_url = settings.portal_login_url
-        merchant_name: str | None = None
-        if client.merchant_id:
-            merchant_row = self.db.get(Merchant, client.merchant_id)
-            merchant_name = merchant_row.name if merchant_row else None
-
-        if send_welcome_notifications:
-            send_client_welcome_email(
-                ClientWelcomeEmailPayload(
-                    recipient_email=client.email,
-                    first_name=client.first_name,
-                    temp_password=temp_password,
-                    portal_login_url=portal_login_url,
-                    client_id=client.id,
-                    merchant_name=merchant_name,
-                )
-            )
-
-            send_client_welcome_whatsapp(
-                ClientWelcomeWhatsAppPayload(
-                    recipient_phone=client.phone,
-                    first_name=client.first_name,
-                    email=client.email,
-                    temp_password=temp_password,
-                    portal_login_url=portal_login_url,
-                    client_id=client.id,
-                )
-            )
-        else:
-            logger.info(
-                "Welcome email/WhatsApp omitidos para cliente #%s (%s) — aprobación masiva",
-                client.id,
-                client.email,
-            )
 
         self.notifications.notify(
             event_type=NotificationEventType.CLIENT_APPROVED.value,
@@ -790,8 +802,21 @@ class ClientService:
         if commit:
             self.db.commit()
             self.db.refresh(client)
+            if send_welcome_notifications:
+                self._send_client_portal_welcome(client, temp_password)
+            else:
+                logger.info(
+                    "Welcome email/WhatsApp omitidos para cliente #%s (%s) — aprobación masiva",
+                    client.id,
+                    client.email,
+                )
         else:
             self.db.flush()
+            if send_welcome_notifications:
+                logger.warning(
+                    "Welcome diferido para cliente #%s — commit=False; el caller debe enviar tras persistir",
+                    client.id,
+                )
         return client, temp_password
 
     def promote_to_ready_to_work(self, client: Client) -> User | None:
@@ -880,8 +905,10 @@ class ClientService:
 
         if successes:
             self.db.commit()
-            for client, _ in successes:
+            for client, temp_password in successes:
                 self.db.refresh(client)
+                if send_welcome_notifications:
+                    self._send_client_portal_welcome(client, temp_password)
         elif failures:
             self.db.rollback()
 

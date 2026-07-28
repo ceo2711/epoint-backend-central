@@ -19,6 +19,7 @@ class PaymentConfigResponse(BaseModel):
     payments_enabled: bool
     default_provider: PaymentProviderLiteral
     stub_mode: bool
+    payment_test: bool = False
     providers: list[PaymentProviderStatus]
     webhook_base_url: str | None = None
 
@@ -82,6 +83,7 @@ class PublicPaymentLinkResponse(BaseModel):
     status: PaymentLinkStatusLiteral
     description: str | None
     stub_mode: bool
+    payment_test: bool = False
     can_pay: bool
     checkout_url: str | None = None
     hosted_payment_token: str | None = None

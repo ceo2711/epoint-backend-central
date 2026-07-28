@@ -12,6 +12,7 @@ from app.models.card_attachment import CardAttachment
 from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.client import Client
 from app.models.credential_submission import CredentialSubmission
+from app.models.document import Document
 from app.models.user import User
 from app.schemas.board import (
     BoardCardResponse,
@@ -272,13 +273,32 @@ def get_board(
         raise HTTPException(status_code=403)
     if current_user.role.code != "CLIENT":
         _require_staff_client_workspace(db, current_user, client_id, merchant_id)
+
+    client = db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    from app.services.client_onboarding_status import client_has_board_access, is_board_unlocked
+
+    # El cliente solo ve el tablero cuando datos + docs mínimos están OK.
+    if current_user.role.code == "CLIENT":
+        docs = list(
+            db.execute(select(Document).where(Document.client_id == client_id)).scalars().all()
+        )
+        if not client_has_board_access(client, docs):
+            raise HTTPException(
+                status_code=404,
+                detail="El tablero se habilita cuando completes tus datos y documentos",
+            )
+
     board_service = BoardService(db)
     board = board_service.get_board_for_client(client_id)
     if board is None:
-        client = db.get(Client, client_id)
-        if client is None:
-            raise HTTPException(status_code=404, detail="Cliente no encontrado")
-        if client.approved_at:
+        # Crear si el cliente ya está listo, o si staff necesita previsualizar post-aprobación.
+        can_create = is_board_unlocked(client.status) or (
+            current_user.role.code != "CLIENT" and bool(client.approved_at)
+        )
+        if can_create:
             board_service.create_from_template(client)
             db.commit()
             board = board_service.get_board_for_client(client_id)

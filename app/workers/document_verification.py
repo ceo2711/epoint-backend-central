@@ -16,10 +16,12 @@ from app.services.document_requirements import document_needs_client_action
 from app.services.document_verification_messages import (
     build_approval_messages,
     build_rejection_messages,
+    system_verification_failure_result,
 )
 from app.services.document_verification_rules import (
     build_document_type_context,
     is_verification_approved,
+    normalize_verification_result,
 )
 from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
@@ -36,6 +38,7 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
   "expires_at": "YYYY-MM-DD or null",
   "document_type_matches": true/false,
   "detected_document_type": "short label of what the file actually is (e.g. SSN card, invoice, bank statement)",
+  "detected_name": "name printed on the document or null",
   "name_matches": true/false,
   "address_matches": true/false,
   "rejection_reasons": [{"en": "English reason", "es": "Motivo en español"}],
@@ -43,14 +46,17 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
 }
 
 Critical rules:
+- Always respect Today's date from the context block when judging whether dates are past, current, or future.
 - document_type_matches is the most important field. Set it to false if the file is NOT the exact document type requested, even when quality is good.
 - detected_document_type must describe what you actually see, not what was requested.
-- name_matches: true only if the client's full name appears on the document (required for identity documents and address proofs), EXCEPT DRIVERS_LICENSE_BACK where name is usually absent — set name_matches=true when it is clearly the license back.
+- detected_name must be the name as printed on the document (or null if none).
+- name_matches: true when it is clearly the same person (middle names may be abbreviated/omitted; minor OCR typos allowed). false only for a clearly different person. For DRIVERS_LICENSE_BACK, set name_matches=true when the image is clearly the license back.
 - address_matches: true only for utility bills / bank statements when the service/mailing address is visible and plausible.
+- is_expired: only for ID documents with a real expiration date (license, passport, green card, work permit). For SSN cards, utility bills, and bank statements always set is_expired=false and expires_at=null.
 - Every reason must include both "en" and "es".
 - If rejected, rejection_reasons must explain the main issue (wrong document type, missing name, poor quality, etc.).
 - If approved, approval_reasons must cite verified facts (type matched, name found, etc.) — never claim a match that is false.
-- Criteria: readable, complete, in color, no cropped corners, valid/not expired, AND correct document type."""
+- Criteria: readable, complete, in color, no cropped corners, correct document type, and (when applicable) not expired."""
 
 
 def run_document_verification(document_id: int) -> dict:
@@ -79,7 +85,11 @@ def run_document_verification(document_id: int) -> dict:
 
         llm = get_llm_service()
         client_name = f"{client.first_name} {client.last_name}".strip()
-        type_context = build_document_type_context(document.type, client_name)
+        type_context = build_document_type_context(
+            document.type,
+            client_name,
+            today=date.today(),
+        )
         try:
             result_text = llm.analyze_document_bytes(
                 content=file_bytes,
@@ -87,19 +97,12 @@ def run_document_verification(document_id: int) -> dict:
                 prompt=f"{VERIFICATION_PROMPT}\n\n{type_context}",
             )
             result = json.loads(result_text.strip().removeprefix("```json").removesuffix("```").strip())
-        except Exception as exc:
+        except Exception:
             logger.exception("Error verificando documento %s", document_id)
-            result = {
-                "is_readable": False,
-                "rejection_reasons": [
-                    {
-                        "en": f"AI verification error: {exc}",
-                        "es": f"Error de verificación IA: {exc}",
-                    }
-                ],
-            }
+            result = system_verification_failure_result()
 
-        approved = is_verification_approved(result, document.type)
+        result = normalize_verification_result(result, document.type, client_name=client_name)
+        approved = is_verification_approved(result, document.type, client_name=client_name)
 
         expires_str = result.get("expires_at")
         rejection_messages: list[dict[str, str]] = []

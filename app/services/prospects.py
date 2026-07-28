@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -12,6 +13,7 @@ from app.models.client import Client
 from app.models.docusign_envelope import DocusignEnvelope
 from app.models.enums import (
     ClientSource,
+    NotificationEventType,
     ProspectHistoryEventType,
     ProspectStatus,
 )
@@ -57,6 +59,9 @@ MEETING_COMPLETE_STATUSES = frozenset({
     ProspectStatus.CONTRATO_ENVIADO.value,
     ProspectStatus.PAGO_COMPLETADO.value,
 })
+
+# Misma cifra fija que el dashboard de comisiones de ventas.
+SALES_COMMISSION_PER_SALE_USD = Decimal("500")
 
 
 class ProspectService:
@@ -676,35 +681,58 @@ class ProspectService:
         self.db.refresh(prospect)
         return prospect
 
-    def on_payment_completed(self, link: PaymentLink) -> None:
+    def on_payment_completed(self, link: PaymentLink) -> Client | None:
         if link.prospect_id is None:
-            return
+            return None
         prospect = self.db.get(Prospect, link.prospect_id)
         if prospect is None or prospect.converted_client_id is not None:
-            return
+            return None
         actor = link.created_by
+        if actor is None and link.created_by_user_id is not None:
+            actor = self.db.get(User, link.created_by_user_id)
         if actor is None:
-            return
+            return None
+        # El pago es un evento de sistema: forzamos PAGO_COMPLETADO aunque el
+        # grafo manual no permita el salto (p. ej. desde PENDIENTE_CONTACTAR).
         if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
-            self._transition_status(
+            previous = prospect.status
+            prospect.status = ProspectStatus.PAGO_COMPLETADO.value
+            self._add_history(
                 prospect,
                 actor=actor,
-                new_status=ProspectStatus.PAGO_COMPLETADO.value,
-                note="Pago completado",
                 event_type=ProspectHistoryEventType.PAYMENT_COMPLETED.value,
+                from_status=previous,
+                to_status=prospect.status,
+                note="Pago completado",
             )
         self.db.flush()
-        self.try_auto_convert(prospect.id, actor=actor)
+        return self.try_auto_convert(prospect.id, actor=actor, from_payment=True)
 
-    def try_auto_convert(self, prospect_id: int, *, actor: User | None = None) -> Client | None:
+    def try_auto_convert(
+        self,
+        prospect_id: int,
+        *,
+        actor: User | None = None,
+        from_payment: bool = False,
+    ) -> Client | None:
         prospect = self.db.get(Prospect, prospect_id)
         if prospect is None or prospect.converted_client_id is not None:
             return None
         if not self._ready_for_conversion(prospect):
             return None
-        return self.convert_to_client(prospect=prospect, actor=actor or prospect.assigned_to)
+        return self.convert_to_client(
+            prospect=prospect,
+            actor=actor or prospect.assigned_to,
+            from_payment=from_payment,
+        )
 
-    def convert_to_client(self, *, prospect: Prospect, actor: User) -> Client:
+    def convert_to_client(
+        self,
+        *,
+        prospect: Prospect,
+        actor: User,
+        from_payment: bool = False,
+    ) -> Client:
         if prospect.converted_client_id is not None:
             client = self.db.get(Client, prospect.converted_client_id)
             if client is None:
@@ -768,7 +796,18 @@ class ProspectService:
             entity_id=prospect.id,
             metadata={"client_id": client.id},
         )
+        self.db.flush()
+        created_notifications = self._notify_prospect_converted(
+            prospect=prospect,
+            client=client,
+            link=link,
+            from_payment=from_payment,
+        )
         self.db.commit()
+        if created_notifications:
+            from app.services.notifications.hub import notification_hub
+
+            notification_hub.publish_in_app(created_notifications)
         self.db.refresh(client)
         if link is not None:
             self._send_client_conversion_welcome(client, link)
@@ -805,17 +844,95 @@ class ProspectService:
         client.conversion_welcome_email_sent_at = datetime.now(timezone.utc)
         self.db.commit()
 
+    def _notify_prospect_converted(
+        self,
+        *,
+        prospect: Prospect,
+        client: Client,
+        link: PaymentLink | None,
+        from_payment: bool,
+    ) -> list:
+        from app.models.notification import Notification
+        from app.services.notifications.service import NotificationService
+
+        recipients: list[User] = []
+        seen: set[int] = set()
+
+        def _add(user: User | None) -> None:
+            if user is None or not user.is_active or user.id is None:
+                return
+            if user.id in seen:
+                return
+            seen.add(user.id)
+            recipients.append(user)
+
+        if link is not None:
+            creator = link.created_by or self.db.get(User, link.created_by_user_id)
+            _add(creator)
+        _add(prospect.assigned_to)
+        if not recipients:
+            return []
+
+        name = f"{client.first_name} {client.last_name}".strip()
+        if from_payment and link is not None:
+            title = "¡Felicitaciones! Venta concretada"
+            body = (
+                f"{name} completó el pago de {link.currency} {link.amount} "
+                f"y pasó de prospecto a cliente. Tu comisión quedó registrada."
+            )
+            event_type = NotificationEventType.PAYMENT_LINK_COMPLETED.value
+        else:
+            title = "¡Felicitaciones! Prospecto convertido"
+            body = (
+                f"{name} pasó de prospecto a cliente. "
+                f"Venta concretada: tu comisión quedó registrada."
+            )
+            event_type = NotificationEventType.PROSPECT_CONVERTED.value
+
+        payload: dict = {
+            "prospect_id": prospect.id,
+            "client_id": client.id,
+            "customer_name": name,
+            "customer_email": client.email,
+            "commission_usd": str(SALES_COMMISSION_PER_SALE_USD.quantize(Decimal("0.01"))),
+        }
+        if link is not None:
+            payload.update(
+                {
+                    "payment_link_id": link.id,
+                    "amount": str(link.amount),
+                    "currency": link.currency,
+                }
+            )
+
+        created: list[Notification] = NotificationService(self.db).notify(
+            event_type=event_type,
+            users=recipients,
+            title=title,
+            body=body,
+            payload=payload,
+            commit=False,
+        )
+        return created
+
     def _ready_for_conversion(self, prospect: Prospect) -> bool:
         if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
-            return False
-        if prospect.calendly_event_id is None:
-            return False
-        if prospect.status not in MEETING_COMPLETE_STATUSES:
             return False
         if prospect.payment_link_id is None:
             return False
         link = self.db.get(PaymentLink, prospect.payment_link_id)
         if link is None or link.status != PaymentLinkStatus.PAID.value:
+            return False
+
+        from app.core.config import get_settings
+
+        # En PAYMENT_TEST el pago solo alcanza para convertir (sin reunión/contrato).
+        if get_settings().payment_test:
+            return True
+
+        if prospect.calendly_event_id is None:
+            return False
+        if prospect.status not in MEETING_COMPLETE_STATUSES:
             return False
         envelopes = self.list_linked_envelopes(prospect)
         return any(envelope.status.lower() == "completed" for envelope in envelopes)

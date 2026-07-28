@@ -8,9 +8,30 @@ from app.services.document_verification_rules import requires_name_match
 
 BilingualMessage = dict[str, str]
 
+# Fallo técnico (SDK, red, etc.): nunca exponer el detalle interno al cliente.
+SYSTEM_VERIFICATION_FAILURE = {
+    "en": (
+        "A verification error occurred. Please contact your onboarding specialist "
+        "or advisor as soon as possible so they can help you continue."
+    ),
+    "es": (
+        "Ocurrió un error en la verificación. Comunicate a la brevedad con tu "
+        "especialista de onboarding o tu asesor para continuar con el proceso."
+    ),
+}
+
 
 def _msg(en: str, es: str) -> BilingualMessage:
     return {"en": en, "es": es}
+
+
+def system_verification_failure_result() -> dict[str, Any]:
+    """Resultado sintético de rechazo por error de sistema (sin detalles técnicos)."""
+    return {
+        "is_readable": False,
+        "rejection_reasons": [dict(SYSTEM_VERIFICATION_FAILURE)],
+        "system_error": True,
+    }
 
 
 def normalize_bilingual_messages(raw: Any) -> list[BilingualMessage]:

@@ -65,7 +65,7 @@ tests/{unit,api}/
 | Documentos + IA | upload → `enqueue_document_verification`; reglas en `document_requirements.py` |
 | Alternativas de docs | Si licencia aprobada, no avisar por green card rechazada (`document_needs_client_action`) |
 | Board Kanban | `services/boards.py`, `constants/kanban_columns.py` |
-| Pagos | `services/payments/` + webhooks; docs en `docs/` |
+| Pagos | `services/payments/` + webhooks; `PAYMENT_TEST=true` simula cobro con botón Pagar en `/pagar/{token}` |
 | Notificaciones | hub + email/WhatsApp/PUSH Expo; `push_device_tokens`; `NOTIFICATIONS_DRY_RUN` |
 | Chatbot | acciones reales; no inventar confirmaciones |
 | Onboarding reminders | scheduler inline + lock Postgres |

@@ -15,12 +15,9 @@ from app.models.client import Client
 from app.models.role import Role
 from app.models.user import User
 from app.services.clients import ClientService
-from app.services.prospects import ProspectService
+from app.services.prospects import ProspectService, SALES_COMMISSION_PER_SALE_USD
 from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader, user_area_code
 from app.services.sede_scope import effective_sede_id
-
-# Comisión fija del vendedor por cada pago de prospecto concretado (USD).
-SALES_COMMISSION_PER_SALE_USD = Decimal("500")
 
 # Embudo comercial = estados de prospecto (antes de pasar a cliente).
 SALES_STATUSES = (

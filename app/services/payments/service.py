@@ -70,6 +70,9 @@ class PaymentService:
 
     @property
     def stub_mode(self) -> bool:
+        """Sin cobro real: PAYMENT_TEST o proveedores no configurados."""
+        if self.settings.payment_test:
+            return True
         return not (self.authorize.is_configured or self.paypal.is_configured)
 
     def get_config(self, user: User) -> PaymentConfigResponse:
@@ -93,6 +96,7 @@ class PaymentService:
             payments_enabled=self.settings.payments_enabled,
             default_provider=default,  # type: ignore[arg-type]
             stub_mode=self.stub_mode,
+            payment_test=self.settings.payment_test,
             providers=providers,
             webhook_base_url=self.settings.payments_webhook_base_url,
         )
@@ -176,36 +180,38 @@ class PaymentService:
         external_url: str | None = None
 
         try:
-            if payload.provider == PaymentProvider.AUTHORIZE.value and self.authorize.is_configured:
-                result = self.authorize.create_checkout_link(
-                    amount=payload.amount,
-                    currency=payload.currency,
-                    customer_email=str(payload.customer_email),
-                    customer_first_name=payload.customer_first_name,
-                    customer_last_name=payload.customer_last_name,
-                    customer_phone=payload.customer_phone,
-                    description=payload.description,
-                    reference_id=token,
-                    return_url=success_url,
-                    cancel_url=cancel_url,
-                )
-                external_id = result.external_id
-                external_url = result.checkout_url
-            elif payload.provider == PaymentProvider.PAYPAL.value and self.paypal.is_configured:
-                result = self.paypal.create_checkout_link(
-                    amount=payload.amount,
-                    currency=payload.currency,
-                    customer_email=str(payload.customer_email),
-                    customer_first_name=payload.customer_first_name,
-                    customer_last_name=payload.customer_last_name,
-                    customer_phone=payload.customer_phone,
-                    description=payload.description,
-                    reference_id=token,
-                    return_url=success_url,
-                    cancel_url=cancel_url,
-                )
-                external_id = result.external_id
-                external_url = result.checkout_url
+            # En PAYMENT_TEST no creamos checkout real: el portal aprueba con "Pagar".
+            if not self.settings.payment_test:
+                if payload.provider == PaymentProvider.AUTHORIZE.value and self.authorize.is_configured:
+                    result = self.authorize.create_checkout_link(
+                        amount=payload.amount,
+                        currency=payload.currency,
+                        customer_email=str(payload.customer_email),
+                        customer_first_name=payload.customer_first_name,
+                        customer_last_name=payload.customer_last_name,
+                        customer_phone=payload.customer_phone,
+                        description=payload.description,
+                        reference_id=token,
+                        return_url=success_url,
+                        cancel_url=cancel_url,
+                    )
+                    external_id = result.external_id
+                    external_url = result.checkout_url
+                elif payload.provider == PaymentProvider.PAYPAL.value and self.paypal.is_configured:
+                    result = self.paypal.create_checkout_link(
+                        amount=payload.amount,
+                        currency=payload.currency,
+                        customer_email=str(payload.customer_email),
+                        customer_first_name=payload.customer_first_name,
+                        customer_last_name=payload.customer_last_name,
+                        customer_phone=payload.customer_phone,
+                        description=payload.description,
+                        reference_id=token,
+                        return_url=success_url,
+                        cancel_url=cancel_url,
+                    )
+                    external_id = result.external_id
+                    external_url = result.checkout_url
         except PaymentProviderError as exc:
             logger.warning("Checkout externo falló (%s); usando portal local", exc)
             if not self.stub_mode:
@@ -214,6 +220,11 @@ class PaymentService:
                     detail=str(exc),
                 ) from exc
 
+        use_portal_url = (
+            self.settings.payment_test
+            or payload.provider == PaymentProvider.AUTHORIZE.value
+            or not external_url
+        )
         link = PaymentLink(
             public_token=token,
             created_by_user_id=user.id,
@@ -228,12 +239,8 @@ class PaymentService:
             provider=payload.provider,
             status=PaymentLinkStatus.PENDING.value,
             description=payload.description,
-            # Authorize Accept Hosted necesita POST del token: el link compartible es el portal.
-            payment_url=(
-                portal_url
-                if payload.provider == PaymentProvider.AUTHORIZE.value
-                else (external_url or portal_url)
-            ),
+            # Authorize Accept Hosted / modo test: el link compartible es el portal.
+            payment_url=portal_url if use_portal_url else external_url,
             external_checkout_id=external_id,
             external_checkout_url=external_url,
         )
@@ -314,6 +321,7 @@ class PaymentService:
             status=link.status,  # type: ignore[arg-type]
             description=link.description,
             stub_mode=self.stub_mode,
+            payment_test=self.settings.payment_test,
             can_pay=can_pay,
             checkout_url=checkout_url,
             hosted_payment_token=hosted_payment_token,
@@ -442,30 +450,58 @@ class PaymentService:
             return
         link.status = PaymentLinkStatus.PAID.value
         link.paid_at = datetime.now(timezone.utc)
-        creator = self.db.get(User, link.created_by_user_id)
-        if creator and creator.is_active:
-            NotificationService(self.db).notify(
-                event_type="PAYMENT_LINK_COMPLETED",
-                users=[creator],
-                title="Pago recibido",
-                body=(
-                    f"{link.customer_first_name} {link.customer_last_name} completó el pago de "
-                    f"{link.currency} {link.amount}."
-                ),
-                payload={
-                    "payment_link_id": link.id,
-                    "prospect_id": link.prospect_id,
-                    "customer_email": link.customer_email,
-                    "customer_name": f"{link.customer_first_name} {link.customer_last_name}",
-                    "amount": str(link.amount),
-                    "currency": link.currency,
-                },
-                commit=False,
-            )
+
+        converted_client = None
         if link.prospect_id is not None:
             from app.services.prospects import ProspectService
 
-            ProspectService(self.db).on_payment_completed(link)
+            converted_client = ProspectService(self.db).on_payment_completed(link)
+
+        # Si ya se convirtió, convert_to_client ya envió la notif combinada.
+        if converted_client is not None:
+            return
+
+        recipients: list[User] = []
+        seen: set[int] = set()
+
+        def _add(user: User | None) -> None:
+            if user is None or not user.is_active or user.id is None:
+                return
+            if user.id in seen:
+                return
+            seen.add(user.id)
+            recipients.append(user)
+
+        creator = self.db.get(User, link.created_by_user_id)
+        _add(creator)
+        if link.prospect_id is not None:
+            from app.models.prospect import Prospect
+
+            prospect = self.db.get(Prospect, link.prospect_id)
+            if prospect is not None:
+                _add(prospect.assigned_to)
+
+        if not recipients:
+            return
+
+        NotificationService(self.db).notify(
+            event_type="PAYMENT_LINK_COMPLETED",
+            users=recipients,
+            title="Pago recibido",
+            body=(
+                f"{link.customer_first_name} {link.customer_last_name} completó el pago de "
+                f"{link.currency} {link.amount}."
+            ),
+            payload={
+                "payment_link_id": link.id,
+                "prospect_id": link.prospect_id,
+                "customer_email": link.customer_email,
+                "customer_name": f"{link.customer_first_name} {link.customer_last_name}",
+                "amount": str(link.amount),
+                "currency": link.currency,
+            },
+            commit=True,
+        )
 
     def _get_link_by_token(self, token: str, *, raise_if_missing: bool = True) -> PaymentLink | None:
         link = self.db.execute(

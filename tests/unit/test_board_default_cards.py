@@ -8,6 +8,7 @@ from app.services.default_board_cards import (
     apply_default_cards_to_board_list,
     build_client_personal_data_description,
     create_board_card_from_default,
+    merge_missing_default_cards_to_board_list,
     resolve_default_comment_author,
 )
 
@@ -144,6 +145,33 @@ def test_apply_default_cards_to_board_list_uses_column_title():
 
     assert len(created) == 4
     assert db.add.call_count == 7
+
+
+def test_merge_missing_default_cards_skips_existing_titles():
+    db = MagicMock()
+    board_list = MagicMock(id=10, title="Client TO DO")
+    author = MagicMock(id=7)
+
+    db.execute.return_value.scalars.return_value.all.side_effect = [
+        ["Informe de Taxes"],
+        [],
+    ]
+    db.execute.return_value.scalar_one_or_none.return_value = author
+
+    with patch(
+        "app.services.default_board_cards.create_board_card_from_default",
+        side_effect=lambda *args, **kwargs: MagicMock(title=kwargs["card_def"].title),
+    ) as create_mock:
+        created = merge_missing_default_cards_to_board_list(db, board_list=board_list)
+
+    assert len(created) == 3
+    created_titles = {call.kwargs["card_def"].title for call in create_mock.call_args_list}
+    assert created_titles == {
+        "Reportes: Experian, Equifax y TransUnion",
+        "Apertura de Cuentas & Freeze",
+        "Lista de bancos con relacion",
+    }
+    assert "Informe de Taxes" not in created_titles
 
 
 def test_resolve_default_comment_author_prefers_system_user():

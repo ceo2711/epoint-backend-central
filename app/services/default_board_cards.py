@@ -171,6 +171,65 @@ def apply_default_cards_to_board_list(
     return created
 
 
+def _reorder_board_list_cards_by_defaults(db: Session, board_list: BoardList) -> None:
+    card_defs = default_cards_for_column(board_list.title)
+    if not card_defs:
+        return
+
+    position_by_title = {card_def.title: card_def.position for card_def in card_defs}
+    cards = list(
+        db.execute(select(BoardCard).where(BoardCard.list_id == board_list.id)).scalars().all()
+    )
+
+    def sort_key(card: BoardCard) -> tuple[int, int]:
+        if card.title in position_by_title:
+            return (0, position_by_title[card.title])
+        return (1, card.position)
+
+    for index, card in enumerate(sorted(cards, key=sort_key)):
+        card.position = index
+    db.flush()
+
+
+def merge_missing_default_cards_to_board_list(
+    db: Session,
+    *,
+    board_list: BoardList,
+    comment_author: User | None = None,
+    client: Client | None = None,
+) -> list[BoardCard]:
+    """Inserta tarjetas por defecto que falten (p. ej. template parcial con solo Taxes)."""
+    card_defs = default_cards_for_column(board_list.title)
+    if not card_defs:
+        return []
+
+    existing_titles = {
+        title
+        for title in db.execute(
+            select(BoardCard.title).where(BoardCard.list_id == board_list.id)
+        ).scalars().all()
+    }
+
+    author = comment_author if comment_author is not None else resolve_default_comment_author(db)
+    created: list[BoardCard] = []
+    for card_def in sorted(card_defs, key=lambda item: item.position):
+        if card_def.title in existing_titles:
+            continue
+        created.append(
+            create_board_card_from_default(
+                db,
+                board_list=board_list,
+                card_def=card_def,
+                comment_author=author,
+                client=client,
+            )
+        )
+
+    if created:
+        _reorder_board_list_cards_by_defaults(db, board_list)
+    return created
+
+
 def seed_default_template_cards_for_list(
     db: Session,
     *,

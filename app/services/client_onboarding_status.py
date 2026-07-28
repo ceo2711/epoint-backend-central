@@ -27,6 +27,29 @@ READY_TO_WORK_STATUSES = frozenset(
     }
 )
 
+# Si faltan docs mínimos aprobados, el portal vuelve a ocultar el tablero.
+DEMOTE_WHEN_DOCS_INCOMPLETE = frozenset(
+    {
+        ClientStatus.LISTO_PARA_TRABAJAR.value,
+        ClientStatus.ONBOARDING_EN_PROGRESO.value,
+        ClientStatus.ONBOARDING_COMPLETADO.value,
+    }
+)
+
+
+def is_board_unlocked(status: str | None) -> bool:
+    """El tablero del portal se habilita recién con datos+docs OK (LISTO_PARA_TRABAJAR+)."""
+    return bool(status) and status in READY_TO_WORK_STATUSES
+
+
+def client_has_board_access(client: Client, documents: list[Document] | None = None) -> bool:
+    """Status listo + documentos mínimos realmente aprobados."""
+    if not is_board_unlocked(client.status):
+        return False
+    if documents is None:
+        return True
+    return all_required_documents_approved(list(documents))
+
 
 def _load_client_board(db: Session, client_id: int) -> Board | None:
     return (
@@ -46,7 +69,7 @@ def sync_client_onboarding_status(
     *,
     board_activity: bool = False,
 ) -> bool:
-    """Avanza `client.status` según documentos y tablero. No hace commit.
+    """Avanza o revierte `client.status` según documentos y tablero. No hace commit.
 
     `board_activity=True` indica que la sincronización fue disparada por una
     acción real sobre el tablero (mover/borrar tarjetas o cambiar su estado);
@@ -55,21 +78,27 @@ def sync_client_onboarding_status(
     distribución inicial del tablero no puede usarse como señal de progreso.
     """
     previous = client.status
+    docs = list(db.execute(select(Document).where(Document.client_id == client.id)).scalars().all())
+    docs_ok = all_required_documents_approved(docs)
 
-    if client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value:
-        docs = db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
-        if all_required_documents_approved(list(docs)):
-            from app.services.clients import ClientService
+    if client.status in DEMOTE_WHEN_DOCS_INCOMPLETE and not docs_ok:
+        client.status = ClientStatus.DOCUMENTOS_EN_REVISION.value
+        logger.info(
+            "Cliente #%s vuelve a DOCUMENTOS_EN_REVISION: faltan documentos mínimos aprobados",
+            client.id,
+        )
+    elif client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value and docs_ok:
+        from app.services.clients import ClientService
 
-            try:
-                ClientService(db).promote_to_ready_to_work(client)
-            except Exception:
-                logger.exception(
-                    "No se pudo promover cliente #%s a LISTO_PARA_TRABAJAR",
-                    client.id,
-                )
-                if client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value:
-                    client.status = ClientStatus.LISTO_PARA_TRABAJAR.value
+        try:
+            ClientService(db).promote_to_ready_to_work(client)
+        except Exception:
+            logger.exception(
+                "No se pudo promover cliente #%s a LISTO_PARA_TRABAJAR",
+                client.id,
+            )
+            if client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value:
+                client.status = ClientStatus.LISTO_PARA_TRABAJAR.value
 
     board = _load_client_board(db, client.id)
     if board is None:
@@ -85,6 +114,12 @@ def sync_client_onboarding_status(
     )
     all_cards = [card for board_list in lists for card in board_list.cards]
     if not all_cards:
+        return client.status != previous
+
+    # No avanzar el tablero si los docs mínimos ya no están OK.
+    if not all_required_documents_approved(
+        list(db.execute(select(Document).where(Document.client_id == client.id)).scalars().all())
+    ):
         return client.status != previous
 
     all_in_completed = all(card.list_id == completed_list.id for card in all_cards)

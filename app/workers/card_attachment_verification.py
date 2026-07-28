@@ -18,6 +18,7 @@ from app.services.board_attachment_verification_messages import (
     build_board_approval_messages,
     build_board_rejection_messages,
 )
+from app.services.document_verification_messages import system_verification_failure_result
 from app.services.board_attachment_verification_rules import (
     build_board_attachment_context,
     is_board_attachment_approved,
@@ -108,17 +109,9 @@ def run_card_attachment_verification(attachment_id: int) -> dict:
                 prompt=f"{VERIFICATION_PROMPT}\n\n{type_context}",
             )
             result = json.loads(result_text.strip().removeprefix("```json").removesuffix("```").strip())
-        except Exception as exc:
+        except Exception:
             logger.exception("Error verificando adjunto %s", attachment_id)
-            result = {
-                "is_readable": False,
-                "rejection_reasons": [
-                    {
-                        "en": f"AI verification error: {exc}",
-                        "es": f"Error de verificación IA: {exc}",
-                    }
-                ],
-            }
+            result = system_verification_failure_result()
 
         approved = is_board_attachment_approved(result, attachment_kind)
 

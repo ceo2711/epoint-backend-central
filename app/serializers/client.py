@@ -1,5 +1,7 @@
 from app.models.client import Client
 from app.schemas.client import AdvisorBrief, ClientResponse, ClientSignedContractBrief, MerchantBrief
+from app.services.client_onboarding_status import is_board_unlocked
+from app.services.document_requirements import all_required_documents_approved
 
 
 def client_signed_contract_brief(client: Client) -> ClientSignedContractBrief | None:
@@ -70,4 +72,14 @@ def client_to_response(client: Client) -> ClientResponse:
         created_at=client.created_at,
         docusign_contract_signed_at=client.docusign_contract_signed_at,
         signed_contract=client_signed_contract_brief(client),
+        board_unlocked=_compute_board_unlocked(client),
     )
+
+
+def _compute_board_unlocked(client: Client) -> bool:
+    if not is_board_unlocked(client.status):
+        return False
+    docs = getattr(client, "documents", None)
+    if docs is None:
+        return True
+    return all_required_documents_approved(list(docs))

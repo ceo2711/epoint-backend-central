@@ -16,6 +16,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.default_board_cards import (
     apply_default_cards_to_board_list,
+    merge_missing_default_cards_to_board_list,
     refresh_dynamic_card_descriptions,
 )
 from app.services.notifications import NotificationService
@@ -79,6 +80,10 @@ class BoardService:
                             label=BoardCardLabel.PENDIENTE.value,
                         )
                     )
+                self.db.flush()
+                merge_missing_default_cards_to_board_list(
+                    self.db, board_list=bl, client=client
+                )
             else:
                 apply_default_cards_to_board_list(self.db, board_list=bl, client=client)
         self.db.flush()

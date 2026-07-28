@@ -60,15 +60,19 @@ def _approved_doc(client_id: int, doc_type: str) -> Document:
     )
 
 
-def test_sync_advances_to_listo_para_trabajar_when_docs_approved(db_session):
-    client = _make_client(db_session)
+def _seed_required_docs(db_session, client_id: int) -> None:
     for doc_type in (
         DocumentType.SSN_CARD.value,
         DocumentType.DRIVERS_LICENSE_FRONT.value,
         DocumentType.DRIVERS_LICENSE_BACK.value,
         DocumentType.UTILITY_BILL.value,
     ):
-        db_session.add(_approved_doc(client.id, doc_type))
+        db_session.add(_approved_doc(client_id, doc_type))
+
+
+def test_sync_advances_to_listo_para_trabajar_when_docs_approved(db_session):
+    client = _make_client(db_session)
+    _seed_required_docs(db_session, client.id)
     db_session.commit()
 
     assert sync_client_onboarding_status(db_session, client) is True
@@ -90,6 +94,7 @@ def _make_board(db_session, client_id: int):
 def test_sync_keeps_listo_when_template_cards_untouched(db_session):
     """Regresión: el template crea tarjetas en varias listas; eso no es progreso."""
     client = _make_client(db_session, status=ClientStatus.LISTO_PARA_TRABAJAR.value)
+    _seed_required_docs(db_session, client.id)
     _, todo, wip, _ = _make_board(db_session, client.id)
     db_session.add(BoardCard(list_id=todo.id, title="Task A", position=0))
     db_session.add(BoardCard(list_id=wip.id, title="Task B", position=0))
@@ -100,8 +105,26 @@ def test_sync_keeps_listo_when_template_cards_untouched(db_session):
     assert client.status == ClientStatus.LISTO_PARA_TRABAJAR.value
 
 
+def test_sync_demotes_when_required_doc_rejected(db_session):
+    client = _make_client(db_session, status=ClientStatus.LISTO_PARA_TRABAJAR.value)
+    _seed_required_docs(db_session, client.id)
+    db_session.commit()
+    utility = (
+        db_session.query(Document)
+        .filter_by(client_id=client.id, type=DocumentType.UTILITY_BILL.value)
+        .one()
+    )
+    utility.verification_status = DocumentVerificationStatus.RECHAZADO.value
+    db_session.commit()
+    db_session.refresh(client)
+
+    assert sync_client_onboarding_status(db_session, client) is True
+    assert client.status == ClientStatus.DOCUMENTOS_EN_REVISION.value
+
+
 def test_sync_advances_to_onboarding_en_progreso_on_board_activity(db_session):
     client = _make_client(db_session, status=ClientStatus.LISTO_PARA_TRABAJAR.value)
+    _seed_required_docs(db_session, client.id)
     _, todo, wip, _ = _make_board(db_session, client.id)
     db_session.add(BoardCard(list_id=todo.id, title="Task A", position=0))
     db_session.add(BoardCard(list_id=wip.id, title="Task B", position=0))
@@ -115,6 +138,7 @@ def test_sync_advances_to_onboarding_en_progreso_on_board_activity(db_session):
 def test_sync_without_activity_does_not_mark_en_progreso(db_session):
     """Ej.: re-verificación de un documento no debe marcar el tablero como en progreso."""
     client = _make_client(db_session, status=ClientStatus.LISTO_PARA_TRABAJAR.value)
+    _seed_required_docs(db_session, client.id)
     _, todo, _, done = _make_board(db_session, client.id)
     db_session.add(BoardCard(list_id=todo.id, title="Task A", position=0))
     db_session.add(BoardCard(list_id=done.id, title="Task B", position=0))
@@ -127,6 +151,7 @@ def test_sync_without_activity_does_not_mark_en_progreso(db_session):
 
 def test_sync_advances_to_completado_when_all_cards_done(db_session):
     client = _make_client(db_session, status=ClientStatus.ONBOARDING_EN_PROGRESO.value)
+    _seed_required_docs(db_session, client.id)
     board = Board(client_id=client.id, template_code="DEFAULT_ONBOARDING")
     db_session.add(board)
     db_session.flush()
