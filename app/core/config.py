@@ -87,6 +87,15 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("EMAIL_LOGO_URL"),
     )
+    # Links de tiendas en el email de bienvenida. Vacío = botón visible sin destino (#).
+    android_app_store_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("ANDROID_APP_STORE_URL", "PLAY_STORE_URL"),
+    )
+    ios_app_store_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("IOS_APP_STORE_URL", "APP_STORE_URL"),
+    )
     # En sandbox de Resend, redirige todos los emails a esta dirección verificada.
     email_dev_redirect_to: str = ""
     twilio_account_sid: str = ""

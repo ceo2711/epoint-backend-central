@@ -17,13 +17,22 @@ def test_render_welcome_template_substitutes_placeholders():
         TEMP_PASSWORD="secret123",
         PORTAL_LOGIN_URL="https://app.example.com/login",
         LOGO_URL="https://app.example.com/epoint-logo.png",
+        ANDROID_APP_STORE_URL="#",
+        IOS_APP_STORE_URL="#",
+        GOOGLE_PLAY_BADGE_URL="https://app.example.com/google-play-badge.png",
+        APP_STORE_BADGE_URL="https://app.example.com/app-store-badge.png",
     )
     assert "Ana" in html
     assert "ana@example.com" in html
     assert "secret123" in html
     assert "https://app.example.com/login" in html
     assert "epoint-logo.png" in html
+    assert "google-play-badge.png" in html
+    assert "app-store-badge.png" in html
+    assert "Disponible en Google Play" in html
+    assert "Download on the App Store" in html
     assert "{{FIRST_NAME}}" not in html
+    assert "{{GOOGLE_PLAY_BADGE_URL}}" not in html
 
 
 def test_render_payment_link_template_substitutes_placeholders():

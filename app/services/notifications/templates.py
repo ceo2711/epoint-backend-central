@@ -27,10 +27,20 @@ def client_approved_email_body(
     temp_password: str,
     portal_login_url: str,
     merchant_name: str | None = None,
+    android_app_store_url: str = "",
+    ios_app_store_url: str = "",
 ) -> str:
     merchant_block = ""
     if merchant_name:
         merchant_block = f"\nTu cuenta corresponde a {merchant_name}.\n"
+    app_block = ""
+    if android_app_store_url or ios_app_store_url:
+        lines = ["\nDescargá la app móvil"]
+        if android_app_store_url:
+            lines.append(f"Android (Google Play): {android_app_store_url}")
+        if ios_app_store_url:
+            lines.append(f"iOS (App Store): {ios_app_store_url}")
+        app_block = "\n".join(lines) + "\n"
     return f"""Hola {first_name},
 {merchant_block}
 ¡Bienvenido/a a Epoint!
@@ -44,7 +54,7 @@ Usuario (email): {email}
 Contraseña temporal: {temp_password}
 
 En tu primer ingreso deberás cambiar la contraseña temporal.
-
+{app_block}
 Si tenés alguna consulta, respondé a este correo o contactá a tu asesor Epoint.
 
 Saludos,
