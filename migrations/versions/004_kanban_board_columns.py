@@ -2,12 +2,15 @@
 
 Revision ID: 004
 Revises: 003
+
+Historically this revision called ``sync_all_boards`` via the live ORM. That
+breaks on a fresh database because later columns (e.g. ``board_cards.label``
+from 035) are already on the model but not yet migrated. The real sync for
+empty/prod DBs runs in 041 after the schema is complete. Existing environments
+that already applied 004 are unaffected.
 """
 
 from typing import Sequence, Union
-
-from alembic import op
-from sqlalchemy.orm import Session
 
 revision: str = "004"
 down_revision: Union[str, None] = "003"
@@ -16,18 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    session = Session(bind=bind)
-    try:
-        from app.services.board_sync import sync_all_boards
-
-        sync_all_boards(session)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+    # No-op: schema sync of Kanban columns/cards is handled in later revisions
+    # (notably 041) once board_cards columns match the ORM.
+    pass
 
 
 def downgrade() -> None:
