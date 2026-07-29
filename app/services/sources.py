@@ -47,10 +47,8 @@ def require_active_source_code(
 
 
 def ensure_default_sources(db: Session) -> None:
-    existing = {
-        row.code
-        for row in db.execute(select(Source.code)).scalars().all()
-    }
+    # select(Source.code).scalars() ya devuelve str, no filas ORM.
+    existing = set(db.execute(select(Source.code)).scalars().all())
     for code, name, description, sort_order in DEFAULT_SOURCES:
         if code in existing:
             continue
