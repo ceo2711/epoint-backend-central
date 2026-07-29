@@ -20,6 +20,7 @@ from app.services.role_access import can_supervise_sales_reps, is_sales_area_lea
 from app.services.sede_scope import effective_sede_id
 
 # Embudo comercial = estados de prospecto (antes de pasar a cliente).
+PARENT_OVERRIDE_COMMISSION_PER_SALE_USD = Decimal("250")
 SALES_STATUSES = (
     ProspectStatus.PENDIENTE_CONTACTAR.value,
     ProspectStatus.LEAD_CONTACTADO.value,
@@ -480,7 +481,7 @@ class DashboardService:
         }
 
     def _sales_monthly_commission(self, *, user_id: int, merchant_id: int) -> dict:
-        """Serie diaria del mes completo + comisión acumulada ($500 USD fijos por pago)."""
+        """Comisión propia ($500) + override ($250) por pagos de subvendedores."""
         today = date.today()
         month_start = date(today.year, today.month, 1)
         last_day = calendar.monthrange(today.year, today.month)[1]
@@ -488,23 +489,39 @@ class DashboardService:
         month_start_dt = datetime(today.year, today.month, 1, tzinfo=timezone.utc)
 
         day_col = cast(PaymentLink.paid_at, Date).label("day")
-        rows = self.db.execute(
-            select(
-                day_col,
-                func.coalesce(func.sum(PaymentLink.amount), 0),
-                func.count(PaymentLink.id),
-            )
-            .where(
-                PaymentLink.status == PaymentLinkStatus.PAID.value,
-                PaymentLink.paid_at.is_not(None),
-                PaymentLink.paid_at >= month_start_dt,
-                PaymentLink.created_by_user_id == user_id,
-                PaymentLink.merchant_id == merchant_id,
-                PaymentLink.prospect_id.is_not(None),
-            )
-            .group_by(day_col)
-            .order_by(day_col)
-        ).all()
+        def paid_rows_for(user_ids: list[int]) -> list:
+            if not user_ids:
+                return []
+            return self.db.execute(
+                select(
+                    day_col,
+                    func.coalesce(func.sum(PaymentLink.amount), 0),
+                    func.count(PaymentLink.id),
+                )
+                .join(Prospect, Prospect.id == PaymentLink.prospect_id)
+                .where(
+                    PaymentLink.status == PaymentLinkStatus.PAID.value,
+                    PaymentLink.paid_at.is_not(None),
+                    PaymentLink.paid_at >= month_start_dt,
+                    # La venta pertenece al vendedor asignado al prospecto,
+                    # aunque otro usuario haya generado el link de pago.
+                    Prospect.assigned_to_user_id.in_(user_ids),
+                    PaymentLink.merchant_id == merchant_id,
+                    PaymentLink.prospect_id.is_not(None),
+                )
+                .group_by(day_col)
+                .order_by(day_col)
+            ).all()
+
+        rows = paid_rows_for([user_id])
+        child_ids = [
+            int(child_id)
+            for child_id in self.db.execute(
+                # La comisión histórica no desaparece si luego se desactiva al subvendedor.
+                select(User.id).where(User.parent_user_id == user_id)
+            ).scalars().all()
+        ]
+        override_rows = paid_rows_for(child_ids)
 
         by_day: dict[date, tuple[Decimal, int]] = {}
         for row in rows:
@@ -513,42 +530,65 @@ class DashboardService:
                 day_value = day_value.date()
             by_day[day_value] = (Decimal(str(row[1])), int(row[2]))
 
+        override_by_day: dict[date, int] = {}
+        for row in override_rows:
+            day_value = row[0]
+            if isinstance(day_value, datetime):
+                day_value = day_value.date()
+            override_by_day[day_value] = int(row[2])
+
         series: list[dict] = []
         running_paid = Decimal("0")
         paid_count = 0
+        override_paid_count = 0
         current = month_start
         while current <= month_end:
             # Días futuros: sin actividad; el acumulado se mantiene plano.
             if current <= today:
                 day_paid, day_count = by_day.get(current, (Decimal("0"), 0))
+                day_override_count = override_by_day.get(current, 0)
                 running_paid += day_paid
                 paid_count += day_count
+                override_paid_count += day_override_count
             else:
                 day_paid, day_count = Decimal("0"), 0
-            daily_commission = (Decimal(day_count) * SALES_COMMISSION_PER_SALE_USD).quantize(
-                Decimal("0.01")
+                day_override_count = 0
+            daily_own = Decimal(day_count) * SALES_COMMISSION_PER_SALE_USD
+            daily_override = Decimal(day_override_count) * PARENT_OVERRIDE_COMMISSION_PER_SALE_USD
+            daily_commission = (daily_own + daily_override).quantize(Decimal("0.01"))
+            cumulative_own = Decimal(paid_count) * SALES_COMMISSION_PER_SALE_USD
+            cumulative_override = (
+                Decimal(override_paid_count) * PARENT_OVERRIDE_COMMISSION_PER_SALE_USD
             )
-            cumulative = (Decimal(paid_count) * SALES_COMMISSION_PER_SALE_USD).quantize(
-                Decimal("0.01")
-            )
+            cumulative = (cumulative_own + cumulative_override).quantize(Decimal("0.01"))
             series.append(
                 {
                     "date": current.isoformat(),
                     "daily_paid": float(day_paid),
                     "daily_commission": float(daily_commission),
+                    "daily_own_commission": float(daily_own),
+                    "daily_override_commission": float(daily_override),
                     "cumulative_commission": float(cumulative),
                 }
             )
             current += timedelta(days=1)
 
-        monthly_commission = (Decimal(paid_count) * SALES_COMMISSION_PER_SALE_USD).quantize(
+        own_commission = (Decimal(paid_count) * SALES_COMMISSION_PER_SALE_USD).quantize(
             Decimal("0.01")
         )
+        override_commission = (
+            Decimal(override_paid_count) * PARENT_OVERRIDE_COMMISSION_PER_SALE_USD
+        ).quantize(Decimal("0.01"))
+        monthly_commission = own_commission + override_commission
         return {
             "monthly_paid_total": float(running_paid),
             "monthly_commission": float(monthly_commission),
             "commission_per_sale": float(SALES_COMMISSION_PER_SALE_USD),
+            "parent_override_per_sale": float(PARENT_OVERRIDE_COMMISSION_PER_SALE_USD),
             "monthly_paid_count": paid_count,
+            "override_paid_count": override_paid_count,
+            "own_commission": float(own_commission),
+            "override_commission": float(override_commission),
             "commission_series": series,
         }
 

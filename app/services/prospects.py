@@ -62,6 +62,7 @@ MEETING_COMPLETE_STATUSES = frozenset({
 
 # Misma cifra fija que el dashboard de comisiones de ventas.
 SALES_COMMISSION_PER_SALE_USD = Decimal("500")
+PARENT_OVERRIDE_COMMISSION_PER_SALE_USD = Decimal("250")
 
 
 class ProspectService:
@@ -913,6 +914,31 @@ class ProspectService:
             payload=payload,
             commit=False,
         )
+        seller = prospect.assigned_to
+        if seller is not None and seller.parent_user_id is not None:
+            parent = seller.parent or self.db.get(User, seller.parent_user_id)
+            if parent is not None and parent.is_active:
+                override_payload = {
+                    **payload,
+                    "commission_usd": str(
+                        PARENT_OVERRIDE_COMMISSION_PER_SALE_USD.quantize(Decimal("0.01"))
+                    ),
+                    "commission_type": "PARENT_OVERRIDE",
+                    "source_seller_id": seller.id,
+                }
+                created.extend(
+                    NotificationService(self.db).notify(
+                        event_type=event_type,
+                        users=[parent],
+                        title="Comisión por venta de tu subvendedor",
+                        body=(
+                            f"{seller.first_name} {seller.last_name} concretó la venta de {name}. "
+                            "Se registró tu comisión de USD 250."
+                        ),
+                        payload=override_payload,
+                        commit=False,
+                    )
+                )
         return created
 
     def _ready_for_conversion(self, prospect: Prospect) -> bool:

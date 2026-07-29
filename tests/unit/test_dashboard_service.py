@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.services.dashboard import (
     DashboardService,
+    PARENT_OVERRIDE_COMMISSION_PER_SALE_USD,
     SALES_COMMISSION_PER_SALE_USD,
     SALES_STATUSES,
     _area_definitions_for_role,
@@ -171,8 +172,9 @@ class TestSalesMonthlyCommission:
         service = DashboardService.__new__(DashboardService)
         db = MagicMock()
         today = date.today()
-        db.execute.return_value.all.return_value = [
-            (today, Decimal("1000.00"), 3),
+        db.execute.side_effect = [
+            MagicMock(all=MagicMock(return_value=[(today, Decimal("1000.00"), 3)])),
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         service.db = db
 
@@ -183,6 +185,8 @@ class TestSalesMonthlyCommission:
         assert result["monthly_commission"] == expected
         assert result["commission_per_sale"] == float(SALES_COMMISSION_PER_SALE_USD)
         assert result["monthly_paid_count"] == 3
+        assert result["override_paid_count"] == 0
+        assert result["override_commission"] == 0.0
         last_day = calendar.monthrange(today.year, today.month)[1]
         today_point = next(p for p in result["commission_series"] if p["date"] == today.isoformat())
         assert today_point["cumulative_commission"] == expected
@@ -197,6 +201,29 @@ class TestSalesMonthlyCommission:
             assert result["commission_series"][-1]["daily_commission"] == 0.0
         else:
             assert result["commission_series"][-1]["daily_commission"] == expected
+
+    def test_parent_receives_override_for_sub_seller_sales(self):
+        service = DashboardService.__new__(DashboardService)
+        db = MagicMock()
+        today = date.today()
+        db.execute.side_effect = [
+            MagicMock(all=MagicMock(return_value=[(today, Decimal("400.00"), 1)])),
+            MagicMock(
+                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[11, 12])))
+            ),
+            MagicMock(all=MagicMock(return_value=[(today, Decimal("900.00"), 2)])),
+        ]
+        service.db = db
+
+        result = service._sales_monthly_commission(user_id=7, merchant_id=1)
+
+        assert result["monthly_paid_count"] == 1
+        assert result["override_paid_count"] == 2
+        assert result["own_commission"] == float(SALES_COMMISSION_PER_SALE_USD)
+        assert result["override_commission"] == float(
+            Decimal(2) * PARENT_OVERRIDE_COMMISSION_PER_SALE_USD
+        )
+        assert result["monthly_commission"] == 1000.0
 
     def test_sales_area_includes_commission_when_provided(self):
         service = DashboardService.__new__(DashboardService)

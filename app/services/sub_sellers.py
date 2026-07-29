@@ -1,6 +1,6 @@
 """Sub-vendedores: elegibilidad por ventas del mes anterior y gestión bajo un SALES_REP.
 
-Un vendedor es elegible si concretó más de 5 ventas (prospecto → cliente) en el
+Un vendedor es elegible si concretó al menos 5 ventas (prospecto → cliente) en el
 mes calendario anterior. Solo entonces puede dar de alta subvendedores (SALES_REP
 con `parent_user_id`) y ver sus métricas. Un solo nivel de jerarquía.
 """
@@ -24,7 +24,7 @@ from app.models.user import User
 from app.services.sede_scope import sync_user_merchants_for_sede
 from app.services.user_serialization import serialize_user
 
-# "Más de 5" → se habilita con 6 o más conversiones en el mes anterior.
+# Se habilita con 5 o más conversiones en el mes anterior.
 MIN_PREVIOUS_MONTH_SALES = 5
 
 
@@ -83,13 +83,13 @@ class SubSellerService:
         sales = self.count_concretized_sales(user.id, start=start, end_exclusive=end)
         is_sales = user.role.code == "SALES_REP"
         is_sub = user.parent_user_id is not None
-        eligible = is_sales and not is_sub and sales > MIN_PREVIOUS_MONTH_SALES
+        eligible = is_sales and not is_sub and sales >= MIN_PREVIOUS_MONTH_SALES
         return {
             "eligible": eligible,
             "is_sub_seller": is_sub,
             "previous_month_sales": sales,
             "required_sales": MIN_PREVIOUS_MONTH_SALES,
-            "threshold_exclusive": True,
+            "threshold_exclusive": False,
             "previous_month": {"year": year, "month": month},
             "can_manage_sub_sellers": eligible,
         }
@@ -138,7 +138,7 @@ class SubSellerService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Para registrar subvendedores necesitás más de "
+                    "Para registrar subvendedores necesitás al menos "
                     f"{MIN_PREVIOUS_MONTH_SALES} ventas concretadas en el mes anterior."
                 ),
             )
@@ -281,7 +281,7 @@ class SubSellerService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Para registrar subvendedores necesitás más de "
+                    "Para registrar subvendedores necesitás al menos "
                     f"{MIN_PREVIOUS_MONTH_SALES} ventas concretadas en el mes anterior."
                 ),
             )

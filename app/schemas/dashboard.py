@@ -41,6 +41,8 @@ class CommissionDayPoint(BaseModel):
     date: str
     daily_paid: float
     daily_commission: float
+    daily_own_commission: float = 0.0
+    daily_override_commission: float = 0.0
     cumulative_commission: float
 
 
@@ -91,7 +93,11 @@ class AreaMetrics(BaseModel):
     monthly_paid_total: float | None = None
     monthly_commission: float | None = None
     commission_per_sale: float | None = None
+    parent_override_per_sale: float | None = None
     monthly_paid_count: int | None = None
+    override_paid_count: int | None = None
+    own_commission: float | None = None
+    override_commission: float | None = None
     commission_series: list[CommissionDayPoint] = Field(default_factory=list)
 
 

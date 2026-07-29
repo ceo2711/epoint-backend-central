@@ -30,18 +30,19 @@ def test_previous_calendar_month_bounds_mid_year():
     assert end == datetime(2026, 7, 1, tzinfo=timezone.utc)
 
 
-def test_eligibility_requires_more_than_five(monkeypatch):
+def test_eligibility_requires_at_least_five(monkeypatch):
     service = SubSellerService(db=SimpleNamespace())
     user = SimpleNamespace(id=1, role=SimpleNamespace(code="SALES_REP"), parent_user_id=None)
 
-    monkeypatch.setattr(service, "count_concretized_sales", lambda *a, **k: 5)
+    monkeypatch.setattr(service, "count_concretized_sales", lambda *a, **k: 4)
     assert service.eligibility(user)["eligible"] is False
 
-    monkeypatch.setattr(service, "count_concretized_sales", lambda *a, **k: 6)
+    monkeypatch.setattr(service, "count_concretized_sales", lambda *a, **k: 5)
     result = service.eligibility(user)
     assert result["eligible"] is True
     assert result["can_manage_sub_sellers"] is True
     assert result["required_sales"] == MIN_PREVIOUS_MONTH_SALES
+    assert result["threshold_exclusive"] is False
 
 
 def test_sub_seller_never_eligible(monkeypatch):
