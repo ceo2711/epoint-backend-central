@@ -1,6 +1,12 @@
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.config import get_settings
+from app.core.security import hash_password
+from app.models.role import Role
+from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -14,8 +20,15 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
 )
 from app.schemas.common import MessageResponse
-from app.schemas.user import SetActiveMerchantRequest, UserMeResponse, UserProfileUpdate
+from app.schemas.user import (
+    BootstrapAdminCreate,
+    SetActiveMerchantRequest,
+    UserMeResponse,
+    UserProfileUpdate,
+    UserResponse,
+)
 from app.services.auth import AuthService
+from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -23,6 +36,62 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: DbSession) -> LoginResponse:
     return AuthService(db).login(payload)
+
+
+@router.post(
+    "/bootstrap-admin",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear usuario ADMIN (token de bootstrap)",
+)
+def bootstrap_admin(
+    payload: BootstrapAdminCreate,
+    db: DbSession,
+    x_bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
+) -> UserResponse:
+    """Crea un ADMIN sin sesión JWT. Requiere header ``X-Bootstrap-Token`` =
+    env ``BOOTSTRAP_ADMIN_TOKEN``. Si el token no está configurado, responde 404.
+    """
+    settings = get_settings()
+    expected = (settings.bootstrap_admin_token or "").strip()
+    if not expected:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    if not x_bootstrap_token or x_bootstrap_token.strip() != expected:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token inválido")
+
+    email = payload.email.lower().strip()
+    existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
+
+    role = db.execute(select(Role).where(Role.code == "ADMIN")).scalar_one_or_none()
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rol ADMIN no existe. Ejecutá scripts/seed.py primero.",
+        )
+
+    user = User(
+        email=email,
+        password_hash=hash_password(payload.password),
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        phone=payload.phone,
+        role_id=role.id,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    user = (
+        db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+            .where(User.id == user.id)
+        )
+        .unique()
+        .scalar_one()
+    )
+    return serialize_user(user)
 
 
 @router.post("/2fa/verify", response_model=LoginResponse)

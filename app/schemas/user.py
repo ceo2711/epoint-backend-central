@@ -50,6 +50,16 @@ class UserCreate(BaseModel):
     sede_id: int | None = None
 
 
+class BootstrapAdminCreate(BaseModel):
+    """Crear ADMIN sin JWT, protegido por BOOTSTRAP_ADMIN_TOKEN."""
+
+    email: EmailStr
+    password: str = Field(min_length=8)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    phone: str | None = None
+
+
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
     password: str | None = Field(default=None, min_length=8)

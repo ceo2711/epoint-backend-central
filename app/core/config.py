@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Encryption
     encryption_key: str = ""
 
+    # Bootstrap admin (Postman/ops). Vacío = endpoint deshabilitado.
+    bootstrap_admin_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("BOOTSTRAP_ADMIN_TOKEN"),
+    )
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
