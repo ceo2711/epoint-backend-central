@@ -41,5 +41,8 @@ def _file_response(key: str) -> FileResponse:
         path,
         media_type=media_type,
         filename=filename,
+        # Los clientes de email (y el proxy de imágenes de Gmail) descartan un <img>
+        # cuyo recurso llega como "attachment".
+        content_disposition_type="inline",
         headers={"Cache-Control": "public, max-age=86400"},
     )
