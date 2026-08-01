@@ -60,6 +60,15 @@ class MerchantContextService:
         ).scalar_one_or_none()
         return link is not None
 
+    def user_can_manage_merchant(self, user: User, merchant_id: int) -> bool:
+        """Admin puede gestionar comercios inactivos (reactivar / purgar)."""
+        merchant = self.db.get(Merchant, merchant_id)
+        if merchant is None:
+            return False
+        if user.role.code == ADMIN_ROLE:
+            return True
+        return self.user_can_access_merchant(user, merchant_id)
+
     def set_active_merchant(self, user: User, merchant_id: int) -> Merchant:
         if not self.is_staff(user):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")

@@ -97,7 +97,7 @@ def get_merchant(
     merchant = db.get(Merchant, merchant_id)
     if merchant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
-    if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
+    if not MerchantContextService(db).user_can_manage_merchant(current_user, merchant_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
     return MerchantResponse.model_validate(merchant)
 
@@ -114,7 +114,7 @@ def update_merchant(
     merchant = db.get(Merchant, merchant_id)
     if merchant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
-    if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
+    if not MerchantContextService(db).user_can_manage_merchant(current_user, merchant_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
 
     data = payload.model_dump(exclude_unset=True)
@@ -138,7 +138,7 @@ def deactivate_merchant(
     merchant = db.get(Merchant, merchant_id)
     if merchant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
-    if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
+    if not MerchantContextService(db).user_can_manage_merchant(current_user, merchant_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
     merchant.is_active = False
     db.commit()
@@ -154,7 +154,7 @@ def purge_merchant(
     merchant = db.get(Merchant, merchant_id)
     if merchant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
-    if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
+    if not MerchantContextService(db).user_can_manage_merchant(current_user, merchant_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant no encontrado")
     MerchantService(db).purge_merchant(merchant_id)
     return MessageResponse(message="Comercio eliminado permanentemente")

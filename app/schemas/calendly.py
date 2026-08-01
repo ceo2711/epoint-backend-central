@@ -27,6 +27,8 @@ class CalendlySalesRepItem(BaseModel):
     avatar_url: str | None = None
     sede_id: int | None = None
     sede_name: str | None = None
+    parent_user_id: int | None = None
+    parent_name: str | None = None
 
 
 class CalendlyLinkedProspectBrief(BaseModel):

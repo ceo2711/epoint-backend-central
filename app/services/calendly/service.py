@@ -528,7 +528,11 @@ class CalendlyService:
         query = (
             select(User)
             .join(Role)
-            .options(joinedload(User.calendly_connection), joinedload(User.sede))
+            .options(
+                joinedload(User.calendly_connection),
+                joinedload(User.sede),
+                joinedload(User.parent),
+            )
             .where(Role.code == "SALES_REP", User.is_active.is_(True))
         )
         sede_id = effective_sede_id(actor)
@@ -545,6 +549,10 @@ class CalendlyService:
         items: list[CalendlySalesRepItem] = []
         for user in users:
             connection = user.calendly_connection
+            parent = user.parent
+            parent_name = None
+            if parent is not None:
+                parent_name = f"{parent.first_name} {parent.last_name}".strip() or parent.email
             items.append(
                 CalendlySalesRepItem(
                     id=user.id,
@@ -557,6 +565,8 @@ class CalendlyService:
                     avatar_url=avatar_url_for(user),
                     sede_id=user.sede_id,
                     sede_name=user.sede.name if user.sede is not None else None,
+                    parent_user_id=user.parent_user_id,
+                    parent_name=parent_name,
                 )
             )
         return items
