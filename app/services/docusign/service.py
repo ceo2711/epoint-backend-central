@@ -35,12 +35,18 @@ from app.services.docusign.webhook import (
     verify_connect_signature,
 )
 from app.services.notifications import NotificationService
-from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader
+from app.services.role_access import (
+    can_manage_onboarding,
+    SALES_STAFF_ROLES,
+    can_supervise_sales_reps,
+    is_sales_area_leader,
+    is_sales_staff,
+)
 from app.services.storage import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
-DOCUSIGN_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "ONBOARDING_MANAGER", "AREA_LEADER"})
+DOCUSIGN_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
 DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
 DOCUSIGN_SENT_DOCUMENT_STATUSES = frozenset({"sent", "delivered", "completed"})
 PREFERRED_TEMPLATE_ROLE_NAMES = ("Cliente", "Client", "Signer", "Firmante")
@@ -101,7 +107,7 @@ class DocusignService:
 
     @staticmethod
     def ensure_access(actor: User) -> None:
-        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "ONBOARDING_MANAGER"):
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER") or actor.role.code == "AREA_LEADER":
             return
         if is_sales_area_leader(actor):
             return
@@ -495,7 +501,7 @@ class DocusignService:
         """Onboarding/admin envía en nombre del vendedor que registró al cliente."""
         if (
             client_row is not None
-            and actor.role.code in ("ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER")
+            and can_manage_onboarding(actor)
             and client_row.registered_by_user_id
         ):
             return client_row.registered_by_user_id
@@ -511,7 +517,7 @@ class DocusignService:
             .where(DocusignEnvelope.merchant_id == merchant_id)
             .order_by(DocusignEnvelope.sent_at.desc())
         )
-        if actor.role.code == "SALES_REP":
+        if is_sales_staff(actor):
             query = query.where(DocusignEnvelope.sent_by_user_id == actor.id)
         elif sent_by_user_id is not None:
             if not can_supervise_sales_reps(actor):
@@ -541,7 +547,7 @@ class DocusignService:
         user = self.db.execute(
             select(User)
             .join(Role)
-            .where(User.id == user_id, User.is_active.is_(True), Role.code == "SALES_REP")
+            .where(User.id == user_id, User.is_active.is_(True), Role.code.in_(tuple(SALES_STAFF_ROLES)))
         ).scalar_one_or_none()
         if user is None:
             raise HTTPException(
@@ -588,7 +594,7 @@ class DocusignService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
         if merchant_id is not None and row.merchant_id != merchant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contrato no encontrado")
-        if actor.role.code == "SALES_REP" and row.sent_by_user_id != actor.id:
+        if is_sales_staff(actor) and row.sent_by_user_id != actor.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede acceder a este contrato")
         return row
 
@@ -964,7 +970,7 @@ class DocusignService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
             if client_row.merchant_id != merchant_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
-            if actor.role.code in ("ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"):
+            if can_manage_onboarding(actor):
                 client_service = ClientService(self.db)
                 if not client_service.user_can_view_approved_client_workspace(
                     actor, payload.client_id, client=client_row

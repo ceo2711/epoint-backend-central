@@ -8,7 +8,7 @@ from app.models.user import User
 from app.core.config import get_settings
 from app.schemas.chatbot import ChatHistoryMessage, ChatbotResponse, PendingChatAction
 from app.services.chatbot.actions import ChatbotActionHandler
-from app.services.chatbot.context import CLIENT_ROLE, SALES_ROLE, STAFF_ROLES, ChatbotContextBuilder
+from app.services.chatbot.context import CLIENT_ROLE, SALES_ROLE, SALES_ROLES, STAFF_ROLES, ChatbotContextBuilder
 from app.services.chatbot.locale_prefs import is_locale_switch_request, resolve_chat_locale
 from app.services.chatbot.messages import (
     friendly_locale_switch,
@@ -384,7 +384,7 @@ class ChatbotService:
 
         if role == CLIENT_ROLE:
             base = prompts[CLIENT_ROLE]
-        elif role == SALES_ROLE:
+        elif role in SALES_ROLES:
             base = prompts[SALES_ROLE]
             if get_settings().calendly_write_enabled:
                 base += (

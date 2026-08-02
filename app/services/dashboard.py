@@ -16,7 +16,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.clients import ClientService
 from app.services.prospects import ProspectService, SALES_COMMISSION_PER_SALE_USD
-from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader, user_area_code
+from app.services.role_access import SALES_STAFF_ROLES, can_supervise_sales_reps, is_sales_area_leader, user_area_code
 from app.services.sede_scope import effective_sede_id
 
 # Embudo comercial = estados de prospecto (antes de pasar a cliente).
@@ -70,13 +70,13 @@ def _area_definitions_for_role(
     area_code: str | None = None,
 ) -> list[tuple[str, str, tuple[str, ...], str]]:
     """Áreas visibles y alcance según rol."""
-    if role_code == "SALES_REP":
+    if role_code in SALES_STAFF_ROLES:
         return [("VENTAS", "Mis ventas", SALES_STATUSES, "personal")]
-    if role_code == "ONBOARDING_MANAGER":
-        return [("ONBOARDING", "Onboarding", ONBOARDING_STATUSES, "general")]
     if role_code == "AREA_LEADER" and area_code == "VENTAS":
         return [("VENTAS", "Ventas", SALES_STATUSES, "general")]
     if role_code == "AREA_LEADER" and area_code == "ONBOARDING":
+        return [("ONBOARDING", "Onboarding", ONBOARDING_STATUSES, "general")]
+    if role_code == "AREA_LEADER" and area_code == "ASESORES":
         return [("ONBOARDING", "Onboarding", ONBOARDING_STATUSES, "general")]
     return [
         ("VENTAS", "Ventas", SALES_STATUSES, "general"),
@@ -85,7 +85,7 @@ def _area_definitions_for_role(
 
 
 def _viewer_scope_for_role(role_code: str) -> str:
-    return "personal" if role_code == "SALES_REP" else "general"
+    return "personal" if role_code in SALES_STAFF_ROLES else "general"
 
 
 def _fill_timeseries(start: date, days: int, counts_by_date: dict[str, int]) -> list[dict[str, int | str]]:
@@ -242,7 +242,7 @@ class DashboardService:
         role_code = user.role.code
         sales_commission = None
         personal_rep_id = supervised_rep.id if supervised_rep else (
-            user.id if role_code == "SALES_REP" else None
+            user.id if role_code in SALES_STAFF_ROLES else None
         )
         if personal_rep_id is not None:
             sales_commission = self._sales_monthly_commission(
@@ -362,7 +362,7 @@ class DashboardService:
         target = self.db.execute(
             select(User)
             .join(Role)
-            .where(User.id == sales_rep_id, Role.code == "SALES_REP", User.is_active.is_(True))
+            .where(User.id == sales_rep_id, Role.code.in_(tuple(SALES_STAFF_ROLES)), User.is_active.is_(True))
         ).scalar_one_or_none()
         if target is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendedor no encontrado")
@@ -384,7 +384,7 @@ class DashboardService:
         reps_query = (
             select(User)
             .join(Role)
-            .where(Role.code == "SALES_REP", User.is_active.is_(True))
+            .where(Role.code.in_(tuple(SALES_STAFF_ROLES)), User.is_active.is_(True))
         )
         if sede_id is not None:
             reps_query = reps_query.where(User.sede_id == sede_id)

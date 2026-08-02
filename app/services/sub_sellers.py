@@ -1,7 +1,7 @@
 """Sub-vendedores: elegibilidad por ventas del mes anterior y gestión bajo un SALES_REP.
 
-Un vendedor es elegible si concretó al menos 5 ventas (prospecto → cliente) en el
-mes calendario anterior. Solo entonces puede dar de alta subvendedores (SALES_REP
+Un vendedor titular es elegible si concretó al menos 5 ventas (prospecto → cliente) en el
+mes calendario anterior. Solo entonces puede dar de alta subvendedores (rol SUB_SELLER
 con `parent_user_id`) y ver sus métricas. Un solo nivel de jerarquía.
 """
 
@@ -21,6 +21,11 @@ from app.models.client import Client
 from app.models.prospect import Prospect
 from app.models.role import Role
 from app.models.user import User
+from app.services.role_access import (
+    SUB_SELLER_ROLE,
+    is_lead_sales_rep,
+    is_sub_seller,
+)
 from app.services.sede_scope import sync_user_merchants_for_sede
 from app.services.user_serialization import serialize_user
 
@@ -81,9 +86,8 @@ class SubSellerService:
     def eligibility(self, user: User) -> dict[str, Any]:
         start, end, year, month = previous_calendar_month_bounds()
         sales = self.count_concretized_sales(user.id, start=start, end_exclusive=end)
-        is_sales = user.role.code == "SALES_REP"
-        is_sub = user.parent_user_id is not None
-        eligible = is_sales and not is_sub and sales >= MIN_PREVIOUS_MONTH_SALES
+        is_sub = is_sub_seller(user)
+        eligible = is_lead_sales_rep(user) and sales >= MIN_PREVIOUS_MONTH_SALES
         return {
             "eligible": eligible,
             "is_sub_seller": is_sub,
@@ -95,14 +99,14 @@ class SubSellerService:
         }
 
     def can_manage_sub_sellers(self, user: User) -> bool:
-        if user.role.code != "SALES_REP" or user.parent_user_id is not None:
+        if not is_lead_sales_rep(user):
             return False
         return bool(self.eligibility(user)["eligible"])
 
     def list_team_user_ids(self, user: User, *, include_self: bool = True) -> list[int]:
         """IDs del vendedor + sus subvendedores (para scopes de datos/métricas)."""
         ids: list[int] = [user.id] if include_self else []
-        if user.role.code != "SALES_REP":
+        if not is_lead_sales_rep(user):
             return ids
         children = self.db.execute(
             select(User.id).where(User.parent_user_id == user.id)
@@ -115,7 +119,12 @@ class SubSellerService:
         return list(
             self.db.execute(
                 select(User)
-                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+                .options(
+                    joinedload(User.role),
+                    joinedload(User.area),
+                    joinedload(User.sede),
+                    joinedload(User.parent),
+                )
                 .where(User.parent_user_id == parent.id)
                 .order_by(User.created_at.desc())
             )
@@ -153,9 +162,9 @@ class SubSellerService:
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
 
-        sales_role = self.db.execute(select(Role).where(Role.code == "SALES_REP")).scalar_one_or_none()
-        if sales_role is None:
-            raise HTTPException(status_code=500, detail="Rol SALES_REP no configurado")
+        sub_role = self.db.execute(select(Role).where(Role.code == SUB_SELLER_ROLE)).scalar_one_or_none()
+        if sub_role is None:
+            raise HTTPException(status_code=500, detail="Rol SUB_SELLER no configurado")
 
         ventas_area = self.db.execute(select(Area).where(Area.code == "VENTAS")).scalar_one_or_none()
         area_id = parent.area_id or (ventas_area.id if ventas_area else None)
@@ -166,7 +175,7 @@ class SubSellerService:
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             phone=phone,
-            role_id=sales_role.id,
+            role_id=sub_role.id,
             area_id=area_id,
             sede_id=parent.sede_id,
             parent_user_id=parent.id,
@@ -208,12 +217,10 @@ class SubSellerService:
 
     def team_metrics(self, parent: User) -> dict[str, Any]:
         """Métricas del padre + cada subvendedor (mes actual y mes anterior)."""
-        if parent.role.code != "SALES_REP":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo para vendedores")
-        if parent.parent_user_id is not None:
+        if not is_lead_sales_rep(parent):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Los subvendedores no gestionan equipo",
+                detail="Solo para vendedores titulares",
             )
 
         prev_start, prev_end, prev_year, prev_month = previous_calendar_month_bounds()
@@ -231,7 +238,7 @@ class SubSellerService:
             return {
                 "user": serialize_user(member).model_dump(),
                 "is_self": member.id == parent.id,
-                "is_sub_seller": member.parent_user_id is not None,
+                "is_sub_seller": is_sub_seller(member),
                 "sales_previous_month": self.count_concretized_sales(
                     member.id, start=prev_start, end_exclusive=prev_end
                 ),
@@ -270,12 +277,10 @@ class SubSellerService:
         return int(count or 0)
 
     def _require_parent_or_eligible(self, user: User, *, require_eligible: bool) -> None:
-        if user.role.code != "SALES_REP":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo para vendedores")
-        if user.parent_user_id is not None:
+        if not is_lead_sales_rep(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Los subvendedores no pueden gestionar otros subvendedores",
+                detail="Solo para vendedores titulares",
             )
         if require_eligible and not self.can_manage_sub_sellers(user):
             raise HTTPException(

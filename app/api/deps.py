@@ -46,12 +46,20 @@ def get_current_user(
 
 
 def get_user_permissions(db: Session, user: User) -> list[str]:
+    from app.services.role_access import (
+        ONBOARDING_LEADER_EXTRA_PERMISSIONS,
+        is_onboarding_area_leader,
+    )
+
     rows = db.execute(
         select(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .where(RolePermission.role_id == user.role_id)
     ).all()
-    return [row[0] for row in rows]
+    perms = {row[0] for row in rows}
+    if is_onboarding_area_leader(user):
+        perms |= ONBOARDING_LEADER_EXTRA_PERMISSIONS
+    return sorted(perms)
 
 
 def require_any_permissions(*required: str):

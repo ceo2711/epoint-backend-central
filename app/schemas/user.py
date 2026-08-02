@@ -19,6 +19,15 @@ class AreaBrief(ORMBase):
     name: str
 
 
+class ParentUserBrief(ORMBase):
+    """Vendedor titular del equipo (padre de un subvendedor)."""
+
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+
+
 class UserResponse(ORMBase):
     id: int
     email: str
@@ -31,6 +40,7 @@ class UserResponse(ORMBase):
     sede: SedeBrief | None = None
     client_id: int | None = None
     parent_user_id: int | None = None
+    parent: ParentUserBrief | None = None
     must_change_password: bool
     totp_enabled: bool = False
     is_active: bool

@@ -24,7 +24,7 @@ CLIENT_ROLE = "CLIENT"
 SEDE_SCOPED_ROLES = frozenset(
     {
         "SALES_REP",
-        "ONBOARDING_MANAGER",
+        "SUB_SELLER",
         "ADVISOR",
         "BRANCH_MANAGER",
         "AREA_LEADER",
@@ -35,7 +35,6 @@ SEDE_SCOPED_ROLES = frozenset(
 BRANCH_MANAGER_ASSIGNABLE_ROLES = frozenset(
     {
         "SALES_REP",
-        "ONBOARDING_MANAGER",
         "ADVISOR",
         "AREA_LEADER",
     }

@@ -32,11 +32,11 @@ from app.services.notifications.service import NotificationService
 from app.services.payments.authorize_provider import AuthorizePaymentProvider
 from app.services.payments.base import PaymentProviderError
 from app.services.payments.paypal_provider import PayPalPaymentProvider
-from app.services.role_access import is_sales_area_leader
+from app.services.role_access import is_sales_area_leader, is_sales_staff
 
 logger = logging.getLogger(__name__)
 
-PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "AREA_LEADER"})
+PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
 
 PROVIDER_LABELS = {
     PaymentProvider.AUTHORIZE.value: "Authorize.net",
@@ -62,7 +62,7 @@ class PaymentService:
 
     @staticmethod
     def ensure_access(user: User) -> None:
-        if user.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP"):
+        if user.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER"):
             return
         if is_sales_area_leader(user):
             return
@@ -139,7 +139,7 @@ class PaymentService:
     ) -> tuple[list[PaymentLinkResponse], int]:
         self.ensure_access(user)
         filters = [PaymentLink.merchant_id == merchant_id]
-        if user.role.code == "SALES_REP":
+        if is_sales_staff(user):
             filters.append(PaymentLink.created_by_user_id == user.id)
         elif created_by_user_id is not None:
             filters.append(PaymentLink.created_by_user_id == created_by_user_id)
@@ -524,6 +524,6 @@ class PaymentService:
         ).unique().scalar_one_or_none()
         if link is None or link.merchant_id != merchant_id:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
-        if user.role.code == "SALES_REP" and link.created_by_user_id != user.id:
+        if is_sales_staff(user) and link.created_by_user_id != user.id:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
         return link

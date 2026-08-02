@@ -47,10 +47,13 @@ def test_eligibility_requires_at_least_five(monkeypatch):
 
 def test_sub_seller_never_eligible(monkeypatch):
     service = SubSellerService(db=SimpleNamespace())
-    user = SimpleNamespace(id=2, role=SimpleNamespace(code="SALES_REP"), parent_user_id=9)
+    legacy = SimpleNamespace(id=2, role=SimpleNamespace(code="SALES_REP"), parent_user_id=9)
+    modern = SimpleNamespace(id=3, role=SimpleNamespace(code="SUB_SELLER"), parent_user_id=9)
     monkeypatch.setattr(service, "count_concretized_sales", lambda *a, **k: 99)
-    assert service.eligibility(user)["eligible"] is False
-    assert service.eligibility(user)["is_sub_seller"] is True
+    assert service.eligibility(legacy)["eligible"] is False
+    assert service.eligibility(legacy)["is_sub_seller"] is True
+    assert service.eligibility(modern)["eligible"] is False
+    assert service.eligibility(modern)["is_sub_seller"] is True
 
 
 def test_create_blocked_when_not_eligible(monkeypatch):

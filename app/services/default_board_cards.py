@@ -101,10 +101,17 @@ def resolve_default_comment_author(db: Session) -> User | None:
     if author is not None:
         return author
 
+    from app.models.area import Area
+
     return db.execute(
         select(User)
         .join(Role)
-        .where(Role.code == "ONBOARDING_MANAGER", User.is_active.is_(True))
+        .join(Area, Area.id == User.area_id)
+        .where(
+            Role.code == "AREA_LEADER",
+            Area.code == "ONBOARDING",
+            User.is_active.is_(True),
+        )
         .order_by(User.id)
     ).scalar_one_or_none()
 

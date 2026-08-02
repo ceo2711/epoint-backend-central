@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.influencer import Influencer
 from app.models.user import User
-from app.services.role_access import is_sales_area_leader
+from app.services.role_access import SALES_STAFF_ROLES, is_sales_area_leader
 from app.services.sede_scope import effective_sede_id
 
 INFLUENCERS_SOURCE_CODE = "INFLUENCERS"
@@ -32,7 +32,7 @@ def _validate_sales_rep(db: Session, *, sales_rep_user_id: int, sede_id: int) ->
         .unique()
         .scalar_one_or_none()
     )
-    if rep is None or not rep.is_active or rep.role.code != "SALES_REP":
+    if rep is None or not rep.is_active or rep.role.code not in SALES_STAFF_ROLES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendedor inválido")
     if rep.sede_id != sede_id:
         raise HTTPException(

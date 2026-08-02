@@ -23,8 +23,7 @@ class TestUserCanViewClientOnboardingData:
         [
             ("ADMIN", None, True),
             ("BRANCH_MANAGER", None, True),
-            ("ONBOARDING_MANAGER", None, True),
-            ("AREA_LEADER", "ONBOARDING", True),
+                        ("AREA_LEADER", "ONBOARDING", True),
             ("AREA_LEADER", "VENTAS", False),
             ("SALES_REP", None, False),
         ],
@@ -66,7 +65,7 @@ class TestUserCanViewApprovedClientWorkspace:
         db = MagicMock()
         db.get.return_value = self._client(approved_at=None)
         service = ClientService(db)
-        assert service.user_can_view_approved_client_workspace(_user("ONBOARDING_MANAGER"), 99) is False
+        assert service.user_can_view_approved_client_workspace(_user("AREA_LEADER", area_code="ONBOARDING"), 99) is False
 
     def test_allows_approved_client_for_onboarding(self):
         db = MagicMock()
@@ -76,7 +75,7 @@ class TestUserCanViewApprovedClientWorkspace:
         with patch.object(service, "user_can_access_client", return_value=True):
             assert (
                 service.user_can_view_approved_client_workspace(
-                    _user("ONBOARDING_MANAGER"), 99, client=client
+                    _user("AREA_LEADER", area_code="ONBOARDING"), 99, client=client
                 )
                 is True
             )
@@ -95,7 +94,7 @@ class TestUserCanAccessClientMerchantScope:
         db = MagicMock()
         db.execute.return_value.one_or_none.return_value = self._client_row()
         service = ClientService(db)
-        user = _user("ONBOARDING_MANAGER")
+        user = _user("AREA_LEADER", area_code="ONBOARDING")
 
         with (
             patch("app.services.clients.MerchantContextService") as merchant_ctx_cls,
@@ -109,7 +108,7 @@ class TestUserCanAccessClientMerchantScope:
         db = MagicMock()
         db.execute.return_value.one_or_none.return_value = self._client_row()
         service = ClientService(db)
-        user = _user("ONBOARDING_MANAGER")
+        user = _user("AREA_LEADER", area_code="ONBOARDING")
 
         with (
             patch("app.services.clients.MerchantContextService") as merchant_ctx_cls,

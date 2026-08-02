@@ -23,6 +23,11 @@ from app.services.notifications import NotificationService
 from app.services.storage import get_storage_provider
 from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
 
+from app.services.role_access import is_onboarding_area_leader
+
+def _is_onboarding_leader(user) -> bool:
+    return is_onboarding_area_leader(user)
+
 
 class BoardService:
     def __init__(self, db: Session) -> None:
@@ -144,13 +149,25 @@ class BoardService:
             if actor.role.code == "CLIENT" and portal_user:
                 from app.models.role import Role
 
-                team = self.db.execute(
-                    select(User).join(Role).where(
-                        Role.code.in_(["ONBOARDING_MANAGER", "ADVISOR"]),
-                        User.is_active.is_(True),
+                team = (
+                    self.db.execute(
+                        select(User)
+                        .join(Role)
+                        .options(joinedload(User.role), joinedload(User.area))
+                        .where(
+                            Role.code.in_(["AREA_LEADER", "ADVISOR"]),
+                            User.is_active.is_(True),
+                        )
                     )
-                ).scalars().all()
-                recipients = list(team)
+                    .unique()
+                    .scalars()
+                    .all()
+                )
+                recipients = [
+                    user
+                    for user in team
+                    if user.role.code == "ADVISOR" or is_onboarding_area_leader(user)
+                ]
             elif portal_user:
                 recipients = [portal_user]
             if recipients:
@@ -254,7 +271,7 @@ class BoardService:
         recipients = [
             user
             for user in recipients
-            if user.role.code != "ONBOARDING_MANAGER" or user.id in explicit_mention_ids
+            if not _is_onboarding_leader(user) or user.id in explicit_mention_ids
         ]
         if not recipients:
             return
@@ -287,7 +304,7 @@ class BoardService:
         role = author.role.code
 
         if is_internal:
-            if role == "ONBOARDING_MANAGER":
+            if _is_onboarding_leader(author):
                 recipients = list(advisors)
         elif role == "CLIENT":
             recipients = list(advisors)
@@ -295,7 +312,7 @@ class BoardService:
             if portal_user:
                 recipients = [portal_user]
             recipients.extend(a for a in advisors if a.id != author.id)
-        elif role == "ONBOARDING_MANAGER":
+        elif _is_onboarding_leader(author):
             if portal_user:
                 recipients.append(portal_user)
             recipients.extend(advisors)

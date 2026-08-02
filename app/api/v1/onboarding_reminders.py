@@ -13,14 +13,13 @@ from app.services.onboarding_reminders import run_onboarding_reminders
 
 router = APIRouter(prefix="/onboarding-reminders", tags=["Recordatorios onboarding"])
 
-ONBOARDING_REMINDER_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"})
-
-
 def require_onboarding_reminder_staff(current_user: CurrentUser) -> User:
-    if current_user.role.code not in ONBOARDING_REMINDER_ROLES:
+    from app.services.role_access import can_manage_onboarding
+
+    if not can_manage_onboarding(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administradores y onboarding pueden ejecutar recordatorios",
+            detail="Solo administradores y líderes de onboarding pueden ejecutar recordatorios",
         )
     return current_user
 

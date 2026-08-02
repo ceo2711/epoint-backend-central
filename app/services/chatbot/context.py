@@ -43,7 +43,8 @@ DOCUMENT_GAP_LABELS = {
 
 REQUIRED_DOCUMENT_TYPES = list(ALL_UPLOADABLE_TYPES)
 
-STAFF_ROLES = {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
+STAFF_ROLES = {"ADMIN", "BRANCH_MANAGER", "ADVISOR", "AREA_LEADER"}
+SALES_ROLES = frozenset({"SALES_REP", "SUB_SELLER"})
 SALES_ROLE = "SALES_REP"
 CLIENT_ROLE = "CLIENT"
 
@@ -129,7 +130,7 @@ class ChatbotContextBuilder:
             payload = self._build_client_payload()
             return json.dumps(payload, ensure_ascii=False, indent=2), resolved_client_id
 
-        if role == SALES_ROLE:
+        if role in SALES_ROLES:
             payload = self._build_sales_payload(
                 include_actions=self._can_create(),
                 client_id=resolved_client_id,

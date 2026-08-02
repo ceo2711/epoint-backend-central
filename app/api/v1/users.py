@@ -7,11 +7,13 @@ from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, require_permissions
 from app.core.security import hash_password
+from app.models.area import Area
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.services.auth import AuthService
+from app.services.role_access import AREA_LEADER_ROLE, is_branch_manager
 from app.services.sede_scope import (
     assert_actor_can_assign_role,
     effective_sede_id,
@@ -23,22 +25,73 @@ from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 
-AREA_REQUIRED_ROLE_CODES = frozenset({"AREA_LEADER"})
+AREA_REQUIRED_ROLE_CODES = frozenset({AREA_LEADER_ROLE, "ADVISOR"})
 
 
 def _assert_area_required(role: Role, area_id: int | None) -> None:
     if role.code in AREA_REQUIRED_ROLE_CODES and area_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El líder de área debe tener un área asignada",
+        detail = (
+            "El líder de área debe tener un área asignada"
+            if role.code == AREA_LEADER_ROLE
+            else "El asesor debe tener un área asignada"
         )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def _assert_unique_active_area_leader(
+    db: DbSession,
+    *,
+    role: Role,
+    area_id: int | None,
+    sede_id: int | None,
+    is_active: bool = True,
+    exclude_user_id: int | None = None,
+) -> None:
+    """Como máximo un líder de área activo por (área, sede)."""
+    if role.code != AREA_LEADER_ROLE or area_id is None or not is_active:
+        return
+
+    query = (
+        select(User)
+        .join(Role)
+        .where(
+            Role.code == AREA_LEADER_ROLE,
+            User.area_id == area_id,
+            User.is_active.is_(True),
+        )
+    )
+    if sede_id is None:
+        query = query.where(User.sede_id.is_(None))
+    else:
+        query = query.where(User.sede_id == sede_id)
+    if exclude_user_id is not None:
+        query = query.where(User.id != exclude_user_id)
+
+    existing = db.execute(query.limit(1)).scalar_one_or_none()
+    if existing is None:
+        return
+
+    area = db.get(Area, area_id)
+    area_label = area.name if area is not None else "seleccionada"
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"Ya existe un líder activo para el área {area_label} en esta sede. "
+            "Desactivá al actual antes de asignar otro."
+        ),
+    )
 
 
 def _staff_users_query():
     """Usuarios internos de la plataforma (empleados), sin cuentas portal de clientes."""
     return (
         select(User)
-        .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+        .options(
+            joinedload(User.role),
+            joinedload(User.area),
+            joinedload(User.sede),
+            joinedload(User.parent),
+        )
         .join(Role)
         .where(Role.code != "CLIENT")
     )
@@ -77,6 +130,9 @@ def list_users(
     page_size: int = Query(20, ge=1, le=100),
     search: str | None = None,
     sede_id: int | None = None,
+    role_id: int | None = None,
+    area_id: int | None = None,
+    without_area: bool = False,
     is_active: bool | None = None,
 ) -> PaginatedResponse[UserResponse]:
     query = _staff_users_query()
@@ -86,6 +142,17 @@ def list_users(
         query = query.where(User.sede_id == scope)
     elif sede_id is not None:
         query = query.where(User.sede_id == sede_id)
+
+    # El gerente no se lista a sí mismo (ni gestiona su propia fila).
+    if is_branch_manager(current_user):
+        query = query.where(User.id != current_user.id)
+
+    if role_id is not None:
+        query = query.where(User.role_id == role_id)
+    if without_area:
+        query = query.where(User.area_id.is_(None))
+    elif area_id is not None:
+        query = query.where(User.area_id == area_id)
 
     if search:
         words = [part.strip() for part in search.strip().split() if part.strip()]
@@ -140,6 +207,13 @@ def create_user(
         actor=current_user,
         role=role,
         requested_sede_id=payload.sede_id,
+    )
+    _assert_unique_active_area_leader(
+        db,
+        role=role,
+        area_id=payload.area_id,
+        sede_id=sede_id,
+        is_active=True,
     )
 
     user = User(
@@ -207,6 +281,17 @@ def update_user(
             role=role,
             requested_sede_id=requested_sede,
         )
+
+    next_sede_id = data["sede_id"] if "sede_id" in data else user.sede_id
+    next_is_active = data["is_active"] if "is_active" in data else user.is_active
+    _assert_unique_active_area_leader(
+        db,
+        role=role,
+        area_id=next_area_id,
+        sede_id=next_sede_id,
+        is_active=bool(next_is_active),
+        exclude_user_id=user.id,
+    )
 
     password = data.pop("password", None)
     if password:

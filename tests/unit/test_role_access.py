@@ -30,7 +30,7 @@ class TestRoleAccessHelpers:
     def test_onboarding_area_leader(self):
         assert is_onboarding_area_leader(_user(role="AREA_LEADER", area="ONBOARDING"))
         assert not is_onboarding_area_leader(_user(role="AREA_LEADER", area="VENTAS"))
-        assert not is_onboarding_area_leader(_user(role="ONBOARDING_MANAGER", area="ONBOARDING"))
+        assert is_onboarding_area_leader(_user(role="AREA_LEADER", area="ONBOARDING"))
 
     def test_can_supervise_sales_reps(self):
         assert can_supervise_sales_reps(_user(role="ADMIN"))
@@ -44,5 +44,5 @@ class TestRoleAccessHelpers:
         assert can_filter_clients_by_sales_rep(_user(role="BRANCH_MANAGER"))
         assert can_filter_clients_by_sales_rep(_user(role="AREA_LEADER", area="VENTAS"))
         assert can_filter_clients_by_sales_rep(_user(role="AREA_LEADER", area="ONBOARDING"))
-        assert not can_filter_clients_by_sales_rep(_user(role="ONBOARDING_MANAGER"))
+        assert not can_filter_clients_by_sales_rep(_user(role="ADVISOR"))
         assert not can_filter_clients_by_sales_rep(_user(role="ADVISOR"))

@@ -40,7 +40,7 @@ from app.services.chatbot.calendly_options import (
 )
 from app.services.chatbot.messages import t
 
-CALENDAR_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP"})
+CALENDAR_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER"})
 
 
 class CalendlyChatActions:
@@ -55,7 +55,7 @@ class CalendlyChatActions:
         return self.user.role.code in CALENDAR_ROLES
 
     def _can_manage(self) -> bool:
-        return self.user.role.code == "SALES_REP"
+        return self.user.role.code in ("SALES_REP", "SUB_SELLER")
 
     def _can_write(self) -> bool:
         return self._can_manage() and get_settings().calendly_write_enabled

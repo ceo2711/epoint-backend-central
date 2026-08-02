@@ -29,6 +29,7 @@ from app.services.email.client_conversion_welcome import (
     send_client_conversion_welcome_email,
 )
 from app.services.merchant_context import MerchantContextService
+from app.services.role_access import SALES_STAFF_ROLES, is_sales_staff
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class ProspectService:
         if not include_converted:
             query = query.where(Prospect.converted_client_id.is_(None))
         if sales_rep_id is not None:
-            if user.role.code == "SALES_REP" and sales_rep_id != user.id:
+            if is_sales_staff(user) and sales_rep_id != user.id:
                 from app.services.sub_sellers import SubSellerService
 
                 team_ids = SubSellerService(self.db).list_team_user_ids(user)
@@ -217,7 +218,7 @@ class ProspectService:
         self._assert_email_available(normalized_email, merchant_id=merchant_id)
         self._assert_phone_available(phone, merchant_id=merchant_id)
 
-        if actor.role.code == "SALES_REP":
+        if is_sales_staff(actor):
             from app.services.sub_sellers import SubSellerService
 
             team_ids = SubSellerService(self.db).list_team_user_ids(actor)
@@ -236,7 +237,7 @@ class ProspectService:
             owner_id = assigned_to_user_id
 
         owner = self.db.get(User, owner_id)
-        if owner is None or not owner.is_active or owner.role.code != "SALES_REP":
+        if owner is None or not owner.is_active or owner.role.code not in SALES_STAFF_ROLES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendedor inválido")
 
         actor_sede_id = effective_sede_id(actor)
@@ -395,7 +396,7 @@ class ProspectService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No se puede pasar de {current} a {new_status}",
             )
-        if actor.role.code == "SALES_REP" and new_status not in SALES_REP_MANUAL_STATUSES:
+        if is_sales_staff(actor) and new_status not in SALES_REP_MANUAL_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="El estado se actualiza automáticamente al realizar acciones en el prospecto",
@@ -475,8 +476,16 @@ class ProspectService:
         event = self.db.get(CalendlyEvent, calendly_event_id)
         if event is None:
             raise HTTPException(status_code=404, detail="Reunión no encontrada")
-        if actor.role.code == "SALES_REP" and event.user_id != actor.id:
+        if is_sales_staff(actor) and event.user_id != actor.id:
             raise HTTPException(status_code=404, detail="Reunión no encontrada")
+        if prospect.assigned_to_user_id != event.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "La reunión pertenece a otro vendedor. "
+                    "Solo podés vincularla a un prospecto asignado a ese mismo vendedor."
+                ),
+            )
 
         previous_event_id = prospect.calendly_event_id
         is_reschedule = previous_event_id is not None and previous_event_id != calendly_event_id
@@ -636,7 +645,7 @@ class ProspectService:
         envelope = self.db.get(DocusignEnvelope, envelope_id)
         if envelope is None:
             raise HTTPException(status_code=404, detail="Contrato no encontrado")
-        if actor.role.code == "SALES_REP" and envelope.sent_by_user_id != actor.id:
+        if is_sales_staff(actor) and envelope.sent_by_user_id != actor.id:
             raise HTTPException(status_code=404, detail="Contrato no encontrado")
         if envelope.signer_email.lower().strip() != prospect.email.lower().strip():
             raise HTTPException(
@@ -665,7 +674,7 @@ class ProspectService:
         link = self.db.get(PaymentLink, payment_link_id)
         if link is None:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
-        if actor.role.code == "SALES_REP" and link.created_by_user_id != actor.id:
+        if is_sales_staff(actor) and link.created_by_user_id != actor.id:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
         if link.customer_email.lower().strip() != prospect.email.lower().strip():
             raise HTTPException(
@@ -990,7 +999,7 @@ class ProspectService:
         elif filter_sede_id is not None:
             query = query.where(Prospect.sede_id == filter_sede_id)
 
-        if user.role.code == "SALES_REP":
+        if is_sales_staff(user):
             from app.services.sub_sellers import SubSellerService
 
             team_ids = SubSellerService(self.db).list_team_user_ids(user)
@@ -1040,7 +1049,7 @@ class ProspectService:
                 raise HTTPException(status_code=404, detail="Prospecto no encontrado")
         elif not self.merchant_ctx.user_can_access_merchant(user, prospect.merchant_id):
             raise HTTPException(status_code=404, detail="Prospecto no encontrado")
-        if user.role.code == "SALES_REP" and prospect.assigned_to_user_id != user.id:
+        if is_sales_staff(user) and prospect.assigned_to_user_id != user.id:
             from app.services.sub_sellers import SubSellerService
 
             team_ids = SubSellerService(self.db).list_team_user_ids(user)

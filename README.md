@@ -28,9 +28,9 @@ alembic upgrade head
 python scripts/seed.py
 
 # 5. Arrancar API (incluye recordatorios automáticos y verificación IA en background)
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 15
 #ó
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 15
 # Usá --host 0.0.0.0 si vas a probar la app móvil (Expo) desde el celular.
 ```
 

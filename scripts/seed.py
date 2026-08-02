@@ -104,18 +104,20 @@ ROLES = {
         "description": "Registra clientes nuevos",
         "permissions": ["clients:read", "clients:create", "clients:update", "prospects:read", "prospects:create", "prospects:update", "calendly:read", "calendly:manage", "payments:read", "payments:create"],
     },
-    "ONBOARDING_MANAGER": {
-        "name": "Encargado de Onboarding",
-        "description": "Revisa y aprueba clientes, gestiona onboarding",
+    "SUB_SELLER": {
+        "name": "Subvendedor",
+        "description": "Vendedor bajo la supervisión de un vendedor titular",
         "permissions": [
             "clients:read",
+            "clients:create",
             "clients:update",
-            "clients:approve",
-            "documents:read",
-            "documents:upload",
-            "boards:read",
-            "boards:manage",
-            "credentials:read",
+            "prospects:read",
+            "prospects:create",
+            "prospects:update",
+            "calendly:read",
+            "calendly:manage",
+            "payments:read",
+            "payments:create",
         ],
     },
     "ADVISOR": {
@@ -140,6 +142,7 @@ ROLES = {
 AREAS = [
     ("VENTAS", "Ventas", "Equipo comercial"),
     ("ONBOARDING", "Onboarding", "Equipo de incorporación de clientes"),
+    ("ASESORES", "Asesores", "Equipo de acompañamiento de clientes"),
 ]
 
 MERCHANTS = [
@@ -154,10 +157,11 @@ ADMIN_PASSWORD = "Admin123!"
 DEMO_USERS = [
     ("vendedor@epoint.com", "Vendedor", "Demo", "SALES_REP", "VENTAS", "Vendedor123!"),
     ("lider.ventas@epoint.com", "Líder", "Ventas", "AREA_LEADER", "VENTAS", "LiderVentas123!"),
-    ("onboarding@epoint.com", "Encargado", "Onboarding", "ONBOARDING_MANAGER", "ONBOARDING", "Onboard123!"),
-    ("asesor@epoint.com", "Asesor", "Demo", "ADVISOR", "ONBOARDING", "Asesor123!"),
+    ("onboarding@epoint.com", "Líder", "Onboarding", "AREA_LEADER", "ONBOARDING", "Onboard123!"),
+    ("asesor@epoint.com", "Asesor", "Demo", "ADVISOR", "ASESORES", "Asesor123!"),
     ("gerente@epoint.com", "Gerente", "Sucursal", "BRANCH_MANAGER", "VENTAS", "Gerente123!"),
-    (EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, "EPoint", "Corp", "ONBOARDING_MANAGER", "ONBOARDING", "SystemBoard123!"),
+    # Autor técnico de comentarios default del tablero (no es líder de área).
+    (EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL, "EPoint", "Corp", "ADVISOR", "ASESORES", "SystemBoard123!"),
 ]
 
 BOARD_TEMPLATE = {
@@ -238,6 +242,9 @@ def seed() -> None:
                 "sources:create",
                 "sources:update",
                 "sources:delete",
+                "roles:create",
+                "roles:update",
+                "roles:delete",
                 "clients:delete",
             )
             if code in perm_map
@@ -313,10 +320,24 @@ def seed() -> None:
                 )
                 db.add(demo)
                 db.flush()
-            elif demo.sede_id is None and role_code in SEDE_SCOPED_ROLES:
-                demo.sede_id = sede.id
+            else:
+                # Mantener demos alineados al modelo actual (roles/áreas).
+                if role_code in role_map:
+                    demo.role_id = role_map[role_code].id
+                if area_code in area_map:
+                    demo.area_id = area_map[area_code].id
+                if demo.sede_id is None and role_code in SEDE_SCOPED_ROLES:
+                    demo.sede_id = sede.id
+                demo.is_active = True
             if demo is not None and demo.sede_id is not None:
                 sync_user_merchants_for_sede(db, demo, demo.sede_id)
+
+        # Rol legacy: no asignable
+        legacy_om = db.execute(select(Role).where(Role.code == "ONBOARDING_MANAGER")).scalar_one_or_none()
+        if legacy_om is not None:
+            legacy_om.is_active = False
+            legacy_om.name = "Encargado de Onboarding (deprecado)"
+            legacy_om.description = "Reemplazado por Líder de área + área Onboarding"
 
         # Staff operativo sin sede: backfill a sede principal
         for user in db.execute(

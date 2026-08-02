@@ -459,7 +459,9 @@ def assign_client_advisor(
     merchant_id: ActiveMerchantId,
 ) -> AdvisorBrief:
     """Reemplaza todos los asesores por uno (uso onboarding). Preferir POST /advisors para agregar."""
-    if current_user.role.code not in ("ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"):
+    from app.services.role_access import can_manage_onboarding
+
+    if not can_manage_onboarding(current_user):
         raise HTTPException(status_code=403, detail="Solo onboarding puede reemplazar el asesor asignado")
 
     service = ClientService(db)

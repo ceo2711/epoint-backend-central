@@ -40,6 +40,7 @@ class CalendlyLinkedProspectBrief(BaseModel):
 
 class CalendlyEventResponse(BaseModel):
     id: int
+    user_id: int
     name: str
     status: str
     start_time: datetime

@@ -10,8 +10,9 @@ import re
 from typing import Any
 
 # Roles internos de staff (misma convención que context.py).
-STAFF_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"})
+STAFF_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "ADVISOR", "AREA_LEADER"})
 SALES_ROLE = "SALES_REP"
+SUB_SELLER_ROLE = "SUB_SELLER"
 CLIENT_ROLE = "CLIENT"
 
 HOW_TO_PATTERN = re.compile(
@@ -70,7 +71,7 @@ def platform_sections_for_role(role: str, base_url: str) -> list[dict[str, str]]
         },
     ]
 
-    if role in {SALES_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"}:
+    if role in {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"}:
         sections.extend(
             [
                 {
@@ -96,7 +97,7 @@ def platform_sections_for_role(role: str, base_url: str) -> list[dict[str, str]]
             ]
         )
 
-    if role in {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}:
+    if role in {"ADMIN", "BRANCH_MANAGER", "ADVISOR", "AREA_LEADER"}:
         # Usuarios visibles para quien gestiona el equipo / onboarding.
         if role in {"ADMIN", "BRANCH_MANAGER"}:
             sections.append(
@@ -162,7 +163,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "registrar_cliente",
         "titulo": "Cómo registrar un cliente",
-        "roles": {SALES_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER", "ONBOARDING_MANAGER"},
+        "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("registrar", "registro", "nuevo cliente", "alta", "register"),
         "pasos": [
             "Desde el chat: pedí registrar un cliente y completá nombre, email, teléfono, fuente y comercio.",
@@ -175,7 +176,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "aprobar_cliente",
         "titulo": "Cómo aprobar o rechazar un cliente",
-        "roles": {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"},
+        "roles": {"ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("aprobar", "rechazar", "pendiente", "revisión", "revision", "approve", "reject"),
         "pasos": [
             "Andá a Clientes y filtrá por estado «Pendiente de revisión».",
@@ -225,7 +226,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "prospectos",
         "titulo": "Cómo trabajar con prospectos",
-        "roles": {SALES_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
+        "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("prospecto", "prospectos", "lead", "embudo", "pipeline"),
         "pasos": [
             "Andá a Prospectos para crear y mover leads por el embudo.",
@@ -237,7 +238,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "calendario",
         "titulo": "Cómo usar el calendario (Calendly)",
-        "roles": {SALES_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
+        "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("calendario", "calendly", "reunión", "reunion", "agendar", "meeting"),
         "pasos": [
             "Andá a Calendario y conectá tu Personal Access Token de Calendly.",
@@ -249,7 +250,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "pagos",
         "titulo": "Cómo generar un link de pago",
-        "roles": {SALES_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
+        "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("pago", "pagos", "link de pago", "paypal", "authorize"),
         "pasos": [
             "Andá a Pagos → Nuevo link de pago.",
@@ -261,7 +262,7 @@ GUIDES: list[dict[str, Any]] = [
     {
         "id": "asesores",
         "titulo": "Cómo trabajar como asesor",
-        "roles": {"ADVISOR", "ADMIN", "BRANCH_MANAGER", "AREA_LEADER", "ONBOARDING_MANAGER"},
+        "roles": {"ADVISOR", "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("asesor", "asesores", "asignar asesor", "listo para trabajar"),
         "pasos": [
             "Los asesores ven los clientes asignados en Clientes.",

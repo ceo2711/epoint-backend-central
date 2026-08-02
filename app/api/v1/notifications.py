@@ -53,6 +53,9 @@ async def stream_notifications(request: Request, current_user: CurrentUser) -> S
                 if message.get("type") == "__shutdown__":
                     break
                 yield f"data: {json.dumps(message, default=str)}\n\n"
+        except asyncio.CancelledError:
+            # Reload/shutdown de uvicorn con el stream abierto: cierre normal, no es un bug.
+            return
         finally:
             notification_hub.unsubscribe(current_user.id, queue)
 

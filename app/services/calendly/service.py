@@ -32,10 +32,10 @@ from app.schemas.calendly import (
 from app.schemas.common import MessageResponse
 from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
-from app.services.role_access import can_supervise_sales_reps, is_sales_area_leader
+from app.services.role_access import SALES_STAFF_ROLES, can_supervise_sales_reps, is_sales_area_leader, is_sales_staff
 from app.services.user_serialization import avatar_url_for
 
-CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "AREA_LEADER"})
+CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
 SYNC_PAST_DAYS = 30
 SYNC_FUTURE_DAYS = 180
 AUTO_SYNC_STALE_MINUTES = 3
@@ -61,7 +61,7 @@ class CalendlyService:
 
     @staticmethod
     def ensure_calendar_access(actor: User) -> None:
-        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP"):
+        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER"):
             return
         if is_sales_area_leader(actor):
             return
@@ -69,7 +69,7 @@ class CalendlyService:
 
     def _ensure_manage_access(self, actor: User) -> None:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "SALES_REP":
+        if not is_sales_staff(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo vendedores pueden crear, editar o cancelar reuniones",
@@ -481,7 +481,7 @@ class CalendlyService:
 
     def _resolve_target_user_id(self, actor: User, user_id: int | None) -> int:
         self.ensure_calendar_access(actor)
-        if actor.role.code == "SALES_REP":
+        if is_sales_staff(actor):
             if user_id is not None and user_id != actor.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -533,7 +533,7 @@ class CalendlyService:
                 joinedload(User.sede),
                 joinedload(User.parent),
             )
-            .where(Role.code == "SALES_REP", User.is_active.is_(True))
+            .where(Role.code.in_(tuple(SALES_STAFF_ROLES)), User.is_active.is_(True))
         )
         sede_id = effective_sede_id(actor)
         if sede_id is not None:
@@ -573,7 +573,7 @@ class CalendlyService:
 
     def connect(self, actor: User, payload: CalendlyConnectRequest) -> CalendlyConnectionResponse:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "SALES_REP" and not can_supervise_sales_reps(actor):
+        if not is_sales_staff(actor) and not can_supervise_sales_reps(actor):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden conectar Calendly")
         if can_supervise_sales_reps(actor):
             raise HTTPException(
@@ -627,7 +627,7 @@ class CalendlyService:
 
     def disconnect(self, actor: User) -> MessageResponse:
         self.ensure_calendar_access(actor)
-        if actor.role.code != "SALES_REP":
+        if not is_sales_staff(actor):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden desconectar Calendly")
 
         connection = self._get_connection_for_user(actor.id)
@@ -646,7 +646,7 @@ class CalendlyService:
         notify_new_events: bool = True,
     ) -> CalendlySyncResponse:
         target_user_id = self._resolve_target_user_id(actor, user_id)
-        if actor.role.code == "SALES_REP" and target_user_id != actor.id:
+        if is_sales_staff(actor) and target_user_id != actor.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede sincronizar otro calendario")
 
         connection = self._get_connection_for_user(target_user_id)
@@ -710,6 +710,9 @@ class CalendlyService:
             if is_new:
                 row = CalendlyEvent(user_id=target_user_id, calendly_event_uri=event_uri)
                 self.db.add(row)
+            elif row.user_id != target_user_id:
+                # Mantener el dueño alineado al calendario sincronizado (supervisión / re-sync).
+                row.user_id = target_user_id
 
             row.name = remote.get("name") or "Reunión"
             row.status = remote.get("status") or "active"

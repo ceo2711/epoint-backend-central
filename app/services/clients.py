@@ -34,7 +34,7 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
-from app.services.role_access import SALES_AREA_CODE, is_onboarding_area_leader
+from app.services.role_access import can_manage_onboarding, is_onboarding_area_leader, is_sales_staff
 
 if TYPE_CHECKING:
     from app.models.board import Board, BoardTemplate
@@ -129,7 +129,7 @@ class ClientService:
         elif filter_sede_id is not None:
             query = query.where(Client.sede_id == filter_sede_id)
 
-        if user.role.code == "SALES_REP":
+        if is_sales_staff(user):
             from app.services.sub_sellers import SubSellerService
 
             team_ids = SubSellerService(self.db).list_team_user_ids(user)
@@ -176,7 +176,7 @@ class ClientService:
                 )
             )
         if sales_rep_id is not None:
-            if user.role.code == "SALES_REP" and sales_rep_id != user.id:
+            if is_sales_staff(user) and sales_rep_id != user.id:
                 from app.services.sub_sellers import SubSellerService
 
                 team_ids = SubSellerService(self.db).list_team_user_ids(user)
@@ -425,7 +425,7 @@ class ClientService:
         client: Client,
         **fields,
     ) -> Client:
-        if actor.role.code == "SALES_REP" and client.status not in (
+        if is_sales_staff(actor) and client.status not in (
             ClientStatus.PENDIENTE_DE_REVISION.value,
             ClientStatus.RECHAZADO.value,
         ):
@@ -1051,9 +1051,7 @@ class ClientService:
 
     def actor_can_manage_client_advisors(self, actor: User, client: Client) -> bool:
         role = actor.role.code if actor.role else None
-        if role in {"ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER"}:
-            return True
-        if is_onboarding_area_leader(actor):
+        if can_manage_onboarding(actor):
             return True
         if role == "ADVISOR":
             return any(
@@ -1304,14 +1302,14 @@ class ClientService:
         return {"deleted_ids": deleted_ids, "failures": failures}
 
     def _get_onboarding_team(self) -> list[User]:
-        """Staff notificado en onboarding (excluye líderes del área de ventas)."""
+        """Admin/gerente y líderes de onboarding (notificaciones de incorporación)."""
         users = list(
             self.db.execute(
                 select(User)
                 .join(Role)
                 .options(joinedload(User.area), joinedload(User.role))
                 .where(
-                    Role.code.in_(["ONBOARDING_MANAGER", "AREA_LEADER", "ADMIN", "BRANCH_MANAGER"]),
+                    Role.code.in_(["AREA_LEADER", "ADMIN", "BRANCH_MANAGER"]),
                     User.is_active.is_(True),
                 )
             )
@@ -1322,26 +1320,23 @@ class ClientService:
         return [
             user
             for user in users
-            if not (
-                user.role.code == "AREA_LEADER"
-                and user.area is not None
-                and user.area.code == SALES_AREA_CODE
-            )
+            if user.role.code in ("ADMIN", "BRANCH_MANAGER") or is_onboarding_area_leader(user)
         ]
 
     def _get_mentionable_onboarding(self, client: Client) -> list[User]:
-        """Solo ONBOARDING_MANAGER (sin admin/gerente). Preferir la misma sede del cliente."""
+        """Solo líderes de onboarding (sin admin/gerente). Preferir la misma sede del cliente."""
         users = list(
             self.db.execute(
                 select(User)
                 .join(Role)
-                .options(joinedload(User.role))
-                .where(Role.code == "ONBOARDING_MANAGER", User.is_active.is_(True))
+                .options(joinedload(User.role), joinedload(User.area))
+                .where(Role.code == "AREA_LEADER", User.is_active.is_(True))
             )
             .unique()
             .scalars()
             .all()
         )
+        users = [user for user in users if is_onboarding_area_leader(user)]
         sede_id = client.sede_id
         if sede_id is not None:
             scoped = [user for user in users if user.sede_id == sede_id]
@@ -1471,7 +1466,7 @@ class ClientService:
 
         if user.role.code == "CLIENT":
             return user.client_id == client_id
-        if user.role.code == "SALES_REP":
+        if is_sales_staff(user):
             from app.services.sub_sellers import SubSellerService
 
             team_ids = SubSellerService(self.db).list_team_user_ids(user)
@@ -1488,12 +1483,8 @@ class ClientService:
         return True
 
     def user_can_view_client_onboarding_data(self, user: User, client_id: int) -> bool:
-        """Documentos, perfil extendido, portal, tablero: admin, gerente, onboarding, líder onboarding y asesor asignado."""
-        if user.role.code in ("ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER"):
-            return self.user_can_access_client(user, client_id)
-        if is_onboarding_area_leader(user):
-            return self.user_can_access_client(user, client_id)
-        if user.role.code == "ADVISOR":
+        """Documentos, perfil extendido, portal, tablero: admin, gerente, líder onboarding y asesor asignado."""
+        if can_manage_onboarding(user) or user.role.code == "ADVISOR":
             return self.user_can_access_client(user, client_id)
         return False
 

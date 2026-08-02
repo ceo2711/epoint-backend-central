@@ -86,10 +86,10 @@ class AuthService:
 
         eligibility: dict = {
             "can_manage_sub_sellers": False,
-            "is_sub_seller": bool(user.parent_user_id),
+            "is_sub_seller": bool(user.parent_user_id) or user.role.code == "SUB_SELLER",
             "previous_month_sales": None,
         }
-        if user.role.code == "SALES_REP":
+        if user.role.code in ("SALES_REP", "SUB_SELLER"):
             from app.services.sub_sellers import SubSellerService
 
             eligibility = SubSellerService(self.db).eligibility(user)

@@ -10,15 +10,21 @@ from app.schemas.client import AdvisorBrief
 
 router = APIRouter(prefix="/advisors", tags=["Asesores"])
 
-_ADVISOR_LIST_ROLES = frozenset({"ONBOARDING_MANAGER", "ADMIN", "BRANCH_MANAGER", "ADVISOR"})
-
-
 @router.get("", response_model=list[AdvisorBrief])
 def list_advisors(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
 ) -> list[AdvisorBrief]:
-    if current_user.role.code not in _ADVISOR_LIST_ROLES:
+    from app.services.role_access import (
+        can_manage_onboarding,
+        is_advisors_area_leader,
+    )
+
+    if not (
+        can_manage_onboarding(current_user)
+        or is_advisors_area_leader(current_user)
+        or current_user.role.code == "ADVISOR"
+    ):
         raise HTTPException(status_code=403, detail="No autorizado a listar asesores")
 
     advisors = (

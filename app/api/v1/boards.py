@@ -51,9 +51,8 @@ def _require_staff_client_workspace(
     return client
 
 BOARD_STAFF_ROLES = frozenset(
-    {"ADMIN", "BRANCH_MANAGER", "ONBOARDING_MANAGER", "ADVISOR", "AREA_LEADER"}
+    {"ADMIN", "BRANCH_MANAGER", "ADVISOR", "AREA_LEADER"}
 )
-BOARD_CARD_DELETE_ROLES = frozenset({"ONBOARDING_MANAGER", "ADVISOR"})
 
 
 def _is_board_staff(user: User) -> bool:
@@ -66,16 +65,21 @@ def _require_board_staff(user: User) -> None:
 
 
 def _require_board_card_delete(user: User) -> None:
-    if user.role.code not in BOARD_CARD_DELETE_ROLES:
-        raise HTTPException(
-            status_code=403,
-            detail="Solo asesores y encargados de onboarding pueden eliminar cards",
-        )
+    from app.services.role_access import is_onboarding_area_leader
+
+    if user.role.code == "ADVISOR" or is_onboarding_area_leader(user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Solo asesores y líderes de onboarding pueden eliminar cards",
+    )
 
 
 def _require_card_label_editor(user: User, client: Client, db) -> None:
     """Solo onboarding o un asesor asignado del cliente pueden setear labels."""
-    if user.role.code == "ONBOARDING_MANAGER":
+    from app.services.role_access import is_onboarding_area_leader
+
+    if is_onboarding_area_leader(user):
         return
     if user.role.code == "ADVISOR":
         advisors = ClientService(db)._get_active_advisors(client)

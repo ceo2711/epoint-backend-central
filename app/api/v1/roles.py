@@ -5,14 +5,25 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
-from app.api.deps import DbSession, require_permissions
+from app.api.deps import CurrentUser, DbSession, require_permissions
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.role import PermissionResponse, RoleCreate, RoleResponse, RoleUpdate
+from app.services.role_access import is_global_admin
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
+
+
+def require_admin_roles_access(current_user: CurrentUser) -> User:
+    """Catálogo de roles: solo ADMIN (no gerente ni otros staff)."""
+    if not is_global_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el administrador puede gestionar roles",
+        )
+    return current_user
 
 
 def _load_role(db: DbSession, role_id: int) -> Role | None:
@@ -59,6 +70,7 @@ def create_role(
     payload: RoleCreate,
     db: DbSession,
     _current_user: Annotated[User, Depends(require_permissions("roles:create"))],
+    _admin: Annotated[User, Depends(require_admin_roles_access)],
 ) -> RoleResponse:
     role = Role(
         code=payload.code.upper(),
@@ -103,6 +115,7 @@ def update_role(
     payload: RoleUpdate,
     db: DbSession,
     _current_user: Annotated[User, Depends(require_permissions("roles:update"))],
+    _admin: Annotated[User, Depends(require_admin_roles_access)],
 ) -> RoleResponse:
     role = _load_role(db, role_id)
     if role is None:
@@ -134,6 +147,7 @@ def deactivate_role(
     role_id: int,
     db: DbSession,
     _current_user: Annotated[User, Depends(require_permissions("roles:delete"))],
+    _admin: Annotated[User, Depends(require_admin_roles_access)],
 ) -> MessageResponse:
     role = db.get(Role, role_id)
     if role is None:

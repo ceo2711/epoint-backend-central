@@ -20,7 +20,7 @@ pip install -r requirements.txt
 cp .env.example .env   # DATABASE_URL, JWT_SECRET_KEY, GEMINI_API_KEY…
 alembic upgrade head
 python scripts/seed.py
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 15
 ```
 
 - Docs: `http://localhost:8000/docs` · Health: `/api/v1/health`

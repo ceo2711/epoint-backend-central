@@ -145,7 +145,7 @@ class TestDashboardRoleAreas:
         assert areas[0][2][0] == "PENDIENTE_CONTACTAR"
 
     def test_onboarding_manager_only_sees_general_onboarding(self):
-        areas = _area_definitions_for_role("ONBOARDING_MANAGER")
+        areas = _area_definitions_for_role("AREA_LEADER", area_code="ONBOARDING")
         assert len(areas) == 1
         assert areas[0][0] == "ONBOARDING"
         assert areas[0][3] == "general"
