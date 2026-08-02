@@ -104,6 +104,10 @@ class SubSellerActiveUpdate(BaseModel):
     is_active: bool
 
 
+class SubSellerReassignRequest(BaseModel):
+    new_parent_user_id: int
+
+
 class SetActiveMerchantRequest(BaseModel):
     merchant_id: int
 

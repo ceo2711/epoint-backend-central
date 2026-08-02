@@ -225,6 +225,8 @@ def create_user(
         role_id=payload.role_id,
         area_id=payload.area_id,
         sede_id=sede_id,
+        # Contraseña definida por quien crea la cuenta: forzar cambio en el primer login.
+        must_change_password=True,
     )
     db.add(user)
     db.flush()

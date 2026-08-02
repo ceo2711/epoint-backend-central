@@ -425,6 +425,15 @@ class ProspectService:
     ) -> Prospect:
         if prospect.converted_client_id is not None:
             raise HTTPException(status_code=400, detail="El prospecto ya fue convertido a cliente")
+        cleaned_note = (note or "").strip()
+        # Sin reunión vinculada hace falta explicar el medio de contacto.
+        if prospect.calendly_event_id is None and len(cleaned_note) < 5:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indicá cómo fue contactado el prospecto (mínimo 5 caracteres)",
+            )
+        if not cleaned_note and prospect.calendly_event_id is not None:
+            cleaned_note = "Contactado tras la reunión vinculada"
         current = prospect.status
         target = ProspectStatus.LEAD_CONTACTADO.value
         if current != ProspectStatus.PENDIENTE_CONTACTAR.value:
@@ -445,7 +454,7 @@ class ProspectService:
             event_type=ProspectHistoryEventType.STATUS_CHANGE.value,
             from_status=current,
             to_status=target,
-            note=note,
+            note=cleaned_note,
         )
         self.db.commit()
         self.db.refresh(prospect)
@@ -760,16 +769,38 @@ class ProspectService:
 
         client_service = ClientService(self.db)
         source = prospect.source or ClientSource.OTHER.value
-        client = client_service.create_client(
-            actor=actor,
-            first_name=prospect.first_name,
-            last_name=prospect.last_name,
-            email=prospect.email,
-            phone=prospect.phone,
-            source=source,
+
+        # Reutilizar cliente huérfano (mismo email/comercio) si ya existe sin vínculo.
+        existing = client_service.find_client_with_email(
+            prospect.email,
             merchant_id=prospect.merchant_id,
-            is_qualified=prospect.is_qualified,
         )
+        portal_temp_password: str | None = None
+        if existing is not None:
+            linked = self.db.execute(
+                select(Prospect).where(Prospect.converted_client_id == existing.id)
+            ).scalar_one_or_none()
+            if linked is not None and linked.id != prospect.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Ya existe el cliente #{existing.id} con ese email "
+                        f"vinculado a otro prospecto (#{linked.id})"
+                    ),
+                )
+            client = existing
+        else:
+            client, portal_temp_password = client_service.create_client(
+                actor=actor,
+                first_name=prospect.first_name,
+                last_name=prospect.last_name,
+                email=prospect.email,
+                phone=prospect.phone,
+                source=source,
+                merchant_id=prospect.merchant_id,
+                is_qualified=prospect.is_qualified,
+                commit=False,
+            )
         # Mantener la sede del prospecto (la del vendedor), no solo la del merchant
         client.sede_id = prospect.sede_id
 
@@ -789,13 +820,14 @@ class ProspectService:
             link.client_id = client.id
             link.client_registered_at = datetime.now(timezone.utc)
 
+        previous_status = prospect.status
         prospect.converted_client_id = client.id
         prospect.status = ProspectStatus.PAGO_COMPLETADO.value
         self._add_history(
             prospect,
             actor=actor,
             event_type=ProspectHistoryEventType.CONVERTED.value,
-            from_status=prospect.status,
+            from_status=previous_status,
             to_status=ProspectStatus.PAGO_COMPLETADO.value,
             note=f"Convertido a cliente #{client.id}",
         )
@@ -814,6 +846,8 @@ class ProspectService:
             from_payment=from_payment,
         )
         self.db.commit()
+        if portal_temp_password is not None:
+            client_service._send_client_portal_welcome(client, portal_temp_password)
         if created_notifications:
             from app.services.notifications.hub import notification_hub
 
@@ -965,8 +999,7 @@ class ProspectService:
         if get_settings().payment_test:
             return True
 
-        if prospect.calendly_event_id is None:
-            return False
+        # Contactado (con o sin Calendly) + contrato firmado.
         if prospect.status not in MEETING_COMPLETE_STATUSES:
             return False
         envelopes = self.list_linked_envelopes(prospect)

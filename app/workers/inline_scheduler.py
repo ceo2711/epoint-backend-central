@@ -17,6 +17,7 @@ STARTUP_DELAY_SECONDS = 90
 
 def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
     from app.workers.onboarding_reminders import run_onboarding_reminders_job
+    from app.workers.sub_seller_eligibility import run_sub_seller_eligibility_enforcement_job
 
     logger.info(
         "Recordatorios de onboarding activos — primer ciclo en %s s, luego cada %s min",
@@ -34,6 +35,15 @@ def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
             if stop_event.is_set():
                 break
             logger.exception("Error en ciclo de recordatorios onboarding")
+
+        if stop_event.is_set():
+            break
+        try:
+            run_sub_seller_eligibility_enforcement_job(stop_event=stop_event)
+        except Exception:
+            if stop_event.is_set():
+                break
+            logger.exception("Error en ciclo de elegibilidad subvendedores")
 
         if stop_event.wait(interval_minutes * 60):
             break

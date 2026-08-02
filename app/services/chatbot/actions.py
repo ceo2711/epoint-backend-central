@@ -907,7 +907,7 @@ class ChatbotActionHandler:
                 continue
 
             try:
-                client = self.clients.create_client(
+                client, _ = self.clients.create_client(
                     actor=self.user,
                     first_name=str(draft["first_name"]),
                     last_name=str(draft["last_name"]),
@@ -990,7 +990,7 @@ class ChatbotActionHandler:
             )
 
         try:
-            client = self.clients.create_client(
+            client, _ = self.clients.create_client(
                 actor=self.user,
                 first_name=str(draft["first_name"]),
                 last_name=str(draft["last_name"]),

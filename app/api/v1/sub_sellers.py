@@ -3,7 +3,12 @@
 from fastapi import APIRouter, status
 
 from app.api.deps import CurrentUser, DbSession
-from app.schemas.user import SubSellerActiveUpdate, SubSellerCreate, UserResponse
+from app.schemas.user import (
+    SubSellerActiveUpdate,
+    SubSellerCreate,
+    SubSellerReassignRequest,
+    UserResponse,
+)
 from app.services.sub_sellers import SubSellerService
 from app.services.user_serialization import serialize_user
 
@@ -12,12 +17,21 @@ router = APIRouter(prefix="/sub-sellers", tags=["Subvendedores"])
 
 @router.get("/eligibility")
 def get_eligibility(current_user: CurrentUser, db: DbSession) -> dict:
-    return SubSellerService(db).eligibility(current_user)
+    service = SubSellerService(db)
+    service.enforce_parent_eligibility(current_user, commit=True)
+    return service.eligibility(current_user)
 
 
 @router.get("/metrics")
 def team_metrics(current_user: CurrentUser, db: DbSession) -> dict:
     return SubSellerService(db).team_metrics(current_user)
+
+
+@router.get("/reassign-parents", response_model=list[UserResponse])
+def list_reassign_parents(current_user: CurrentUser, db: DbSession) -> list[UserResponse]:
+    """Vendedores titulares disponibles para reasignar subvendedores."""
+    parents = SubSellerService(db).list_reassign_parents(current_user)
+    return [serialize_user(u) for u in parents]
 
 
 @router.get("", response_model=list[UserResponse])
@@ -54,5 +68,20 @@ def update_sub_seller_active(
         current_user,
         sub_seller_id,
         is_active=payload.is_active,
+    )
+    return serialize_user(user)
+
+
+@router.patch("/{sub_seller_id}/parent", response_model=UserResponse)
+def reassign_sub_seller(
+    sub_seller_id: int,
+    payload: SubSellerReassignRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> UserResponse:
+    user = SubSellerService(db).reassign_sub_seller(
+        current_user,
+        sub_seller_id,
+        new_parent_user_id=payload.new_parent_user_id,
     )
     return serialize_user(user)

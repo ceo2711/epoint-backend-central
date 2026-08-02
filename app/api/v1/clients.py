@@ -143,7 +143,7 @@ def create_client(
         phone=payload.phone,
         source=source,
         merchant_id=payload.merchant_id or merchant_id,
-    )
+    )[0]
     db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
 

@@ -130,10 +130,9 @@ class ClientService:
             query = query.where(Client.sede_id == filter_sede_id)
 
         if is_sales_staff(user):
-            from app.services.sub_sellers import SubSellerService
-
-            team_ids = SubSellerService(self.db).list_team_user_ids(user)
-            query = query.where(Client.registered_by_user_id.in_(team_ids))
+            # Solo clientes propios: las ventas de subvendedores no aparecen en la lista
+            # del vendedor padre (sí generan comisión override por otro canal).
+            query = query.where(Client.registered_by_user_id == user.id)
         elif user.role.code == "ADVISOR":
             query = query.where(
                 Client.id.in_(
@@ -177,11 +176,7 @@ class ClientService:
             )
         if sales_rep_id is not None:
             if is_sales_staff(user) and sales_rep_id != user.id:
-                from app.services.sub_sellers import SubSellerService
-
-                team_ids = SubSellerService(self.db).list_team_user_ids(user)
-                if sales_rep_id not in team_ids:
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
             query = query.where(Client.registered_by_user_id == sales_rep_id)
         if status_filter:
             query = query.where(Client.status == status_filter)
@@ -344,7 +339,18 @@ class ClientService:
         merchant_id: int | None = None,
         default_merchant_id: int | None = None,
         is_qualified: bool = True,
-    ) -> Client:
+        commit: bool = True,
+    ) -> tuple[Client, str | None]:
+        """Crea un cliente.
+
+        Returns:
+            ``(client, portal_temp_password)``. Si hubo auto-aprobación, el password
+            temporal; si no, ``None``.
+
+        Con ``commit=False`` solo hace flush: el caller debe ``commit`` y, si hay
+        password, llamar ``_send_client_portal_welcome`` después. Evita ventanas
+        donde el cliente ya existe pero el prospecto aún no está vinculado.
+        """
         normalized_email = email.lower().strip()
         normalized_phone = phone.strip()
 
@@ -410,13 +416,18 @@ class ClientService:
                 title="Nuevo cliente para revisar",
                 body=f"{client.full_name} fue registrado y espera revisión.",
                 payload={"client_id": client.id},
+                commit=False,
             )
 
-        self.db.commit()
-        self.db.refresh(client)
-        if portal_temp_password is not None:
-            self._send_client_portal_welcome(client, portal_temp_password)
-        return client
+        if commit:
+            self.db.commit()
+            self.db.refresh(client)
+            if portal_temp_password is not None:
+                self._send_client_portal_welcome(client, portal_temp_password)
+        else:
+            self.db.flush()
+
+        return client, portal_temp_password
 
     def update_client(
         self,
@@ -1467,10 +1478,7 @@ class ClientService:
         if user.role.code == "CLIENT":
             return user.client_id == client_id
         if is_sales_staff(user):
-            from app.services.sub_sellers import SubSellerService
-
-            team_ids = SubSellerService(self.db).list_team_user_ids(user)
-            return row.registered_by_user_id in team_ids
+            return row.registered_by_user_id == user.id
         if user.role.code == "ADVISOR":
             assignment = self.db.execute(
                 select(ClientAssignment.id).where(

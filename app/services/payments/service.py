@@ -413,7 +413,7 @@ class PaymentService:
 
         resolved_merchant_id = payload.merchant_id or link.merchant_id or merchant_id
         client_service = ClientService(self.db)
-        client = client_service.create_client(
+        client, portal_pw = client_service.create_client(
             actor=user,
             first_name=link.customer_first_name,
             last_name=link.customer_last_name,
@@ -421,10 +421,19 @@ class PaymentService:
             phone=link.customer_phone,
             source=source,
             merchant_id=resolved_merchant_id,
+            commit=False,
         )
         link.client_id = client.id
         link.client_registered_at = datetime.now(timezone.utc)
+        if link.prospect_id is not None:
+            from app.models.prospect import Prospect
+
+            prospect = self.db.get(Prospect, link.prospect_id)
+            if prospect is not None and prospect.converted_client_id is None:
+                prospect.converted_client_id = client.id
         self.db.commit()
+        if portal_pw is not None:
+            client_service._send_client_portal_welcome(client, portal_pw)
         return client.id, "Cliente registrado correctamente"
 
     def _capture_paypal_if_completed(self, link: PaymentLink) -> None:

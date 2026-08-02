@@ -1,13 +1,15 @@
-"""Sub-vendedores: elegibilidad por ventas del mes anterior y gestión bajo un SALES_REP.
+"""Sub-vendedores: elegibilidad por ventas y gestión bajo un SALES_REP.
 
-Un vendedor titular es elegible si concretó al menos 5 ventas (prospecto → cliente) en el
-mes calendario anterior. Solo entonces puede dar de alta subvendedores (rol SUB_SELLER
+Un vendedor titular es elegible si en al menos uno de los últimos 3 meses calendario
+(mes actual + 2 anteriores) concretó 5 o más ventas (prospecto → cliente). Así, un mes
+calificado renueva la ventana por 3 meses; se pierde solo tras 3 meses consecutivos
+con menos de 5 ventas. Solo entonces puede dar de alta subvendedores (rol SUB_SELLER
 con `parent_user_id`) y ver sus métricas. Un solo nivel de jerarquía.
 """
 
 from __future__ import annotations
 
-from calendar import monthrange
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,14 +25,45 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.role_access import (
     SUB_SELLER_ROLE,
+    can_supervise_sales_reps,
     is_lead_sales_rep,
     is_sub_seller,
 )
-from app.services.sede_scope import sync_user_merchants_for_sede
+from app.services.sede_scope import effective_sede_id, sync_user_merchants_for_sede
 from app.services.user_serialization import serialize_user
 
-# Se habilita con 5 o más conversiones en el mes anterior.
-MIN_PREVIOUS_MONTH_SALES = 5
+logger = logging.getLogger(__name__)
+
+# Umbral de ventas concretadas en un mes calendario para calificar / renovar.
+MIN_MONTHLY_SALES = 5
+# Ventana: mes actual + (N-1) meses anteriores. Elegible si alguno ≥ umbral.
+ELIGIBILITY_WINDOW_MONTHS = 3
+
+# Alias retrocompatible.
+MIN_PREVIOUS_MONTH_SALES = MIN_MONTHLY_SALES
+
+SUB_SELLER_DEACTIVATED_LOGIN_DETAIL = (
+    "Tu cuenta está desactivada. Comunicate con la administración de la empresa o con tu vendedor."
+)
+
+
+def calendar_month_bounds(
+    year: int,
+    month: int,
+) -> tuple[datetime, datetime]:
+    """Devuelve (inicio, fin_exclusivo) del mes calendario en UTC."""
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    return start, end
+
+
+def shift_calendar_month(year: int, month: int, *, delta: int) -> tuple[int, int]:
+    """Desplaza un mes calendario por ``delta`` (negativo = hacia atrás)."""
+    idx = year * 12 + (month - 1) + delta
+    return idx // 12, idx % 12 + 1
 
 
 def previous_calendar_month_bounds(
@@ -41,18 +74,26 @@ def previous_calendar_month_bounds(
     ref = now or datetime.now(timezone.utc)
     if ref.tzinfo is None:
         ref = ref.replace(tzinfo=timezone.utc)
-    year = ref.year
-    month = ref.month
-    if month == 1:
-        prev_year, prev_month = year - 1, 12
-    else:
-        prev_year, prev_month = year, month - 1
-    start = datetime(prev_year, prev_month, 1, tzinfo=timezone.utc)
-    last_day = monthrange(prev_year, prev_month)[1]
-    end = datetime(prev_year, prev_month, last_day, 23, 59, 59, 999999, tzinfo=timezone.utc)
-    # Usamos fin exclusivo = primer instante del mes actual.
-    current_month_start = datetime(year, month, 1, tzinfo=timezone.utc)
-    return start, current_month_start, prev_year, prev_month
+    prev_year, prev_month = shift_calendar_month(ref.year, ref.month, delta=-1)
+    start, end = calendar_month_bounds(prev_year, prev_month)
+    return start, end, prev_year, prev_month
+
+
+def eligibility_window_months(
+    *,
+    now: datetime | None = None,
+    window: int = ELIGIBILITY_WINDOW_MONTHS,
+) -> list[tuple[int, int, datetime, datetime]]:
+    """Meses de la ventana (más reciente primero): (año, mes, inicio, fin_exclusivo)."""
+    ref = now or datetime.now(timezone.utc)
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=timezone.utc)
+    months: list[tuple[int, int, datetime, datetime]] = []
+    for offset in range(window):
+        year, month = shift_calendar_month(ref.year, ref.month, delta=-offset)
+        start, end = calendar_month_bounds(year, month)
+        months.append((year, month, start, end))
+    return months
 
 
 class SubSellerService:
@@ -83,18 +124,43 @@ class SubSellerService:
         ).scalar()
         return int(count or 0)
 
-    def eligibility(self, user: User) -> dict[str, Any]:
-        start, end, year, month = previous_calendar_month_bounds()
-        sales = self.count_concretized_sales(user.id, start=start, end_exclusive=end)
+    def eligibility(self, user: User, *, now: datetime | None = None) -> dict[str, Any]:
+        """Elegible si algún mes de la ventana (3) tuvo ≥ ``MIN_MONTHLY_SALES`` ventas."""
+        window = eligibility_window_months(now=now)
+        month_rows: list[dict[str, Any]] = []
+        for year, month, start, end in window:
+            sales = self.count_concretized_sales(user.id, start=start, end_exclusive=end)
+            month_rows.append(
+                {
+                    "year": year,
+                    "month": month,
+                    "sales": sales,
+                    "qualified": sales >= MIN_MONTHLY_SALES,
+                }
+            )
+
+        previous = month_rows[1] if len(month_rows) > 1 else month_rows[0]
+        qualifying = [m for m in month_rows if m["qualified"]]
         is_sub = is_sub_seller(user)
-        eligible = is_lead_sales_rep(user) and sales >= MIN_PREVIOUS_MONTH_SALES
+        eligible = is_lead_sales_rep(user) and len(qualifying) > 0
+        consecutive_below = 0
+        for row in month_rows:
+            if row["qualified"]:
+                break
+            consecutive_below += 1
+
         return {
             "eligible": eligible,
             "is_sub_seller": is_sub,
-            "previous_month_sales": sales,
-            "required_sales": MIN_PREVIOUS_MONTH_SALES,
+            # Compat: ventas del mes calendario anterior.
+            "previous_month_sales": previous["sales"],
+            "required_sales": MIN_MONTHLY_SALES,
             "threshold_exclusive": False,
-            "previous_month": {"year": year, "month": month},
+            "previous_month": {"year": previous["year"], "month": previous["month"]},
+            "window_months": ELIGIBILITY_WINDOW_MONTHS,
+            "months": month_rows,
+            "qualifying_months": len(qualifying),
+            "consecutive_months_below_threshold": consecutive_below,
             "can_manage_sub_sellers": eligible,
         }
 
@@ -103,8 +169,128 @@ class SubSellerService:
             return False
         return bool(self.eligibility(user)["eligible"])
 
+    def deactivate_active_sub_sellers(
+        self,
+        parent: User,
+        *,
+        commit: bool = True,
+    ) -> int:
+        """Desactiva subvendedores activos del padre y revoca sus sesiones."""
+        if not is_lead_sales_rep(parent):
+            return 0
+        subs = list(
+            self.db.execute(
+                select(User).where(
+                    User.parent_user_id == parent.id,
+                    User.is_active.is_(True),
+                )
+            ).scalars().all()
+        )
+        if not subs:
+            return 0
+
+        from app.models.session import UserSession
+
+        sub_ids = [sub.id for sub in subs]
+        for sub in subs:
+            sub.is_active = False
+        sessions = self.db.execute(
+            select(UserSession).where(
+                UserSession.user_id.in_(sub_ids),
+                UserSession.is_revoked.is_(False),
+            )
+        ).scalars().all()
+        for session in sessions:
+            session.is_revoked = True
+
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
+        logger.info(
+            "Desactivados %s subvendedores del vendedor #%s por pérdida de elegibilidad",
+            len(subs),
+            parent.id,
+        )
+        return len(subs)
+
+    def enforce_parent_eligibility(
+        self,
+        parent: User,
+        *,
+        now: datetime | None = None,
+        commit: bool = True,
+    ) -> int:
+        """Si el titular ya no es elegible, desactiva su equipo. Devuelve cuántos desactivó."""
+        if not is_lead_sales_rep(parent):
+            return 0
+        if self.eligibility(parent, now=now)["eligible"]:
+            return 0
+        return self.deactivate_active_sub_sellers(parent, commit=commit)
+
+    def enforce_all_ineligible_parents(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Barrido: desactiva equipos de titulares que perdieron la ventana de 3 meses."""
+        parents = list(
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role))
+                .where(
+                    User.parent_user_id.is_(None),
+                    User.id.in_(select(User.parent_user_id).where(User.parent_user_id.is_not(None))),
+                )
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        parents_affected = 0
+        deactivated = 0
+        for parent in parents:
+            if not is_lead_sales_rep(parent):
+                continue
+            n = self.enforce_parent_eligibility(parent, now=now, commit=False)
+            if n:
+                parents_affected += 1
+                deactivated += n
+        if deactivated:
+            self.db.commit()
+        return {
+            "parents_checked": len(parents),
+            "parents_affected": parents_affected,
+            "sub_sellers_deactivated": deactivated,
+        }
+
+    def assert_sub_seller_may_login(self, user: User) -> None:
+        """Bloquea login de subvendedores si el padre perdió elegibilidad (y desactiva el equipo)."""
+        if not is_sub_seller(user):
+            return
+        # Fast-path: cuenta ya inactiva → mensaje sin recalcular elegibilidad.
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=SUB_SELLER_DEACTIVATED_LOGIN_DETAIL,
+            )
+        parent_id = user.parent_user_id
+        if parent_id is None:
+            return
+        parent = (
+            self.db.execute(
+                select(User).options(joinedload(User.role)).where(User.id == parent_id)
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        parent_eligible = parent is not None and self.can_manage_sub_sellers(parent)
+        if not parent_eligible:
+            if parent is not None:
+                self.deactivate_active_sub_sellers(parent, commit=True)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=SUB_SELLER_DEACTIVATED_LOGIN_DETAIL,
+            )
+
     def list_team_user_ids(self, user: User, *, include_self: bool = True) -> list[int]:
-        """IDs del vendedor + sus subvendedores (para scopes de datos/métricas)."""
+        """IDs del vendedor + sus subvendedores (para scopes de métricas de equipo)."""
         ids: list[int] = [user.id] if include_self else []
         if not is_lead_sales_rep(user):
             return ids
@@ -148,7 +334,8 @@ class SubSellerService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
                     "Para registrar subvendedores necesitás al menos "
-                    f"{MIN_PREVIOUS_MONTH_SALES} ventas concretadas en el mes anterior."
+                    f"{MIN_MONTHLY_SALES} ventas concretadas en alguno de los últimos "
+                    f"{ELIGIBILITY_WINDOW_MONTHS} meses."
                 ),
             )
         if parent.sede_id is None:
@@ -199,6 +386,15 @@ class SubSellerService:
 
     def set_sub_seller_active(self, parent: User, sub_seller_id: int, *, is_active: bool) -> User:
         self._require_parent_or_eligible(parent, require_eligible=False)
+        if is_active and not self.can_manage_sub_sellers(parent):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "No podés reactivar subvendedores sin elegibilidad. "
+                    f"Necesitás al menos {MIN_MONTHLY_SALES} ventas en alguno de los últimos "
+                    f"{ELIGIBILITY_WINDOW_MONTHS} meses."
+                ),
+            )
         sub = (
             self.db.execute(
                 select(User)
@@ -211,9 +407,153 @@ class SubSellerService:
         if sub is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
         sub.is_active = is_active
+        if not is_active:
+            from app.models.session import UserSession
+
+            sessions = self.db.execute(
+                select(UserSession).where(
+                    UserSession.user_id == sub.id,
+                    UserSession.is_revoked.is_(False),
+                )
+            ).scalars().all()
+            for session in sessions:
+                session.is_revoked = True
         self.db.commit()
         self.db.refresh(sub, attribute_names=["role", "area", "sede"])
         return sub
+
+    def list_reassign_parents(self, actor: User) -> list[User]:
+        """Vendedores titulares activos a los que se puede reasignar un subvendedor."""
+        if not can_supervise_sales_reps(actor):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tenés permiso para reasignar subvendedores",
+            )
+        query = (
+            select(User)
+            .options(
+                joinedload(User.role),
+                joinedload(User.area),
+                joinedload(User.sede),
+            )
+            .join(Role)
+            .where(
+                Role.code == "SALES_REP",
+                User.parent_user_id.is_(None),
+                User.is_active.is_(True),
+            )
+            .order_by(User.first_name, User.last_name)
+        )
+        sede_id = effective_sede_id(actor)
+        if sede_id is not None:
+            query = query.where(User.sede_id == sede_id)
+        return list(self.db.execute(query).unique().scalars().all())
+
+    def reassign_sub_seller(
+        self,
+        actor: User,
+        sub_seller_id: int,
+        *,
+        new_parent_user_id: int,
+    ) -> User:
+        """Reasigna un subvendedor a otro vendedor titular (admin / gerente / líder ventas)."""
+        if not can_supervise_sales_reps(actor):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tenés permiso para reasignar subvendedores",
+            )
+
+        sub = (
+            self.db.execute(
+                select(User)
+                .options(
+                    joinedload(User.role),
+                    joinedload(User.area),
+                    joinedload(User.sede),
+                    joinedload(User.parent),
+                )
+                .where(User.id == sub_seller_id)
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        if sub is None or not is_sub_seller(sub):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
+
+        actor_sede = effective_sede_id(actor)
+        if actor_sede is not None and sub.sede_id != actor_sede:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
+
+        new_parent = (
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+                .where(User.id == new_parent_user_id)
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        if new_parent is None or not is_lead_sales_rep(new_parent) or not new_parent.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El nuevo titular debe ser un vendedor activo sin padre",
+            )
+        if actor_sede is not None and new_parent.sede_id != actor_sede:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El nuevo titular debe pertenecer a tu sucursal",
+            )
+        if new_parent.id == sub.parent_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El subvendedor ya pertenece a ese vendedor",
+            )
+
+        sub.parent_user_id = new_parent.id
+        if new_parent.sede_id is not None:
+            sub.sede_id = new_parent.sede_id
+            sync_user_merchants_for_sede(self.db, sub, new_parent.sede_id)
+
+        # Si el nuevo titular no es elegible, el subvendedor queda inactivo hasta que
+        # recupere elegibilidad y lo reactive desde Mi equipo.
+        if not self.can_manage_sub_sellers(new_parent):
+            if sub.is_active:
+                from app.models.session import UserSession
+
+                sub.is_active = False
+                sessions = self.db.execute(
+                    select(UserSession).where(
+                        UserSession.user_id == sub.id,
+                        UserSession.is_revoked.is_(False),
+                    )
+                ).scalars().all()
+                for session in sessions:
+                    session.is_revoked = True
+            else:
+                sub.is_active = False
+
+        self.db.commit()
+        refreshed = (
+            self.db.execute(
+                select(User)
+                .options(
+                    joinedload(User.role),
+                    joinedload(User.area),
+                    joinedload(User.sede),
+                    joinedload(User.parent),
+                )
+                .where(User.id == sub.id)
+            )
+            .unique()
+            .scalar_one()
+        )
+        logger.info(
+            "Subvendedor #%s reasignado a vendedor #%s por actor #%s",
+            sub_seller_id,
+            new_parent_user_id,
+            actor.id,
+        )
+        return refreshed
 
     def team_metrics(self, parent: User) -> dict[str, Any]:
         """Métricas del padre + cada subvendedor (mes actual y mes anterior)."""
@@ -223,13 +563,11 @@ class SubSellerService:
                 detail="Solo para vendedores titulares",
             )
 
+        self.enforce_parent_eligibility(parent, commit=True)
+
         prev_start, prev_end, prev_year, prev_month = previous_calendar_month_bounds()
         now = datetime.now(timezone.utc)
-        curr_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-        if now.month == 12:
-            curr_end = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
-        else:
-            curr_end = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+        curr_start, curr_end = calendar_month_bounds(now.year, now.month)
 
         subs = self.list_sub_sellers(parent)
         members = [parent, *subs]
@@ -287,6 +625,7 @@ class SubSellerService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
                     "Para registrar subvendedores necesitás al menos "
-                    f"{MIN_PREVIOUS_MONTH_SALES} ventas concretadas en el mes anterior."
+                    f"{MIN_MONTHLY_SALES} ventas concretadas en alguno de los últimos "
+                    f"{ELIGIBILITY_WINDOW_MONTHS} meses."
                 ),
             )

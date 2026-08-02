@@ -266,7 +266,7 @@ class DocusignService:
 
         client_service = ClientService(self.db)
         resolved_merchant_id = merchant_id or row.merchant_id or active_merchant_id
-        new_client = client_service.create_client(
+        new_client, _portal_pw = client_service.create_client(
             actor=actor,
             first_name=first_name,
             last_name=last_name,
@@ -274,11 +274,19 @@ class DocusignService:
             phone=phone,
             source=source,
             merchant_id=resolved_merchant_id,
+            commit=False,
         )
         signed_at = row.completed_at or datetime.now(timezone.utc)
         new_client.docusign_contract_signed_at = signed_at
         new_client.docusign_envelope_id = row.id
         row.client_id = new_client.id
+
+        if row.prospect_id is not None:
+            from app.models.prospect import Prospect
+
+            prospect = self.db.get(Prospect, row.prospect_id)
+            if prospect is not None and prospect.converted_client_id is None:
+                prospect.converted_client_id = new_client.id
 
         if row.signed_storage_key:
             row.signed_storage_key = None
@@ -286,6 +294,8 @@ class DocusignService:
         self._persist_signed_pdf(row)
 
         self.db.commit()
+        if _portal_pw is not None:
+            client_service._send_client_portal_welcome(new_client, _portal_pw)
         row = self._get_envelope_row(actor, envelope_id)
         client = self.db.get(Client, new_client.id)
         if client is None:
