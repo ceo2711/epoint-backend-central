@@ -89,14 +89,17 @@ class AuthService:
             "is_sub_seller": bool(user.parent_user_id) or user.role.code == "SUB_SELLER",
             "previous_month_sales": None,
         }
-        if user.role.code in ("SALES_REP", "SUB_SELLER"):
-            from app.services.role_access import is_lead_sales_rep
+        if user.role.code in ("SALES_REP", "SUB_SELLER") or (
+            user.role.code == "AREA_LEADER"
+            and getattr(getattr(user, "area", None), "code", None) == "VENTAS"
+        ):
+            from app.services.role_access import can_own_sub_sellers
             from app.services.sub_sellers import SubSellerService
 
             service = SubSellerService(self.db)
             # Una sola pasada de elegibilidad (antes se calculaba 2 veces).
             eligibility = service.eligibility(user)
-            if is_lead_sales_rep(user) and not eligibility.get("eligible"):
+            if can_own_sub_sellers(user) and not eligibility.get("eligible"):
                 service.deactivate_active_sub_sellers(user, commit=True)
 
         return UserMeResponse(
@@ -164,7 +167,7 @@ class AuthService:
         if user is None or not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inv?lidas")
 
-        from app.services.role_access import is_lead_sales_rep, is_sub_seller
+        from app.services.role_access import can_own_sub_sellers, is_sub_seller
         from app.services.sub_sellers import SubSellerService
 
         if is_sub_seller(user):
@@ -189,7 +192,7 @@ class AuthService:
                 user=self._build_2fa_pending_user(user),
             )
 
-        if is_lead_sales_rep(user):
+        if can_own_sub_sellers(user):
             SubSellerService(self.db).enforce_parent_eligibility(user, commit=True)
 
         access_token, refresh_token = self._issue_session_tokens(user)

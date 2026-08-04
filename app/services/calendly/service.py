@@ -32,7 +32,13 @@ from app.schemas.calendly import (
 from app.schemas.common import MessageResponse
 from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
-from app.services.role_access import SALES_STAFF_ROLES, can_supervise_sales_reps, is_sales_area_leader, is_sales_staff
+from app.services.role_access import (
+    SALES_STAFF_ROLES,
+    can_sell,
+    can_supervise_sales_reps,
+    is_sales_area_leader,
+    is_sales_staff,
+)
 from app.services.user_serialization import avatar_url_for
 
 CALENDLY_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
@@ -69,7 +75,7 @@ class CalendlyService:
 
     def _ensure_manage_access(self, actor: User) -> None:
         self.ensure_calendar_access(actor)
-        if not is_sales_staff(actor):
+        if not can_sell(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo vendedores pueden crear, editar o cancelar reuniones",
@@ -488,6 +494,11 @@ class CalendlyService:
                     detail="No puede ver el calendario de otro usuario",
                 )
             return actor.id
+        if is_sales_area_leader(actor):
+            # Propio calendario o el de un vendedor de la sede.
+            if user_id is None or user_id == actor.id:
+                return actor.id
+            return user_id
         if can_supervise_sales_reps(actor):
             if user_id is None:
                 raise HTTPException(
@@ -525,6 +536,8 @@ class CalendlyService:
 
         from app.services.sede_scope import effective_sede_id
 
+        # Incluye subvendedores inactivos: el jefe de área debe verlos para
+        # reactivar / reasignar aunque hayan perdido elegibilidad del titular.
         query = (
             select(User)
             .join(Role)
@@ -533,7 +546,7 @@ class CalendlyService:
                 joinedload(User.sede),
                 joinedload(User.parent),
             )
-            .where(Role.code.in_(tuple(SALES_STAFF_ROLES)), User.is_active.is_(True))
+            .where(Role.code.in_(tuple(SALES_STAFF_ROLES)))
         )
         sede_id = effective_sede_id(actor)
         if sede_id is not None:
@@ -567,18 +580,17 @@ class CalendlyService:
                     sede_name=user.sede.name if user.sede is not None else None,
                     parent_user_id=user.parent_user_id,
                     parent_name=parent_name,
+                    is_active=bool(user.is_active),
                 )
             )
         return items
 
     def connect(self, actor: User, payload: CalendlyConnectRequest) -> CalendlyConnectionResponse:
         self.ensure_calendar_access(actor)
-        if not is_sales_staff(actor) and not can_supervise_sales_reps(actor):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden conectar Calendly")
-        if can_supervise_sales_reps(actor):
+        if not can_sell(actor):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Los administradores deben ver el calendario de cada vendedor; la conexión es por vendedor",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo vendedores pueden conectar Calendly",
             )
 
         client = CalendlyClient(payload.access_token)
@@ -627,7 +639,7 @@ class CalendlyService:
 
     def disconnect(self, actor: User) -> MessageResponse:
         self.ensure_calendar_access(actor)
-        if not is_sales_staff(actor):
+        if not can_sell(actor):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo vendedores pueden desconectar Calendly")
 
         connection = self._get_connection_for_user(actor.id)

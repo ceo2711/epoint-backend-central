@@ -29,6 +29,7 @@ class CalendlySalesRepItem(BaseModel):
     sede_name: str | None = None
     parent_user_id: int | None = None
     parent_name: str | None = None
+    is_active: bool = True
 
 
 class CalendlyLinkedProspectBrief(BaseModel):

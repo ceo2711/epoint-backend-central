@@ -61,6 +61,21 @@ def is_sales_area_leader(user: User) -> bool:
     return is_area_leader(user) and user_area_code(user) == SALES_AREA_CODE
 
 
+def can_sell(user: User) -> bool:
+    """Puede operar herramientas comerciales propias (prospectos, Calendly, contratos, pagos)."""
+    return is_sales_staff(user) or is_sales_area_leader(user)
+
+
+def can_be_prospect_owner(user: User) -> bool:
+    """Puede figurar como assigned_to de un prospecto."""
+    return is_sales_staff(user) or is_sales_area_leader(user)
+
+
+def can_own_sub_sellers(user: User) -> bool:
+    """Titular potencial de 'Mi equipo' (vendedor titular o líder de ventas)."""
+    return is_lead_sales_rep(user) or is_sales_area_leader(user)
+
+
 def is_onboarding_area_leader(user: User) -> bool:
     """Líder de área de onboarding (antes: Encargado de Onboarding)."""
     return is_area_leader(user) and user_area_code(user) == ONBOARDING_AREA_CODE

@@ -139,7 +139,7 @@ class PaymentService:
     ) -> tuple[list[PaymentLinkResponse], int]:
         self.ensure_access(user)
         filters = [PaymentLink.merchant_id == merchant_id]
-        if is_sales_staff(user):
+        if is_sales_staff(user) or (is_sales_area_leader(user) and created_by_user_id is None):
             filters.append(PaymentLink.created_by_user_id == user.id)
         elif created_by_user_id is not None:
             filters.append(PaymentLink.created_by_user_id == created_by_user_id)

@@ -362,7 +362,7 @@ class DashboardService:
         target = self.db.execute(
             select(User)
             .join(Role)
-            .where(User.id == sales_rep_id, Role.code.in_(tuple(SALES_STAFF_ROLES)), User.is_active.is_(True))
+            .where(User.id == sales_rep_id, Role.code.in_(tuple(SALES_STAFF_ROLES)))
         ).scalar_one_or_none()
         if target is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendedor no encontrado")

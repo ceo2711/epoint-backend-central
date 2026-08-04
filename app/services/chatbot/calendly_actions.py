@@ -39,8 +39,7 @@ from app.services.chatbot.calendly_options import (
     resolve_slot,
 )
 from app.services.chatbot.messages import t
-
-CALENDAR_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER"})
+from app.services.role_access import can_sell, can_supervise_sales_reps
 
 
 class CalendlyChatActions:
@@ -52,10 +51,10 @@ class CalendlyChatActions:
         self.calendly = CalendlyService(handler.db)
 
     def _can_view(self) -> bool:
-        return self.user.role.code in CALENDAR_ROLES
+        return can_sell(self.user) or can_supervise_sales_reps(self.user)
 
     def _can_manage(self) -> bool:
-        return self.user.role.code in ("SALES_REP", "SUB_SELLER")
+        return can_sell(self.user)
 
     def _can_write(self) -> bool:
         return self._can_manage() and get_settings().calendly_write_enabled

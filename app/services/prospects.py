@@ -29,7 +29,11 @@ from app.services.email.client_conversion_welcome import (
     send_client_conversion_welcome_email,
 )
 from app.services.merchant_context import MerchantContextService
-from app.services.role_access import SALES_STAFF_ROLES, is_sales_staff
+from app.services.role_access import (
+    can_be_prospect_owner,
+    is_sales_area_leader,
+    is_sales_staff,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +232,9 @@ class ProspectService:
                 owner_id = assigned_to_user_id
             else:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        elif is_sales_area_leader(actor):
+            # Líder de ventas: puede captar a su nombre o asignar a un vendedor de la sede.
+            owner_id = actor.id if assigned_to_user_id is None else assigned_to_user_id
         else:
             if assigned_to_user_id is None:
                 raise HTTPException(
@@ -237,7 +244,7 @@ class ProspectService:
             owner_id = assigned_to_user_id
 
         owner = self.db.get(User, owner_id)
-        if owner is None or not owner.is_active or owner.role.code not in SALES_STAFF_ROLES:
+        if owner is None or not owner.is_active or not can_be_prospect_owner(owner):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendedor inválido")
 
         actor_sede_id = effective_sede_id(actor)

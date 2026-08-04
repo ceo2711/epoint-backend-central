@@ -25,8 +25,8 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.role_access import (
     SUB_SELLER_ROLE,
+    can_own_sub_sellers,
     can_supervise_sales_reps,
-    is_lead_sales_rep,
     is_sub_seller,
 )
 from app.services.sede_scope import effective_sede_id, sync_user_merchants_for_sede
@@ -142,7 +142,7 @@ class SubSellerService:
         previous = month_rows[1] if len(month_rows) > 1 else month_rows[0]
         qualifying = [m for m in month_rows if m["qualified"]]
         is_sub = is_sub_seller(user)
-        eligible = is_lead_sales_rep(user) and len(qualifying) > 0
+        eligible = can_own_sub_sellers(user) and len(qualifying) > 0
         consecutive_below = 0
         for row in month_rows:
             if row["qualified"]:
@@ -165,7 +165,7 @@ class SubSellerService:
         }
 
     def can_manage_sub_sellers(self, user: User) -> bool:
-        if not is_lead_sales_rep(user):
+        if not can_own_sub_sellers(user):
             return False
         return bool(self.eligibility(user)["eligible"])
 
@@ -176,7 +176,7 @@ class SubSellerService:
         commit: bool = True,
     ) -> int:
         """Desactiva subvendedores activos del padre y revoca sus sesiones."""
-        if not is_lead_sales_rep(parent):
+        if not can_own_sub_sellers(parent):
             return 0
         subs = list(
             self.db.execute(
@@ -222,7 +222,7 @@ class SubSellerService:
         commit: bool = True,
     ) -> int:
         """Si el titular ya no es elegible, desactiva su equipo. Devuelve cuántos desactivó."""
-        if not is_lead_sales_rep(parent):
+        if not can_own_sub_sellers(parent):
             return 0
         if self.eligibility(parent, now=now)["eligible"]:
             return 0
@@ -246,7 +246,7 @@ class SubSellerService:
         parents_affected = 0
         deactivated = 0
         for parent in parents:
-            if not is_lead_sales_rep(parent):
+            if not can_own_sub_sellers(parent):
                 continue
             n = self.enforce_parent_eligibility(parent, now=now, commit=False)
             if n:
@@ -292,7 +292,7 @@ class SubSellerService:
     def list_team_user_ids(self, user: User, *, include_self: bool = True) -> list[int]:
         """IDs del vendedor + sus subvendedores (para scopes de métricas de equipo)."""
         ids: list[int] = [user.id] if include_self else []
-        if not is_lead_sales_rep(user):
+        if not can_own_sub_sellers(user):
             return ids
         children = self.db.execute(
             select(User.id).where(User.parent_user_id == user.id)
@@ -384,9 +384,15 @@ class SubSellerService:
         )
         return refreshed
 
-    def set_sub_seller_active(self, parent: User, sub_seller_id: int, *, is_active: bool) -> User:
-        self._require_parent_or_eligible(parent, require_eligible=False)
-        if is_active and not self.can_manage_sub_sellers(parent):
+    def set_sub_seller_active(self, actor: User, sub_seller_id: int, *, is_active: bool) -> User:
+        """Activa/desactiva un subvendedor (titular de equipo o supervisor de sede)."""
+        if can_supervise_sales_reps(actor):
+            return self._set_sub_seller_active_as_supervisor(
+                actor, sub_seller_id, is_active=is_active
+            )
+
+        self._require_parent_or_eligible(actor, require_eligible=False)
+        if is_active and not self.can_manage_sub_sellers(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
@@ -399,13 +405,35 @@ class SubSellerService:
             self.db.execute(
                 select(User)
                 .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
-                .where(User.id == sub_seller_id, User.parent_user_id == parent.id)
+                .where(User.id == sub_seller_id, User.parent_user_id == actor.id)
             )
             .unique()
             .scalar_one_or_none()
         )
         if sub is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
+        return self._apply_sub_seller_active(sub, is_active=is_active)
+
+    def _set_sub_seller_active_as_supervisor(
+        self, actor: User, sub_seller_id: int, *, is_active: bool
+    ) -> User:
+        sub = (
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+                .where(User.id == sub_seller_id)
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        if sub is None or not is_sub_seller(sub):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
+        actor_sede = effective_sede_id(actor)
+        if actor_sede is not None and sub.sede_id != actor_sede:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
+        return self._apply_sub_seller_active(sub, is_active=is_active)
+
+    def _apply_sub_seller_active(self, sub: User, *, is_active: bool) -> User:
         sub.is_active = is_active
         if not is_active:
             from app.models.session import UserSession
@@ -438,7 +466,7 @@ class SubSellerService:
             )
             .join(Role)
             .where(
-                Role.code == "SALES_REP",
+                Role.code.in_(("SALES_REP", "AREA_LEADER")),
                 User.parent_user_id.is_(None),
                 User.is_active.is_(True),
             )
@@ -447,7 +475,8 @@ class SubSellerService:
         sede_id = effective_sede_id(actor)
         if sede_id is not None:
             query = query.where(User.sede_id == sede_id)
-        return list(self.db.execute(query).unique().scalars().all())
+        rows = list(self.db.execute(query).unique().scalars().all())
+        return [u for u in rows if can_own_sub_sellers(u)]
 
     def reassign_sub_seller(
         self,
@@ -493,7 +522,7 @@ class SubSellerService:
             .unique()
             .scalar_one_or_none()
         )
-        if new_parent is None or not is_lead_sales_rep(new_parent) or not new_parent.is_active:
+        if new_parent is None or not can_own_sub_sellers(new_parent) or not new_parent.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El nuevo titular debe ser un vendedor activo sin padre",
@@ -515,7 +544,7 @@ class SubSellerService:
             sync_user_merchants_for_sede(self.db, sub, new_parent.sede_id)
 
         # Si el nuevo titular no es elegible, el subvendedor queda inactivo hasta que
-        # recupere elegibilidad y lo reactive desde Mi equipo.
+        # recupere elegibilidad y lo reactive. Si es elegible, reactivamos la cuenta.
         if not self.can_manage_sub_sellers(new_parent):
             if sub.is_active:
                 from app.models.session import UserSession
@@ -529,8 +558,8 @@ class SubSellerService:
                 ).scalars().all()
                 for session in sessions:
                     session.is_revoked = True
-            else:
-                sub.is_active = False
+        else:
+            sub.is_active = True
 
         self.db.commit()
         refreshed = (
@@ -557,7 +586,7 @@ class SubSellerService:
 
     def team_metrics(self, parent: User) -> dict[str, Any]:
         """Métricas del padre + cada subvendedor (mes actual y mes anterior)."""
-        if not is_lead_sales_rep(parent):
+        if not can_own_sub_sellers(parent):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo para vendedores titulares",
@@ -615,7 +644,7 @@ class SubSellerService:
         return int(count or 0)
 
     def _require_parent_or_eligible(self, user: User, *, require_eligible: bool) -> None:
-        if not is_lead_sales_rep(user):
+        if not can_own_sub_sellers(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo para vendedores titulares",

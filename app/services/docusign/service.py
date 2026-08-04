@@ -527,7 +527,7 @@ class DocusignService:
             .where(DocusignEnvelope.merchant_id == merchant_id)
             .order_by(DocusignEnvelope.sent_at.desc())
         )
-        if is_sales_staff(actor):
+        if is_sales_staff(actor) or (is_sales_area_leader(actor) and sent_by_user_id is None):
             query = query.where(DocusignEnvelope.sent_by_user_id == actor.id)
         elif sent_by_user_id is not None:
             if not can_supervise_sales_reps(actor):
@@ -557,7 +557,7 @@ class DocusignService:
         user = self.db.execute(
             select(User)
             .join(Role)
-            .where(User.id == user_id, User.is_active.is_(True), Role.code.in_(tuple(SALES_STAFF_ROLES)))
+            .where(User.id == user_id, Role.code.in_(tuple(SALES_STAFF_ROLES)))
         ).scalar_one_or_none()
         if user is None:
             raise HTTPException(
