@@ -120,7 +120,7 @@ def confirm_payment_return(
     db: DbSession,
     order_id: str | None = Query(None),
 ) -> PublicPaymentLinkResponse:
-    """Confirma el pago al volver del checkout externo (PayPal)."""
+    """Confirma el pago al volver del checkout (PayPal o Authorize.net)."""
     return PaymentService(db).confirm_paypal_return(token, order_id=order_id)
 
 

@@ -346,14 +346,22 @@ class PaymentService:
         return self.get_public_link(token)
 
     def confirm_paypal_return(self, token: str, *, order_id: str | None = None) -> PublicPaymentLinkResponse:
+        """Confirma el retorno del checkout (PayPal capture o Authorize post-pago)."""
         link = self._get_link_by_token(token)
-        if link.provider != PaymentProvider.PAYPAL.value:
-            raise HTTPException(status_code=400, detail="Este link no usa PayPal")
-        if order_id and link.external_checkout_id and order_id != link.external_checkout_id:
-            raise HTTPException(status_code=400, detail="La orden PayPal no coincide con el link")
-        self._capture_paypal_if_completed(link)
-        self.db.commit()
-        return self.get_public_link(token)
+        if link.provider == PaymentProvider.PAYPAL.value:
+            if order_id and link.external_checkout_id and order_id != link.external_checkout_id:
+                raise HTTPException(status_code=400, detail="La orden PayPal no coincide con el link")
+            self._capture_paypal_if_completed(link)
+            self.db.commit()
+            return self.get_public_link(token)
+        if link.provider == PaymentProvider.AUTHORIZE.value:
+            # Authorize redirige a ?paid=1 solo después de pagar (botón Continuar).
+            # El webhook puede haber marcado paid; si sigue pending, lo confirmamos acá.
+            if link.status == PaymentLinkStatus.PENDING.value:
+                self._mark_paid(link)
+                self.db.commit()
+            return self.get_public_link(token)
+        raise HTTPException(status_code=400, detail="Este link no admite confirmación de retorno")
 
     def handle_paypal_webhook(self, payload: dict) -> dict:
         event_type = payload.get("event_type")
@@ -383,7 +391,7 @@ class PaymentService:
                 or payload_body.get("entityName")
             )
             if invoice:
-                link = self._get_link_by_token(str(invoice), raise_if_missing=False)
+                link = self._get_link_by_invoice_ref(str(invoice))
                 if link and link.status == PaymentLinkStatus.PENDING.value:
                     self._mark_paid(link)
                     self.db.commit()
@@ -461,6 +469,14 @@ class PaymentService:
         link.paid_at = datetime.now(timezone.utc)
 
         converted_client = None
+        if link.prospect_id is None:
+            from app.models.prospect import Prospect
+
+            linked = self.db.execute(
+                select(Prospect).where(Prospect.payment_link_id == link.id)
+            ).scalar_one_or_none()
+            if linked is not None:
+                link.prospect_id = linked.id
         if link.prospect_id is not None:
             from app.services.prospects import ProspectService
 
@@ -519,6 +535,20 @@ class PaymentService:
         if link is None and raise_if_missing:
             raise HTTPException(status_code=404, detail="Link de pago no encontrado")
         return link
+
+    def _get_link_by_invoice_ref(self, invoice: str) -> PaymentLink | None:
+        """Authorize invoiceNumber max 20 chars; el token del CRM es más largo."""
+        invoice = invoice.strip()
+        if not invoice:
+            return None
+        link = self._get_link_by_token(invoice, raise_if_missing=False)
+        if link is not None:
+            return link
+        return self.db.execute(
+            select(PaymentLink)
+            .where(PaymentLink.public_token.startswith(invoice))
+            .order_by(PaymentLink.id.desc())
+        ).scalars().first()
 
     def _get_link_by_external_id(self, external_id: str) -> PaymentLink | None:
         return self.db.execute(
