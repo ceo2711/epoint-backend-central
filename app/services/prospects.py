@@ -59,10 +59,11 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ProspectStatus.LEAD_CERRADO.value: set(),
 }
 
-MEETING_COMPLETE_STATUSES = frozenset({
+# Estados donde el contacto ya ocurrió en el flujo normal (sin saltar pasos).
+# PAGO_COMPLETADO NO implica contacto: el pago puede llegar antes.
+CONTACT_DONE_STATUSES = frozenset({
     ProspectStatus.LEAD_CONTACTADO.value,
     ProspectStatus.CONTRATO_ENVIADO.value,
-    ProspectStatus.PAGO_COMPLETADO.value,
 })
 
 # Misma cifra fija que el dashboard de comisiones de ventas.
@@ -443,6 +444,26 @@ class ProspectService:
             cleaned_note = "Contactado tras la reunión vinculada"
         current = prospect.status
         target = ProspectStatus.LEAD_CONTACTADO.value
+
+        # Caso raro: pago llegó antes del contacto. El vendedor debe poder marcar
+        # contactado sin bajar el estado de PAGO_COMPLETADO.
+        if (
+            current == ProspectStatus.PAGO_COMPLETADO.value
+            and not self._seller_marked_contacted(prospect)
+        ):
+            self._add_history(
+                prospect,
+                actor=actor,
+                event_type=ProspectHistoryEventType.STATUS_CHANGE.value,
+                from_status=current,
+                to_status=target,
+                note=cleaned_note,
+            )
+            self.db.commit()
+            self.db.refresh(prospect)
+            self.try_auto_convert(prospect.id, actor=actor)
+            return prospect
+
         if current != ProspectStatus.PENDIENTE_CONTACTAR.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -718,18 +739,28 @@ class ProspectService:
             actor = self.db.get(User, link.created_by_user_id)
         if actor is None:
             return None
-        # El pago es un evento de sistema: forzamos PAGO_COMPLETADO aunque el
-        # grafo manual no permita el salto (p. ej. desde PENDIENTE_CONTACTAR).
-        if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
-            previous = prospect.status
+        previous = prospect.status
+        # El pago actualiza el estado, pero NUNCA implica que el vendedor contactó.
+        # Contactado solo lo marca el vendedor (mark_contacted / historial LEAD_CONTACTADO).
+        if previous != ProspectStatus.PAGO_COMPLETADO.value:
             prospect.status = ProspectStatus.PAGO_COMPLETADO.value
+            early_payment = previous in {
+                ProspectStatus.PENDIENTE_CONTACTAR.value,
+                ProspectStatus.LEAD_CONTACTADO.value,
+            }
+            note = (
+                "Pago completado (antes de contacto/contrato; el vendedor debe "
+                "marcar contactado y completar el pipeline)"
+                if early_payment
+                else "Pago completado"
+            )
             self._add_history(
                 prospect,
                 actor=actor,
                 event_type=ProspectHistoryEventType.PAYMENT_COMPLETED.value,
                 from_status=previous,
                 to_status=prospect.status,
-                note="Pago completado",
+                note=note,
             )
         self.db.flush()
         return self.try_auto_convert(prospect.id, actor=actor, from_payment=True)
@@ -1006,8 +1037,8 @@ class ProspectService:
         if get_settings().payment_test:
             return True
 
-        # Contactado (con o sin Calendly) + contrato firmado.
-        if prospect.status not in MEETING_COMPLETE_STATUSES:
+        # Contactado lo marca el vendedor; el pago solo no alcanza.
+        if not self._seller_marked_contacted(prospect):
             return False
         envelopes = self.list_linked_envelopes(prospect)
         return any(envelope.status.lower() == "completed" for envelope in envelopes)
@@ -1073,6 +1104,20 @@ class ProspectService:
         except HTTPException:
             return None
         return load_prospect_pipeline_for_client(self, prospect)
+
+    def _seller_marked_contacted(self, prospect: Prospect) -> bool:
+        """True solo si el vendedor marcó contacto (estado o historial), nunca por el pago solo."""
+        if prospect.status in CONTACT_DONE_STATUSES:
+            return True
+        row = self.db.execute(
+            select(ProspectHistory.id)
+            .where(
+                ProspectHistory.prospect_id == prospect.id,
+                ProspectHistory.to_status == ProspectStatus.LEAD_CONTACTADO.value,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        return row is not None
 
     def _get_prospect_for_user(
         self,
