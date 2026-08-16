@@ -8,6 +8,7 @@ from app.api.deps import CurrentUser, DbSession, OptionalActiveMerchantId, requi
 from app.models.client import Client
 from app.models.document import Document
 from app.models.user import User
+from app.schemas.client import DocumentBrief
 from app.schemas.document import ConfirmUploadRequest, DocumentResponse, UploadUrlRequest, UploadUrlResponse
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
@@ -139,17 +140,25 @@ def get_document_content(
     )
 
 
-@router.get("/client/{client_id}", response_model=list[DocumentResponse])
+@router.get("/client/{client_id}", response_model=list[DocumentBrief])
 def list_client_documents(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("documents:read"))],
     merchant_id: OptionalActiveMerchantId,
-) -> list[DocumentResponse]:
+) -> list[DocumentBrief]:
     service_client = ClientService(db)
     client = service_client.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404)
     docs = db.execute(select(Document).where(Document.client_id == client_id)).scalars().all()
     doc_service = DocumentService(db)
-    return [doc_service.to_response(d) for d in docs]
+    latest = doc_service.load_latest_verifications_map([d.id for d in docs])
+    return [
+        doc_service.to_brief(
+            d,
+            include_download_url=True,
+            latest_verification=latest.get(d.id),
+        )
+        for d in docs
+    ]

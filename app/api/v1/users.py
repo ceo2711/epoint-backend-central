@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
-from app.api.deps import DbSession, require_permissions
+from app.api.deps import CurrentUser, DbSession, require_permissions
 from app.core.security import hash_password
 from app.models.area import Area
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import SubSellerActiveUpdate, UserCreate, UserResponse, UserUpdate
 from app.services.auth import AuthService
 from app.services.role_access import AREA_LEADER_ROLE, is_branch_manager
 from app.services.sede_scope import (
@@ -21,6 +21,7 @@ from app.services.sede_scope import (
     resolve_sede_for_user,
     sync_user_merchants_for_sede,
 )
+from app.services.sub_sellers import SubSellerService
 from app.services.user_serialization import serialize_user
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
@@ -247,6 +248,22 @@ def get_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     _assert_can_manage_target(current_user, user)
+    return serialize_user(user)
+
+
+@router.patch("/{user_id}/active", response_model=UserResponse)
+def set_sales_staff_active(
+    user_id: int,
+    payload: SubSellerActiveUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> UserResponse:
+    """Activa o desactiva un vendedor/subvendedor de la sede (gerente o líder de ventas)."""
+    user = SubSellerService(db).set_sales_staff_active(
+        current_user,
+        user_id,
+        is_active=payload.is_active,
+    )
     return serialize_user(user)
 
 

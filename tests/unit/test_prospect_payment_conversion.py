@@ -1,7 +1,7 @@
-"""Conversión de prospecto tras pago: PAYMENT_TEST y requisitos normales."""
+"""Conversión de prospecto: las tres condiciones son siempre obligatorias."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.models.enums import ProspectStatus
 from app.models.payment_link import PaymentLinkStatus
@@ -20,45 +20,42 @@ def _prospect(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def test_ready_for_conversion_with_payment_test_only_needs_paid_link():
+def _paid_service() -> ProspectService:
     svc = ProspectService.__new__(ProspectService)
     svc.db = MagicMock()
-    link = SimpleNamespace(status=PaymentLinkStatus.PAID.value)
-    svc.db.get.return_value = link
+    svc.db.get.return_value = SimpleNamespace(status=PaymentLinkStatus.PAID.value)
+    return svc
+
+
+def test_ready_for_conversion_false_without_seller_contact():
+    svc = _paid_service()
+    svc._seller_marked_contacted = MagicMock(return_value=False)
+    svc.list_linked_envelopes = MagicMock(return_value=[SimpleNamespace(status="completed")])
     prospect = _prospect()
 
-    with patch("app.core.config.get_settings", return_value=SimpleNamespace(payment_test=True)):
-        assert svc._ready_for_conversion(prospect) is True
+    assert svc._ready_for_conversion(prospect) is False
+    svc._seller_marked_contacted.assert_called_once_with(prospect)
+    svc.list_linked_envelopes.assert_not_called()
 
 
-def test_ready_for_conversion_without_payment_test_needs_seller_contact_and_contract():
-    svc = ProspectService.__new__(ProspectService)
-    svc.db = MagicMock()
-    link = SimpleNamespace(status=PaymentLinkStatus.PAID.value)
-    svc.db.get.return_value = link
-    svc._seller_marked_contacted = MagicMock(return_value=False)
+def test_ready_for_conversion_false_without_signed_contract():
+    svc = _paid_service()
+    svc._seller_marked_contacted = MagicMock(return_value=True)
     svc.list_linked_envelopes = MagicMock(return_value=[])
-    prospect = _prospect(calendly_event_id=None)
+    prospect = _prospect()
 
-    with patch("app.core.config.get_settings", return_value=SimpleNamespace(payment_test=False)):
-        assert svc._ready_for_conversion(prospect) is False
-        svc._seller_marked_contacted.assert_called_once_with(prospect)
-        svc.list_linked_envelopes.assert_not_called()
+    assert svc._ready_for_conversion(prospect) is False
 
 
-def test_ready_for_conversion_requires_signed_contract_after_seller_contact():
-    svc = ProspectService.__new__(ProspectService)
-    svc.db = MagicMock()
-    link = SimpleNamespace(status=PaymentLinkStatus.PAID.value)
-    svc.db.get.return_value = link
+def test_ready_for_conversion_true_with_contact_signed_contract_and_payment():
+    svc = _paid_service()
     svc._seller_marked_contacted = MagicMock(return_value=True)
     svc.list_linked_envelopes = MagicMock(
         return_value=[SimpleNamespace(status="completed")],
     )
     prospect = _prospect()
 
-    with patch("app.core.config.get_settings", return_value=SimpleNamespace(payment_test=False)):
-        assert svc._ready_for_conversion(prospect) is True
+    assert svc._ready_for_conversion(prospect) is True
 
 
 def test_seller_marked_contacted_false_when_only_pago_completado():

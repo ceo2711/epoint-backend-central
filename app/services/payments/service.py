@@ -136,6 +136,9 @@ class PaymentService:
         created_by_user_id: int | None = None,
         page: int = 1,
         page_size: int = 10,
+        link_status: str | None = None,
+        unlinked: bool = False,
+        customer_email: str | None = None,
     ) -> tuple[list[PaymentLinkResponse], int]:
         self.ensure_access(user)
         filters = [PaymentLink.merchant_id == merchant_id]
@@ -143,6 +146,18 @@ class PaymentService:
             filters.append(PaymentLink.created_by_user_id == user.id)
         elif created_by_user_id is not None:
             filters.append(PaymentLink.created_by_user_id == created_by_user_id)
+        if link_status is not None:
+            allowed = {item.value for item in PaymentLinkStatus}
+            if link_status not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Estado de pago inválido",
+                )
+            filters.append(PaymentLink.status == link_status)
+        if unlinked:
+            filters.append(PaymentLink.prospect_id.is_(None))
+        if customer_email:
+            filters.append(PaymentLink.customer_email == customer_email.strip().lower())
 
         total = self.db.execute(
             select(func.count()).select_from(PaymentLink).where(*filters)
@@ -419,6 +434,28 @@ class PaymentService:
         except ValueError:
             source = ClientSource.OTHER.value
 
+        if link.prospect_id is not None:
+            from app.models.prospect import Prospect
+            from app.services.prospects import CONVERSION_REQUIREMENTS_DETAIL, ProspectService
+
+            prospect = self.db.get(Prospect, link.prospect_id)
+            if prospect is not None:
+                if prospect.converted_client_id is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Este pago ya está vinculado a un cliente vía el prospecto",
+                    )
+                psvc = ProspectService(self.db)
+                if not psvc._ready_for_conversion(prospect):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=CONVERSION_REQUIREMENTS_DETAIL,
+                    )
+                client = psvc.convert_to_client(
+                    prospect=prospect, actor=user, from_payment=True
+                )
+                return client.id, "Cliente registrado correctamente"
+
         resolved_merchant_id = payload.merchant_id or link.merchant_id or merchant_id
         client_service = ClientService(self.db)
         client, portal_pw = client_service.create_client(
@@ -433,12 +470,6 @@ class PaymentService:
         )
         link.client_id = client.id
         link.client_registered_at = datetime.now(timezone.utc)
-        if link.prospect_id is not None:
-            from app.models.prospect import Prospect
-
-            prospect = self.db.get(Prospect, link.prospect_id)
-            if prospect is not None and prospect.converted_client_id is None:
-                prospect.converted_client_id = client.id
         self.db.commit()
         if portal_pw is not None:
             client_service._send_client_portal_welcome(client, portal_pw)

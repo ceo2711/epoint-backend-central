@@ -30,4 +30,30 @@ def test_expo_push_provider_posts_messages(mock_client_cls):
     assert payload[0]["title"] == "Nuevo comentario"
     assert payload[0]["priority"] == "high"
     assert payload[0]["channelId"] == "epoint-default"
-    assert payload[0]["data"]["client_id"] == 7
+    assert payload[0]["data"]["client_id"] == "7"
+    assert payload[0]["data"]["card_id"] == "3"
+
+
+def test_serialize_expo_push_data_skips_nulls_and_stringifies():
+    from app.services.notifications.providers import serialize_expo_push_data
+
+    assert serialize_expo_push_data(
+        {"client_id": 9, "prospect_id": None, "ok": True, "event_type": "PAYMENT_LINK_COMPLETED"}
+    ) == {
+        "client_id": "9",
+        "ok": "true",
+        "event_type": "PAYMENT_LINK_COMPLETED",
+    }
+
+
+def test_sales_funnel_events_include_push():
+    from app.services.notifications.service import EVENT_CHANNELS
+
+    for event in (
+        "DOCUSIGN_ENVELOPE_COMPLETED",
+        "PAYMENT_LINK_COMPLETED",
+        "PROSPECT_CONVERTED",
+        "CALENDLY_EVENT_SCHEDULED",
+    ):
+        assert "PUSH" in EVENT_CHANNELS[event]
+        assert "IN_APP" in EVENT_CHANNELS[event]

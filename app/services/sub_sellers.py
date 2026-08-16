@@ -27,6 +27,7 @@ from app.services.role_access import (
     SUB_SELLER_ROLE,
     can_own_sub_sellers,
     can_supervise_sales_reps,
+    is_sales_staff,
     is_sub_seller,
 )
 from app.services.sede_scope import effective_sede_id, sync_user_merchants_for_sede
@@ -432,6 +433,34 @@ class SubSellerService:
         if actor_sede is not None and sub.sede_id != actor_sede:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subvendedor no encontrado")
         return self._apply_sub_seller_active(sub, is_active=is_active)
+
+    def set_sales_staff_active(self, actor: User, user_id: int, *, is_active: bool) -> User:
+        """Activa/desactiva un vendedor o subvendedor de la sede del supervisor."""
+        if not can_supervise_sales_reps(actor):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tenés permiso para activar o desactivar vendedores",
+            )
+        if user_id == actor.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No podés desactivar tu propia cuenta",
+            )
+        target = (
+            self.db.execute(
+                select(User)
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+                .where(User.id == user_id)
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+        if target is None or not (is_sales_staff(target) or is_sub_seller(target)):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendedor no encontrado")
+        actor_sede = effective_sede_id(actor)
+        if actor_sede is not None and target.sede_id != actor_sede:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendedor no encontrado")
+        return self._apply_sub_seller_active(target, is_active=is_active)
 
     def _apply_sub_seller_active(self, sub: User, *, is_active: bool) -> User:
         sub.is_active = is_active

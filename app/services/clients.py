@@ -34,7 +34,12 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
-from app.services.role_access import can_manage_onboarding, is_onboarding_area_leader, is_sales_staff
+from app.services.role_access import (
+    can_filter_clients_by_sales_rep,
+    can_manage_onboarding,
+    is_onboarding_area_leader,
+    is_sales_staff,
+)
 
 if TYPE_CHECKING:
     from app.models.board import Board, BoardTemplate
@@ -176,6 +181,8 @@ class ClientService:
             )
         if sales_rep_id is not None:
             if is_sales_staff(user) and sales_rep_id != user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+            if not is_sales_staff(user) and not can_filter_clients_by_sales_rep(user):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
             query = query.where(Client.registered_by_user_id == sales_rep_id)
         if status_filter:

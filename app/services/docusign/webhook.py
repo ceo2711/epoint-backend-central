@@ -31,6 +31,17 @@ def verify_connect_signature(body: bytes, signature: str | None, secret: str, *,
     return hmac.compare_digest(expected.strip(), signature.strip())
 
 
+DOCUSIGN_COMPLETED_ALIASES = frozenset({"completed", "signed"})
+
+
+def normalize_docusign_status(status: str) -> str:
+    """DocuSign a veces manda `signed` antes de `completed`; para el CRM es lo mismo."""
+    lowered = (status or "").strip().lower()
+    if lowered in DOCUSIGN_COMPLETED_ALIASES:
+        return "completed"
+    return lowered
+
+
 def _status_from_event_type(event_type: str) -> str | None:
     mapping = {
         "envelope-sent": "sent",
@@ -38,8 +49,12 @@ def _status_from_event_type(event_type: str) -> str | None:
         "envelope-completed": "completed",
         "envelope-declined": "declined",
         "envelope-voided": "voided",
+        "recipient-completed": "completed",
+        "recipient-signed": "completed",
+        "recipient-declined": "declined",
     }
-    return mapping.get(event_type.lower())
+    mapped = mapping.get(event_type.lower())
+    return normalize_docusign_status(mapped) if mapped else None
 
 
 def _parse_json_event(payload: dict) -> DocusignConnectEvent | None:
@@ -55,8 +70,13 @@ def _parse_json_event(payload: dict) -> DocusignConnectEvent | None:
 
     summary = data.get("envelopeSummary") or {}
     status = str(summary.get("status") or data.get("status") or "").strip().lower()
-    if not status:
-        status = _status_from_event_type(event_type) or ""
+    from_event = _status_from_event_type(event_type)
+    if from_event == "completed":
+        status = "completed"
+    elif not status:
+        status = from_event or ""
+    else:
+        status = normalize_docusign_status(status)
     if not status:
         return None
 
@@ -85,6 +105,7 @@ def _parse_xml_event(body: bytes) -> DocusignConnectEvent | None:
     if not envelope_id or not status:
         return None
 
+    status = normalize_docusign_status(status)
     return DocusignConnectEvent(
         envelope_id=envelope_id,
         status=status,

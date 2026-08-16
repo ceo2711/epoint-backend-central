@@ -30,8 +30,8 @@ EVENT_CHANNELS: dict[str, list[str]] = {
     "CLIENT_ONBOARDING_INCOMPLETE": ["IN_APP", "EMAIL", "WHATSAPP"],
     "TASK_COMPLETED": ["IN_APP", "EMAIL", "PUSH"],
     "TASK_COMMENTED": ["IN_APP", "EMAIL", "PUSH"],
-    "CALENDLY_EVENT_SCHEDULED": ["IN_APP"],
-    "DOCUSIGN_ENVELOPE_COMPLETED": ["IN_APP"],
+    "CALENDLY_EVENT_SCHEDULED": ["IN_APP", "PUSH"],
+    "DOCUSIGN_ENVELOPE_COMPLETED": ["IN_APP", "PUSH"],
     "PAYMENT_LINK_COMPLETED": ["IN_APP", "EMAIL", "PUSH"],
     "PROSPECT_CONVERTED": ["IN_APP", "EMAIL", "PUSH"],
 }
@@ -75,6 +75,7 @@ class NotificationService:
                 if channel == "PUSH":
                     self._send_push(
                         user=user,
+                        event_type=event_type,
                         title=title,
                         body=(channel_bodies or {}).get(channel, body),
                         payload=payload,
@@ -148,6 +149,7 @@ class NotificationService:
         self,
         *,
         user: User,
+        event_type: str,
         title: str,
         body: str,
         payload: dict[str, Any] | None,
@@ -172,7 +174,8 @@ class NotificationService:
             )
             return
 
-        ok = self._push.send_to_tokens(list(tokens), title, body, payload)
+        push_payload = {**(payload or {}), "event_type": event_type}
+        ok = self._push.send_to_tokens(list(tokens), title, body, push_payload)
         if not ok:
             logger.warning("Push fallido para usuario %s", user.id)
 

@@ -498,12 +498,34 @@ class CalendlyService:
             # Propio calendario o el de un vendedor de la sede.
             if user_id is None or user_id == actor.id:
                 return actor.id
+            from app.services.sede_scope import effective_sede_id
+
+            target = self.db.get(User, user_id)
+            if target is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            sede_id = effective_sede_id(actor)
+            if sede_id is not None and target.sede_id != sede_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No puede ver el calendario de otro usuario",
+                )
             return user_id
         if can_supervise_sales_reps(actor):
             if user_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="user_id es requerido para ver el calendario de un vendedor",
+                )
+            from app.services.sede_scope import effective_sede_id
+
+            target = self.db.get(User, user_id)
+            if target is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            sede_id = effective_sede_id(actor)
+            if sede_id is not None and target.sede_id != sede_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No puede ver el calendario de otro usuario",
                 )
             return user_id
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede ver el calendario de otro usuario")

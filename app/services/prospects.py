@@ -30,6 +30,8 @@ from app.services.email.client_conversion_welcome import (
 )
 from app.services.merchant_context import MerchantContextService
 from app.services.role_access import (
+    AREA_LEADER_ROLE,
+    SALES_AREA_CODE,
     can_be_prospect_owner,
     is_sales_area_leader,
     is_sales_staff,
@@ -65,6 +67,11 @@ CONTACT_DONE_STATUSES = frozenset({
     ProspectStatus.LEAD_CONTACTADO.value,
     ProspectStatus.CONTRATO_ENVIADO.value,
 })
+
+CONVERSION_REQUIREMENTS_DETAIL = (
+    "El prospecto debe estar contactado, tener contrato firmado y pago completado "
+    "antes de convertirse en cliente"
+)
 
 # Misma cifra fija que el dashboard de comisiones de ventas.
 SALES_COMMISSION_PER_SALE_USD = Decimal("500")
@@ -718,6 +725,11 @@ class ProspectService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El email del link de pago no coincide con el del prospecto",
             )
+        if link.status != PaymentLinkStatus.PENDING.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo se puede vincular un link de pago pendiente. Los links pagados no se reasignan.",
+            )
         if link.prospect_id is not None and link.prospect_id != prospect.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -802,7 +814,7 @@ class ProspectService:
         if not self._ready_for_conversion(prospect):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El prospecto debe tener reunión concretada, contrato firmado y pago completado antes de convertirse",
+                detail=CONVERSION_REQUIREMENTS_DETAIL,
             )
 
         client_service = ClientService(self.db)
@@ -926,6 +938,28 @@ class ProspectService:
         client.conversion_welcome_email_sent_at = datetime.now(timezone.utc)
         self.db.commit()
 
+    def _sales_area_leaders_for_sede(self, sede_id: int | None) -> list[User]:
+        if sede_id is None:
+            return []
+        from app.models.area import Area
+        from app.models.role import Role
+
+        return list(
+            self.db.execute(
+                select(User)
+                .join(Role, User.role_id == Role.id)
+                .outerjoin(Area, User.area_id == Area.id)
+                .where(
+                    User.is_active.is_(True),
+                    User.sede_id == sede_id,
+                    Role.code == AREA_LEADER_ROLE,
+                    Area.code == SALES_AREA_CODE,
+                )
+            )
+            .scalars()
+            .all()
+        )
+
     def _notify_prospect_converted(
         self,
         *,
@@ -952,22 +986,25 @@ class ProspectService:
             creator = link.created_by or self.db.get(User, link.created_by_user_id)
             _add(creator)
         _add(prospect.assigned_to)
+        for leader in self._sales_area_leaders_for_sede(prospect.sede_id):
+            _add(leader)
         if not recipients:
             return []
 
         name = f"{client.first_name} {client.last_name}".strip()
+        commission_label = f"USD {int(SALES_COMMISSION_PER_SALE_USD)}"
         if from_payment and link is not None:
             title = "¡Felicitaciones! Venta concretada"
             body = (
                 f"{name} completó el pago de {link.currency} {link.amount} "
-                f"y pasó de prospecto a cliente. Tu comisión quedó registrada."
+                f"y ya es cliente. Tu comisión de {commission_label} quedó registrada."
             )
             event_type = NotificationEventType.PAYMENT_LINK_COMPLETED.value
         else:
             title = "¡Felicitaciones! Prospecto convertido"
             body = (
                 f"{name} pasó de prospecto a cliente. "
-                f"Venta concretada: tu comisión quedó registrada."
+                f"Tu comisión de {commission_label} quedó registrada."
             )
             event_type = NotificationEventType.PROSPECT_CONVERTED.value
 
@@ -1023,6 +1060,12 @@ class ProspectService:
         return created
 
     def _ready_for_conversion(self, prospect: Prospect) -> bool:
+        """Las tres condiciones son obligatorias, también con PAYMENT_TEST.
+
+        1. El vendedor marcó contactado
+        2. Hay un contrato firmado
+        3. Hay un pago completado
+        """
         if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
             return False
         if prospect.payment_link_id is None:
@@ -1030,18 +1073,10 @@ class ProspectService:
         link = self.db.get(PaymentLink, prospect.payment_link_id)
         if link is None or link.status != PaymentLinkStatus.PAID.value:
             return False
-
-        from app.core.config import get_settings
-
-        # En PAYMENT_TEST el pago solo alcanza para convertir (sin reunión/contrato).
-        if get_settings().payment_test:
-            return True
-
-        # Contactado lo marca el vendedor; el pago solo no alcanza.
         if not self._seller_marked_contacted(prospect):
             return False
         envelopes = self.list_linked_envelopes(prospect)
-        return any(envelope.status.lower() == "completed" for envelope in envelopes)
+        return any(envelope.status.lower() in {"completed", "signed"} for envelope in envelopes)
 
     def _scoped_query(
         self,

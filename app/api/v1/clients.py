@@ -59,7 +59,7 @@ def list_clients(
     onboarding_only: bool = Query(False),
     merchant_id: int | None = Query(None, description="Filtrar por comercio específico"),
     all_merchants: bool = Query(False, description="Incluir todos los comercios accesibles"),
-    sales_rep_id: int | None = Query(None, description="Filtrar por vendedor (admin)"),
+    sales_rep_id: int | None = Query(None, description="Filtrar por vendedor o subvendedor"),
     sede_id: int | None = Query(None, description="Filtrar por sede (admin global)"),
 ) -> PaginatedResponse[ClientResponse]:
     service = ClientService(db)

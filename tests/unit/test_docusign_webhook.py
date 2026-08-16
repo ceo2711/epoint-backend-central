@@ -28,3 +28,43 @@ def test_parse_connect_json_event():
     assert event is not None
     assert event.envelope_id == "abc-123"
     assert event.status == "completed"
+
+
+def test_parse_connect_signed_status_as_completed():
+    body = json.dumps(
+        {
+            "event": "envelope-completed",
+            "data": {"envelopeId": "abc-123", "envelopeSummary": {"status": "signed"}},
+        }
+    ).encode()
+    event = parse_connect_payload(body, "application/json")
+    assert event is not None
+    assert event.status == "completed"
+
+
+def test_parse_connect_recipient_completed_event():
+    body = json.dumps(
+        {
+            "event": "recipient-completed",
+            "data": {"envelopeId": "abc-123"},
+        }
+    ).encode()
+    event = parse_connect_payload(body, "application/json")
+    assert event is not None
+    assert event.envelope_id == "abc-123"
+    assert event.status == "completed"
+
+
+def test_parse_connect_recipient_completed_overrides_delivered_summary():
+    body = json.dumps(
+        {
+            "event": "recipient-completed",
+            "data": {
+                "envelopeId": "abc-123",
+                "envelopeSummary": {"status": "delivered"},
+            },
+        }
+    ).encode()
+    event = parse_connect_payload(body, "application/json")
+    assert event is not None
+    assert event.status == "completed"

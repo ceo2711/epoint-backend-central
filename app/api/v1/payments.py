@@ -34,6 +34,9 @@ def list_payment_links(
     created_by_user_id: int | None = Query(None, ge=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    status: str | None = Query(None),
+    unlinked: bool = Query(False),
+    customer_email: str | None = Query(None),
 ) -> PaginatedResponse[PaymentLinkResponse]:
     items, total = PaymentService(db).list_links(
         current_user,
@@ -41,6 +44,9 @@ def list_payment_links(
         created_by_user_id=created_by_user_id,
         page=page,
         page_size=page_size,
+        link_status=status,
+        unlinked=unlinked,
+        customer_email=customer_email,
     )
     return PaginatedResponse(
         items=items,

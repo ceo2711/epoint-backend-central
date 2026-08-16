@@ -57,6 +57,22 @@ class TestDocusignEnvelopeNotify:
         notify_mock.assert_called_once()
         assert notify_mock.call_args.kwargs["commit"] is False
 
+    def test_process_completed_normalizes_signed_status(self):
+        row = _envelope_row()
+        row.status = "signed"
+        db = MagicMock()
+        service = DocusignService(db)
+
+        with (
+            patch.object(service, "_ensure_client_for_completed_envelope", return_value=False),
+            patch.object(service, "_persist_signed_pdf"),
+            patch.object(service, "_notify_envelope_completed", return_value=True),
+        ):
+            changed = service._process_completed_envelope(row)
+
+        assert changed is True
+        assert row.status == "completed"
+
     def test_notify_skips_when_already_marked(self):
         notified_at = datetime.now(timezone.utc)
         locked = _envelope_row(completion_notified_at=notified_at)

@@ -182,3 +182,24 @@ def test_reassign_requires_supervise_permission(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         service.reassign_sub_seller(actor, 10, new_parent_user_id=2)
     assert exc.value.status_code == 403
+
+
+def test_set_sales_staff_active_requires_supervise():
+    service = SubSellerService(db=SimpleNamespace())
+    actor = SimpleNamespace(id=99, role=SimpleNamespace(code="SALES_REP"), parent_user_id=None, area=None)
+    with pytest.raises(HTTPException) as exc:
+        service.set_sales_staff_active(actor, 10, is_active=False)
+    assert exc.value.status_code == 403
+
+
+def test_set_sales_staff_active_blocks_self():
+    service = SubSellerService(db=SimpleNamespace())
+    actor = SimpleNamespace(
+        id=7,
+        role=SimpleNamespace(code="AREA_LEADER"),
+        area=SimpleNamespace(code="VENTAS"),
+        parent_user_id=None,
+    )
+    with pytest.raises(HTTPException) as exc:
+        service.set_sales_staff_active(actor, 7, is_active=False)
+    assert exc.value.status_code == 400
