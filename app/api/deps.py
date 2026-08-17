@@ -48,7 +48,8 @@ def get_current_user(
 def get_user_permissions(db: Session, user: User) -> list[str]:
     from app.services.role_access import (
         ONBOARDING_LEADER_EXTRA_PERMISSIONS,
-        is_onboarding_area_leader,
+        can_manage_onboarding,
+        is_sede_admin,
     )
 
     rows = db.execute(
@@ -57,7 +58,7 @@ def get_user_permissions(db: Session, user: User) -> list[str]:
         .where(RolePermission.role_id == user.role_id)
     ).all()
     perms = {row[0] for row in rows}
-    if is_onboarding_area_leader(user):
+    if can_manage_onboarding(user) and not is_sede_admin(user):
         perms |= ONBOARDING_LEADER_EXTRA_PERMISSIONS
     return sorted(perms)
 

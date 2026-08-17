@@ -166,6 +166,17 @@ class TestDashboardRoleAreas:
         assert len(areas) == 1
         assert areas[0][0] == "ONBOARDING"
 
+    def test_advisor_sees_same_onboarding_dashboard_as_onboarding_leader(self):
+        areas = _area_definitions_for_role("ADVISOR")
+        assert len(areas) == 1
+        assert areas[0][0] == "ONBOARDING"
+        assert areas[0][3] == "general"
+
+    def test_advisors_area_leader_sees_onboarding_dashboard(self):
+        areas = _area_definitions_for_role("AREA_LEADER", area_code="ASESORES")
+        assert len(areas) == 1
+        assert areas[0][0] == "ONBOARDING"
+
 
 class TestSalesMonthlyCommission:
     def test_commission_is_fixed_amount_per_paid_sale(self):

@@ -74,9 +74,9 @@ def _area_definitions_for_role(
         return [("VENTAS", "Mis ventas", SALES_STATUSES, "personal")]
     if role_code == "AREA_LEADER" and area_code == "VENTAS":
         return [("VENTAS", "Ventas", SALES_STATUSES, "general")]
-    if role_code == "AREA_LEADER" and area_code == "ONBOARDING":
-        return [("ONBOARDING", "Onboarding", ONBOARDING_STATUSES, "general")]
-    if role_code == "AREA_LEADER" and area_code == "ASESORES":
+    if role_code == "ADVISOR" or (
+        role_code == "AREA_LEADER" and area_code in ("ONBOARDING", "ASESORES")
+    ):
         return [("ONBOARDING", "Onboarding", ONBOARDING_STATUSES, "general")]
     return [
         ("VENTAS", "Ventas", SALES_STATUSES, "general"),

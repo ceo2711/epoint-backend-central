@@ -40,6 +40,7 @@ from app.services.notifications import NotificationService
 from app.services.role_access import (
     AREA_LEADER_ROLE,
     SALES_AREA_CODE,
+    can_access_docusign,
     can_manage_onboarding,
     SALES_STAFF_ROLES,
     can_supervise_sales_reps,
@@ -111,9 +112,7 @@ class DocusignService:
 
     @staticmethod
     def ensure_access(actor: User) -> None:
-        if actor.role.code in ("ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER") or actor.role.code == "AREA_LEADER":
-            return
-        if is_sales_area_leader(actor):
+        if can_access_docusign(actor):
             return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

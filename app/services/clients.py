@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.encryption import decrypt_value, encrypt_value
@@ -34,9 +34,11 @@ from app.services.email import ClientWelcomeEmailPayload, send_client_welcome_em
 from app.services.whatsapp import ClientWelcomeWhatsAppPayload, send_client_welcome_whatsapp
 from app.services.notifications import NotificationService
 from app.services.notifications.templates import client_approved_in_app_body, client_approved_in_app_title
+from app.services.client_onboarding_status import READY_TO_WORK_STATUSES
 from app.services.role_access import (
     can_filter_clients_by_sales_rep,
     can_manage_onboarding,
+    is_advisor,
     is_onboarding_area_leader,
     is_sales_staff,
 )
@@ -138,14 +140,14 @@ class ClientService:
             # Solo clientes propios: las ventas de subvendedores no aparecen en la lista
             # del vendedor padre (sí generan comisión override por otro canal).
             query = query.where(Client.registered_by_user_id == user.id)
-        elif user.role.code == "ADVISOR":
+        elif is_advisor(user):
             query = query.where(
-                Client.id.in_(
-                    select(ClientAssignment.client_id).where(
-                        ClientAssignment.advisor_user_id == user.id,
-                        ClientAssignment.unassigned_at.is_(None),
-                    )
-                )
+                Client.status.in_(tuple(READY_TO_WORK_STATUSES)),
+                exists().where(
+                    ClientAssignment.client_id == Client.id,
+                    ClientAssignment.advisor_user_id == user.id,
+                    ClientAssignment.unassigned_at.is_(None),
+                ),
             )
         return query
 
@@ -1068,14 +1070,13 @@ class ClientService:
         self.db.commit()
 
     def actor_can_manage_client_advisors(self, actor: User, client: Client) -> bool:
-        role = actor.role.code if actor.role else None
-        if can_manage_onboarding(actor):
-            return True
-        if role == "ADVISOR":
+        if is_advisor(actor):
             return any(
                 assignment.unassigned_at is None and assignment.advisor_user_id == actor.id
                 for assignment in client.assignments
             )
+        if can_manage_onboarding(actor):
+            return True
         return False
 
     def require_can_manage_client_advisors(self, actor: User, client: Client) -> None:
@@ -1466,6 +1467,7 @@ class ClientService:
                 Client.registered_by_user_id,
                 Client.merchant_id,
                 Client.sede_id,
+                Client.status,
             ).where(Client.id == client_id)
         ).one_or_none()
         if row is None:
@@ -1486,15 +1488,19 @@ class ClientService:
             return user.client_id == client_id
         if is_sales_staff(user):
             return row.registered_by_user_id == user.id
-        if user.role.code == "ADVISOR":
-            assignment = self.db.execute(
-                select(ClientAssignment.id).where(
+        if is_advisor(user):
+            if row.status not in READY_TO_WORK_STATUSES:
+                return False
+            assigned = self.db.execute(
+                select(ClientAssignment.id)
+                .where(
                     ClientAssignment.client_id == client_id,
                     ClientAssignment.advisor_user_id == user.id,
                     ClientAssignment.unassigned_at.is_(None),
                 )
-            ).scalar_one_or_none()
-            return assignment is not None
+                .limit(1)
+            ).first()
+            return assigned is not None
         return True
 
     def user_can_view_client_onboarding_data(self, user: User, client_id: int) -> bool:

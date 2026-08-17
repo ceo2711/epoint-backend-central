@@ -116,3 +116,72 @@ class TestUserCanAccessClientMerchantScope:
         ):
             merchant_ctx_cls.return_value.user_can_access_merchant.return_value = False
             assert service.user_can_access_client(user, 314, merchant_id=1) is False
+
+
+class TestAdvisorClientScope:
+    def _row(self, *, status: str):
+        row = MagicMock()
+        row.id = 314
+        row.merchant_id = 2
+        row.registered_by_user_id = 99
+        row.sede_id = None
+        row.status = status
+        return row
+
+    def test_denies_pending_review_even_if_assigned(self):
+        db = MagicMock()
+        db.execute.return_value.one_or_none.return_value = self._row(status="PENDIENTE_DE_REVISION")
+        service = ClientService(db)
+        with (
+            patch("app.services.clients.MerchantContextService") as merchant_ctx_cls,
+            patch("app.services.sede_scope.effective_sede_id", return_value=None),
+        ):
+            merchant_ctx_cls.return_value.user_can_access_merchant.return_value = True
+            assert service.user_can_access_client(_user("ADVISOR", user_id=7), 314) is False
+
+    def test_denies_ready_client_without_assignment(self):
+        db = MagicMock()
+        client_result = MagicMock()
+        client_result.one_or_none.return_value = self._row(status="LISTO_PARA_TRABAJAR")
+        assignment_result = MagicMock()
+        assignment_result.first.return_value = None
+        db.execute.side_effect = [client_result, assignment_result]
+        service = ClientService(db)
+        with (
+            patch("app.services.clients.MerchantContextService") as merchant_ctx_cls,
+            patch("app.services.sede_scope.effective_sede_id", return_value=None),
+        ):
+            merchant_ctx_cls.return_value.user_can_access_merchant.return_value = True
+            assert service.user_can_access_client(_user("ADVISOR", user_id=7), 314) is False
+
+    def test_allows_assigned_ready_to_work_client(self):
+        db = MagicMock()
+        client_result = MagicMock()
+        client_result.one_or_none.return_value = self._row(status="LISTO_PARA_TRABAJAR")
+        assignment_result = MagicMock()
+        assignment_result.first.return_value = (11,)
+        db.execute.side_effect = [client_result, assignment_result]
+        service = ClientService(db)
+        with (
+            patch("app.services.clients.MerchantContextService") as merchant_ctx_cls,
+            patch("app.services.sede_scope.effective_sede_id", return_value=None),
+        ):
+            merchant_ctx_cls.return_value.user_can_access_merchant.return_value = True
+            assert service.user_can_access_client(_user("ADVISOR", user_id=7), 314) is True
+
+    def test_list_query_scopes_advisor_to_assigned_ready_clients(self):
+        service = ClientService(MagicMock())
+        with patch("app.services.sede_scope.effective_sede_id", return_value=None):
+            query = service._scoped_clients_query(_user("ADVISOR", user_id=7), None)
+        sql = str(query.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "listo_para_trabajar" in sql
+        assert "client_assignments" in sql
+
+    def test_onboarding_leader_list_query_is_not_assignment_scoped(self):
+        service = ClientService(MagicMock())
+        with patch("app.services.sede_scope.effective_sede_id", return_value=None):
+            query = service._scoped_clients_query(
+                _user("AREA_LEADER", area_code="ONBOARDING"), None
+            )
+        sql = str(query.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "client_assignments" not in sql

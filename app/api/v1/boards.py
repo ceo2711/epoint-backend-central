@@ -76,15 +76,14 @@ def _require_board_card_delete(user: User) -> None:
 
 
 def _require_card_label_editor(user: User, client: Client, db) -> None:
-    """Solo onboarding o un asesor asignado del cliente pueden setear labels."""
-    from app.services.role_access import is_onboarding_area_leader
+    """Onboarding o un asesor asignado del cliente pueden setear labels."""
+    from app.services.role_access import can_manage_onboarding
 
-    if is_onboarding_area_leader(user):
+    if can_manage_onboarding(user):
         return
-    if user.role.code == "ADVISOR":
-        advisors = ClientService(db)._get_active_advisors(client)
-        if any(advisor.id == user.id for advisor in advisors):
-            return
+    advisors = ClientService(db)._get_active_advisors(client)
+    if any(advisor.id == user.id for advisor in advisors):
+        return
     raise HTTPException(
         status_code=403,
         detail="Solo onboarding o un asesor asignado pueden cambiar el label de la card",

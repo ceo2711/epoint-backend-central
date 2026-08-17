@@ -34,6 +34,7 @@ from app.services.calendly.client import CalendlyApiError, CalendlyClient
 from app.services.notifications import NotificationService
 from app.services.role_access import (
     SALES_STAFF_ROLES,
+    can_filter_clients_by_sales_rep,
     can_sell,
     can_supervise_sales_reps,
     is_sales_area_leader,
@@ -552,9 +553,9 @@ class CalendlyService:
         return self._connection_response(connection, user_id=target_user_id)
 
     def list_sales_reps(self, actor: User) -> list[CalendlySalesRepItem]:
-        self.ensure_calendar_access(actor)
-        if not can_supervise_sales_reps(actor):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
+        # Directorio de vendedores para filtros (clientes/onboarding), no acceso a Calendly.
+        if not can_filter_clients_by_sales_rep(actor):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
         from app.services.sede_scope import effective_sede_id
 

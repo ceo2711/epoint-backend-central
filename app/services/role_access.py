@@ -9,13 +9,16 @@ BRANCH_MANAGER_ROLE = "BRANCH_MANAGER"
 AREA_LEADER_ROLE = "AREA_LEADER"
 SALES_REP_ROLE = "SALES_REP"
 SUB_SELLER_ROLE = "SUB_SELLER"
+ADVISOR_ROLE = "ADVISOR"
 SALES_STAFF_ROLES = frozenset({SALES_REP_ROLE, SUB_SELLER_ROLE})
 SALES_AREA_CODE = "VENTAS"
 ONBOARDING_AREA_CODE = "ONBOARDING"
 ASESORES_AREA_CODE = "ASESORES"
 
-# Permisos de “encargado de onboarding” aplicados al líder de área ONBOARDING.
-ONBOARDING_LEADER_EXTRA_PERMISSIONS = frozenset({"clients:approve", "credentials:read"})
+# Permisos extra de onboarding: líder de área, jefe de asesores y asesor.
+ONBOARDING_LEADER_EXTRA_PERMISSIONS = frozenset(
+    {"clients:approve", "clients:update", "credentials:read"}
+)
 
 
 def is_global_admin(user: User) -> bool:
@@ -86,9 +89,18 @@ def is_advisors_area_leader(user: User) -> bool:
     return is_area_leader(user) and user_area_code(user) == ASESORES_AREA_CODE
 
 
+def is_advisor(user: User) -> bool:
+    return user.role.code == ADVISOR_ROLE
+
+
 def can_manage_onboarding(user: User) -> bool:
-    """Admin/gerente o líder de onboarding: aprueba clientes y gestiona onboarding."""
-    return is_sede_admin(user) or is_onboarding_area_leader(user)
+    """Admin/gerente, líder de onboarding, jefe de asesores o asesor."""
+    return (
+        is_sede_admin(user)
+        or is_onboarding_area_leader(user)
+        or is_advisors_area_leader(user)
+        or is_advisor(user)
+    )
 
 
 def can_supervise_sales_reps(user: User) -> bool:
@@ -97,8 +109,46 @@ def can_supervise_sales_reps(user: User) -> bool:
 
 
 def can_filter_clients_by_sales_rep(user: User) -> bool:
-    """Filtro por vendedor en clientes: gerente/admin, líder ventas o líder onboarding."""
-    return can_supervise_sales_reps(user) or is_onboarding_area_leader(user)
+    """Filtro por vendedor en clientes: supervisión comercial u operadores de onboarding (no el asesor de línea)."""
+    if is_advisor(user):
+        return False
+    return can_supervise_sales_reps(user) or can_manage_onboarding(user)
+
+
+def can_run_onboarding_reminders(user: User) -> bool:
+    """Recordatorios masivos: onboarding/admin, no el asesor de línea."""
+    return can_manage_onboarding(user) and not is_advisor(user)
+
+
+def can_upload_client_documents(user: User) -> bool:
+    """Subir/reemplazar documentos: cliente, onboarding y admin/gerente. No el asesor."""
+    if user.role.code == "CLIENT":
+        return True
+    return can_manage_onboarding(user) and not is_advisor(user)
+
+
+def can_download_client_documents(user: User) -> bool:
+    """Descargar documentos: cliente, admin/gerente y asesor. Onboarding solo ve/carga."""
+    if user.role.code == "CLIENT":
+        return True
+    return is_sede_admin(user) or is_advisor(user)
+
+
+def can_access_docusign(user: User) -> bool:
+    """Ver/enviar contratos: comercial, admin de sede, líderes de área u operadores de onboarding."""
+    if user.role.code in (
+        ADMIN_ROLE,
+        BRANCH_MANAGER_ROLE,
+        SALES_REP_ROLE,
+        SUB_SELLER_ROLE,
+        AREA_LEADER_ROLE,
+    ):
+        return True
+    return can_manage_onboarding(user)
+
+
+def _has_onboarding_extra_permissions(user: User) -> bool:
+    return is_onboarding_area_leader(user) or is_advisors_area_leader(user) or is_advisor(user)
 
 
 def bypasses_permission(user: User, permission: str) -> bool:
@@ -108,7 +158,7 @@ def bypasses_permission(user: User, permission: str) -> bool:
     sources), escritura de roles y borrado de clientes. Puede usar merchants como
     workspace (selector) y leer roles para alta de usuarios, pero no administrar
     el CRUD de roles ni ver la pantalla de catálogo (nav solo ADMIN).
-    Líder de onboarding: clients:approve y credentials:read.
+    Onboarding (líder, jefe de asesores, asesor): clients:approve/update y credentials:read.
     """
     if is_global_admin(user):
         return True
@@ -122,6 +172,6 @@ def bypasses_permission(user: User, permission: str) -> bool:
         ):
             return False
         return True
-    if is_onboarding_area_leader(user) and permission in ONBOARDING_LEADER_EXTRA_PERMISSIONS:
+    if _has_onboarding_extra_permissions(user) and permission in ONBOARDING_LEADER_EXTRA_PERMISSIONS:
         return True
     return False

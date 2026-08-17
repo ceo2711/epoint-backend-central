@@ -309,7 +309,9 @@ class ChatbotActionHandler:
         return False
 
     def _can_upload_documents(self) -> bool:
-        return self.user.role.code == CLIENT_ROLE or self.user.role.code in STAFF_UPLOAD_ROLES
+        from app.services.role_access import can_upload_client_documents
+
+        return can_upload_client_documents(self.user)
 
     def _can_upload_board_attachments(self) -> bool:
         return self.user.role.code in STAFF_UPLOAD_ROLES
