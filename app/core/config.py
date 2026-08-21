@@ -46,6 +46,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("BOOTSTRAP_ADMIN_TOKEN"),
     )
 
+    # Cuentas de App Store Review: no exigen TOTP ni cambio de contraseña.
+    # El resto de clientes sigue con 2FA obligatorio. Lista separada por comas.
+    app_review_emails: str = Field(
+        default="appreview@epoint.com",
+        validation_alias=AliasChoices("APP_REVIEW_EMAILS"),
+    )
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

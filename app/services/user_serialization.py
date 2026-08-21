@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.core.app_review import is_app_review_email
 from app.models.user import User
 from app.schemas.user import ParentUserBrief, UserResponse
 from app.services.storage.s3 import get_storage_provider
@@ -25,5 +26,6 @@ def serialize_user(user: User) -> UserResponse:
         update={
             "avatar_url": avatar_url_for(user),
             "parent": parent_brief,
+            "must_change_password": False if is_app_review_email(user.email) else user.must_change_password,
         }
     )

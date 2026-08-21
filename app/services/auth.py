@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_user_permissions
+from app.core.app_review import is_app_review_email
 from app.core.config import get_settings
 from app.core.encryption import encrypt_value
 from app.core.security import (
@@ -117,7 +118,13 @@ class AuthService:
         """Respuesta liviana para el paso 2FA: sin merchants, permisos ni elegibilidad."""
         from app.schemas.user import UserResponse
 
-        base = UserResponse.model_validate(user).model_copy(update={"avatar_url": None, "parent": None})
+        base = UserResponse.model_validate(user).model_copy(
+            update={
+                "avatar_url": None,
+                "parent": None,
+                "must_change_password": self._must_change_password(user),
+            }
+        )
         return UserMeResponse(
             **base.model_dump(),
             permissions=[],
@@ -128,6 +135,12 @@ class AuthService:
             is_sub_seller=bool(user.parent_user_id) or user.role.code == "SUB_SELLER",
             previous_month_sales=None,
         )
+
+    @staticmethod
+    def _must_change_password(user: User) -> bool:
+        if is_app_review_email(user.email):
+            return False
+        return bool(user.must_change_password)
 
     def set_active_merchant(self, user: User, merchant_id: int) -> UserMeResponse:
         MerchantContextService(self.db).set_active_merchant(user, merchant_id)
@@ -180,7 +193,8 @@ class AuthService:
         self.db.commit()
 
         # 2FA: responder YA. Elegibilidad /me completo se hace tras verificar el c?digo.
-        if user.totp_enabled:
+        # App Review (Apple) entra sin TOTP; el resto de clientes sigue obligado.
+        if user.totp_enabled and not is_app_review_email(user.email):
             temp_token = create_2fa_pending_token(
                 str(user.id),
                 extra_claims={"role": user.role.code},
@@ -188,7 +202,7 @@ class AuthService:
             return LoginResponse(
                 requires_2fa=True,
                 temp_token=temp_token,
-                must_change_password=user.must_change_password,
+                must_change_password=self._must_change_password(user),
                 user=self._build_2fa_pending_user(user),
             )
 
@@ -201,7 +215,7 @@ class AuthService:
         return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token,
-            must_change_password=user.must_change_password,
+            must_change_password=self._must_change_password(user),
             user=self._build_user_me(user),
         )
 
@@ -236,7 +250,7 @@ class AuthService:
         return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token,
-            must_change_password=user.must_change_password,
+            must_change_password=self._must_change_password(user),
             user=self._build_user_me(user),
         )
 

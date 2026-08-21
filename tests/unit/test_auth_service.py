@@ -58,6 +58,7 @@ class TestAuthServiceLogin:
         user.is_active = active
         user.must_change_password = False
         user.totp_enabled = False
+        user.parent_user_id = None
         user.role = role
         user.area = None
         return user
@@ -121,6 +122,88 @@ class TestAuthServiceLogin:
             AuthService(db).login(LoginRequest(email="admin@test.com", password="Admin123!"))
 
         assert exc.value.status_code == 403
+
+    def test_login_requires_2fa_for_regular_user(self):
+        user = self._make_user()
+        user.email = "client@test.com"
+        user.totp_enabled = True
+        user.parent_user_id = None
+        db = MagicMock()
+        result_mock = MagicMock()
+        result_mock.unique.return_value.scalar_one_or_none.return_value = user
+        db.execute.return_value = result_mock
+
+        from datetime import datetime, timezone
+
+        from app.schemas.user import RoleBrief, UserMeResponse
+
+        pending = UserMeResponse(
+            id=1,
+            email="client@test.com",
+            first_name="Client",
+            last_name="Test",
+            phone=None,
+            role=RoleBrief(id=2, code="CLIENT", name="Cliente"),
+            area=None,
+            client_id=10,
+            must_change_password=False,
+            totp_enabled=True,
+            is_active=True,
+            last_login_at=None,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        with patch.object(AuthService, "_build_2fa_pending_user", return_value=pending):
+            response = AuthService(db).login(
+                LoginRequest(email="client@test.com", password="Admin123!")
+            )
+
+        assert response.requires_2fa is True
+        assert response.temp_token
+        assert response.access_token is None
+
+    def test_login_skips_2fa_for_app_review_user(self):
+        user = self._make_user()
+        user.email = "appreview@epoint.com"
+        user.totp_enabled = True
+        user.must_change_password = True
+        user.parent_user_id = None
+        role = MagicMock()
+        role.code = "CLIENT"
+        user.role = role
+        db = MagicMock()
+        result_mock = MagicMock()
+        result_mock.unique.return_value.scalar_one_or_none.return_value = user
+        db.execute.return_value = result_mock
+
+        from datetime import datetime, timezone
+
+        from app.schemas.user import RoleBrief, UserMeResponse
+
+        user_me = UserMeResponse(
+            id=1,
+            email="appreview@epoint.com",
+            first_name="App",
+            last_name="Review",
+            phone=None,
+            role=RoleBrief(id=2, code="CLIENT", name="Cliente"),
+            area=None,
+            client_id=10,
+            must_change_password=False,
+            totp_enabled=False,
+            is_active=True,
+            last_login_at=None,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        with patch.object(AuthService, "_build_user_me", return_value=user_me):
+            response = AuthService(db).login(
+                LoginRequest(email="appreview@epoint.com", password="Admin123!")
+            )
+
+        assert response.requires_2fa is False
+        assert response.access_token
+        assert response.must_change_password is False
 
 
 class TestAuthServiceChangePassword:
