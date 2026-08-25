@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.merchant import Merchant
     from app.models.sede import Sede
     from app.models.user import User
+    from app.models.client_entitlement import ClientEntitlement
     from app.models.vehicle import Vehicle
 
 
@@ -81,6 +82,11 @@ class Client(Base):
     board: Mapped["Board | None"] = relationship(
         back_populates="client",
         uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    entitlements: Mapped[List["ClientEntitlement"]] = relationship(
+        back_populates="client",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

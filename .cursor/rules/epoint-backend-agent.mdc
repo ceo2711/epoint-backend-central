@@ -11,4 +11,8 @@ Antes de cambios no triviales, seguí:
 - `agent/CONTEXT.md`
 - `agent/RULES.md`
 
+Cursos/mentorías van en `feature/cursos-mentorias`. No tocar `release/1.0.0`.
+Entitlements combinables CREDIT/COURSE/MENTORSHIP. Educación no auto-convierte.
+App Review: solo `appreview@epoint.com` saltea 2FA.
+
 Respuestas al usuario en español salvo que pida otro idioma.

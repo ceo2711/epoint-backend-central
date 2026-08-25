@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.common import ORMBase
 from app.schemas.client import MerchantBrief
+from app.schemas.entitlements import EntitlementsResponse
 from app.schemas.sede import SedeBrief
 
 
@@ -90,6 +91,7 @@ class UserMeResponse(UserResponse):
     can_manage_sub_sellers: bool = False
     is_sub_seller: bool = False
     previous_month_sales: int | None = None
+    entitlements: EntitlementsResponse = EntitlementsResponse()
 
 
 class SubSellerCreate(BaseModel):

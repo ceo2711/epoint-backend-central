@@ -11,6 +11,7 @@ DEFAULT_SOURCES: tuple[tuple[str, str, str | None, int], ...] = (
     ("REFERRAL", "Referido", None, 50),
     ("PHONE_CALL", "Llamada telefónica", None, 60),
     ("INFLUENCERS", "Influencers", "Referidos por influencers / creadores", 70),
+    ("LANDING", "Landing EpointCredits", "Compra desde epointcredits.com", 15),
     ("OTHER", "Otro", None, 90),
 )
 

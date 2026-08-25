@@ -175,9 +175,16 @@ class PaymentService:
         return [self._to_response(row) for row in rows], int(total)
 
     def create_link(
-        self, user: User, payload: PaymentLinkCreate, *, merchant_id: int
+        self,
+        user: User,
+        payload: PaymentLinkCreate,
+        *,
+        merchant_id: int,
+        product_code: str | None = None,
+        skip_access_check: bool = False,
     ) -> PaymentLinkCreateResult:
-        self.ensure_access(user)
+        if not skip_access_check:
+            self.ensure_access(user)
         if not self.settings.payments_enabled:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Los pagos están deshabilitados")
         if payload.provider not in ACTIVE_PROVIDERS:
@@ -245,6 +252,7 @@ class PaymentService:
             created_by_user_id=user.id,
             merchant_id=merchant_id,
             prospect_id=payload.prospect_id,
+            product_code=(product_code or "").strip().upper() or None,
             customer_first_name=payload.customer_first_name.strip(),
             customer_last_name=payload.customer_last_name.strip(),
             customer_email=str(payload.customer_email).strip().lower(),
@@ -498,6 +506,14 @@ class PaymentService:
             return
         link.status = PaymentLinkStatus.PAID.value
         link.paid_at = datetime.now(timezone.utc)
+
+        from app.models.enums import EDUCATION_PRODUCT_CODES
+
+        if (link.product_code or "").strip().upper() in EDUCATION_PRODUCT_CODES:
+            from app.services.entitlements import EntitlementService
+
+            EntitlementService(self.db).fulfill_education_payment(link)
+            return
 
         converted_client = None
         if link.prospect_id is None:

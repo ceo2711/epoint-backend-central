@@ -11,6 +11,7 @@ class ClientSource(str, enum.Enum):
     REFERRAL = "REFERRAL"
     PHONE_CALL = "PHONE_CALL"
     INFLUENCERS = "INFLUENCERS"
+    LANDING = "LANDING"
     OTHER = "OTHER"
 
 
@@ -35,6 +36,15 @@ class ProspectHistoryEventType(str, enum.Enum):
     CONVERTED = "CONVERTED"
 
 
+class ProductCode(str, enum.Enum):
+    CREDIT = "CREDIT"
+    COURSE = "COURSE"
+    MENTORSHIP = "MENTORSHIP"
+
+
+EDUCATION_PRODUCT_CODES = frozenset({ProductCode.COURSE.value, ProductCode.MENTORSHIP.value})
+
+
 class ClientStatus(str, enum.Enum):
     PENDIENTE_DE_REVISION = "PENDIENTE_DE_REVISION"
     RECHAZADO = "RECHAZADO"
@@ -45,6 +55,8 @@ class ClientStatus(str, enum.Enum):
     ONBOARDING_EN_PROGRESO = "ONBOARDING_EN_PROGRESO"
     ONBOARDING_COMPLETADO = "ONBOARDING_COMPLETADO"
     INACTIVO = "INACTIVO"
+    # Portal activo por curso/mentoría; no entra al pipeline de asesoría.
+    SIN_ASESORIA = "SIN_ASESORIA"
 
 
 class DocumentType(str, enum.Enum):

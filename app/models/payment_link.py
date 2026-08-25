@@ -36,6 +36,7 @@ class PaymentLink(Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
     prospect_id: Mapped[int | None] = mapped_column(ForeignKey("prospects.id", ondelete="SET NULL"), nullable=True, index=True)
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True, index=True)
+    product_code: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     customer_first_name: Mapped[str] = mapped_column(String(100))
     customer_last_name: Mapped[str] = mapped_column(String(100))
     customer_email: Mapped[str] = mapped_column(String(255), index=True)

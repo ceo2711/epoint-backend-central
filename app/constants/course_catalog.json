@@ -1,0 +1,319 @@
+{
+  "code": "CREDIT_MENTORSHIP",
+  "title": "Programa de Mentoría de Crédito",
+  "description": "12 módulos · 36 lecciones",
+  "modules": [
+    {
+      "position": 1,
+      "number": "01",
+      "title": "El sistema de crédito de Estados Unidos",
+      "goal": "Dejar claro que el crédito es un sistema de información y evaluación de riesgo.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "¿Qué es realmente el crédito?",
+          "duration_label": "7–8 min",
+          "objective": "Definir consumer, creditor/lender, furnisher, credit reporting agency y scoring model."
+        },
+        {
+          "position": 2,
+          "title": "¿Quién controla la información?",
+          "duration_label": "7–9 min",
+          "objective": "CRA principales, furnishers y specialty consumer reporting companies a nivel introductorio."
+        },
+        {
+          "position": 3,
+          "title": "Credit Report ≠ Credit Score",
+          "duration_label": "7–8 min",
+          "objective": "Report = datos; score = cálculo; FICO/VantageScore; modelo, versión, fecha y propósito."
+        }
+      ]
+    },
+    {
+      "position": 2,
+      "number": "02",
+      "title": "Aprender a leer tus tres credit reports",
+      "goal": "Convertir el reporte en una herramienta que puedas leer por ti mismo.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Anatomía de un Credit Report",
+          "duration_label": "8–9 min",
+          "objective": "Personal information, accounts, balances, limits, payment history, collections, inquiries y registros públicos cuando corresponda."
+        },
+        {
+          "position": 2,
+          "title": "Tradelines: la historia de cada cuenta",
+          "duration_label": "8–9 min",
+          "objective": "Creditor, account type, date opened, balance, limit, payment, status, open/closed, individual/joint/AU."
+        },
+        {
+          "position": 3,
+          "title": "¿Por qué los tres reports pueden ser diferentes?",
+          "duration_label": "7–8 min",
+          "objective": "Diferentes furnishers, ciclos de actualización, información aún no reportada y errores reales."
+        }
+      ]
+    },
+    {
+      "position": 3,
+      "number": "03",
+      "title": "FICO: entender el número",
+      "goal": "Enseñar score sin convertirlo en una fórmula rígida.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "¿Qué es FICO realmente?",
+          "duration_label": "7–8 min",
+          "objective": "FICO vs VantageScore; versiones; scores por industria; score ≠ underwriting."
+        },
+        {
+          "position": 2,
+          "title": "Los cinco grandes factores",
+          "duration_label": "8–9 min",
+          "objective": "Payment history, amounts owed, length, new credit y mix; categorías generales, no una fórmula individual rígida."
+        },
+        {
+          "position": 3,
+          "title": "Mitos que dañan tu crédito",
+          "duration_label": "7–9 min",
+          "objective": "No necesitas cargar deuda; 30% no es frontera mágica; cerrar cuentas no siempre ayuda; revisar tu report no baja el score."
+        }
+      ]
+    },
+    {
+      "position": 4,
+      "number": "04",
+      "title": "Tarjetas y credit utilization",
+      "goal": "Pasar de tener tarjetas a saber manejarlas.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Utilization con números reales",
+          "duration_label": "8–9 min",
+          "objective": "Balance ÷ limit × 100; utilización por tarjeta y total; 30% como referencia educativa."
+        },
+        {
+          "position": 2,
+          "title": "Statement date vs due date",
+          "duration_label": "8–10 min",
+          "objective": "Purchase → statement → statement balance → due date → reporting; el reporting puede variar por creditor."
+        },
+        {
+          "position": 3,
+          "title": "Usar una tarjeta sin crear deuda",
+          "duration_label": "7–8 min",
+          "objective": "Gastar solo lo que se puede pagar; pagar puntualmente; preferir statement balance completo; no depender del mínimo."
+        }
+      ]
+    },
+    {
+      "position": 5,
+      "number": "05",
+      "title": "Construir o reconstruir crédito",
+      "goal": "Dar una ruta práctica para thin files y perfiles dañados.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Empezar desde cero",
+          "duration_label": "7–9 min",
+          "objective": "Secured card, credit-builder loan, authorized user y tarjeta tradicional cuando el perfil lo permita."
+        },
+        {
+          "position": 2,
+          "title": "Reconstruir después de errores",
+          "duration_label": "8–9 min",
+          "objective": "Late payments, utilization, collections/charge-offs, thin file, inquiries y hábitos."
+        },
+        {
+          "position": 3,
+          "title": "Plan de 90 días",
+          "duration_label": "8–9 min",
+          "objective": "Mes 1: reports/auditoría/pagos; mes 2: uso responsable; mes 3: verificar reporting y evitar aplicaciones innecesarias."
+        }
+      ]
+    },
+    {
+      "position": 6,
+      "number": "06",
+      "title": "Elegir y manejar tarjetas",
+      "goal": "Enseñar a evaluar productos sin vender una tarjeta específica.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "¿Qué tarjeta tiene sentido?",
+          "duration_label": "8–9 min",
+          "objective": "Secured, cash back, travel, beginner/student, annual fee, APR, rewards y eligibility."
+        },
+        {
+          "position": 2,
+          "title": "Prequalification vs preapproval vs application",
+          "duration_label": "8–9 min",
+          "objective": "Prescreened offer, prequalification, preapproval, application y hard inquiry."
+        },
+        {
+          "position": 3,
+          "title": "Credit limits y aumentos",
+          "duration_label": "7–9 min",
+          "objective": "Requested/automatic increases; soft/hard puede variar; utilización; capacidad de pago."
+        }
+      ]
+    },
+    {
+      "position": 7,
+      "number": "07",
+      "title": "Préstamos y grandes decisiones",
+      "goal": "Prepararte para decisiones de auto, préstamo personal y mortgage.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Revolving vs installment",
+          "duration_label": "7–8 min",
+          "objective": "Revolving, installment, auto, personal, mortgage y student loans."
+        },
+        {
+          "position": 2,
+          "title": "Antes de financiar un vehículo",
+          "duration_label": "8–10 min",
+          "objective": "APR, term, down payment, monthly payment, total interest, DTI y credit profile."
+        },
+        {
+          "position": 3,
+          "title": "Prepararte para una hipoteca",
+          "duration_label": "8–10 min",
+          "objective": "Payment history, balances, DTI, inquiries, documentación y consistencia."
+        }
+      ]
+    },
+    {
+      "position": 8,
+      "number": "08",
+      "title": "Inquiries y aplicaciones",
+      "goal": "Aprender cuándo una consulta importa y cómo investigarla.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Hard vs soft inquiry",
+          "duration_label": "7–8 min",
+          "objective": "Hard: solicitudes. Soft: revisión propia, cuentas existentes, prescreening y otros usos permitidos."
+        },
+        {
+          "position": 2,
+          "title": "Rate shopping: auto y mortgage",
+          "duration_label": "7–9 min",
+          "objective": "Ciertos modelos agrupan inquiries de ciertos préstamos dentro de ventanas; la ventana depende del modelo."
+        },
+        {
+          "position": 3,
+          "title": "Inquiry que no reconozco",
+          "duration_label": "8–9 min",
+          "objective": "Identificar furnisher, revisar solicitudes, contactar creditor y disputar si realmente es inexacta o no autorizada."
+        }
+      ]
+    },
+    {
+      "position": 9,
+      "number": "09",
+      "title": "Late payments, collections y charge-offs",
+      "goal": "Entender información negativa sin promesas de eliminación.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Late payments: 30/60/90+",
+          "duration_label": "8–9 min",
+          "objective": "Current, 30/60/90+, severidad, recencia y payment history."
+        },
+        {
+          "position": 2,
+          "title": "Charge-off ≠ collection",
+          "duration_label": "8–9 min",
+          "objective": "Charge-off, collection, debt buyer, original creditor y reporting."
+        },
+        {
+          "position": 3,
+          "title": "¿Pagar, negociar, disputar o buscar ayuda?",
+          "duration_label": "9–10 min",
+          "objective": "¿Es tu deuda? ¿monto correcto? ¿quién cobra? ¿qué se reporta? Validation/dispute como conceptos; cuándo consultar a un profesional."
+        }
+      ]
+    },
+    {
+      "position": 10,
+      "number": "10",
+      "title": "Disputas: corregir lo incorrecto",
+      "goal": "Enseñar el proceso con prudencia y sin tácticas de disputas artificiales.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "¿Qué es una disputa legítima?",
+          "duration_label": "8–9 min",
+          "objective": "Wrong balance, payment status, duplicate, date, account not belonging, incomplete information."
+        },
+        {
+          "position": 2,
+          "title": "¿A quién disputo?",
+          "duration_label": "8–9 min",
+          "objective": "CRA, furnisher, qué describir y qué documentación conservar."
+        },
+        {
+          "position": 3,
+          "title": "¿Qué ocurre después?",
+          "duration_label": "8–10 min",
+          "objective": "Generalmente 30 días; puede llegar a 45 en circunstancias específicas; actualización, eliminación o verificación; seguimiento."
+        }
+      ]
+    },
+    {
+      "position": 11,
+      "number": "11",
+      "title": "Identity theft y protección",
+      "goal": "Distinguir error de fraude y actuar responsablemente.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Error, fraude o identity theft",
+          "duration_label": "7–9 min",
+          "objective": "Error, cuenta reconocida, actividad no autorizada e identity theft como afirmación factual."
+        },
+        {
+          "position": 2,
+          "title": "Qué hacer cuando el identity theft es real",
+          "duration_label": "8–10 min",
+          "objective": "IdentityTheft.gov, identity theft report, fraud alert, security freeze y CRA block cuando se cumplen requisitos."
+        },
+        {
+          "position": 3,
+          "title": "Protección preventiva",
+          "duration_label": "7–8 min",
+          "objective": "Security freeze, MFA, bank alerts, monitoring, report review y passwords."
+        }
+      ]
+    },
+    {
+      "position": 12,
+      "number": "12",
+      "title": "Advanced: pensar como un analista de crédito",
+      "goal": "Integrar todo y dejarte listo para profundizar con más criterio.",
+      "lessons": [
+        {
+          "position": 1,
+          "title": "Tu credit profile completo",
+          "duration_label": "9–10 min",
+          "objective": "Payment history, utilization, age, inquiries, debt, income/DTI, mix y application strategy."
+        },
+        {
+          "position": 2,
+          "title": "Credit Audit: encontrar el problema",
+          "duration_label": "9–10 min",
+          "objective": "Correct, potential error, confirmation, potential fraud, priority y documentation."
+        },
+        {
+          "position": 3,
+          "title": "Credit Strategy: pensar antes de aplicar",
+          "duration_label": "9–10 min",
+          "objective": "Goal, current profile, risks, timing, documents, lender requirements y opportunity cost."
+        }
+      ]
+    }
+  ]
+}

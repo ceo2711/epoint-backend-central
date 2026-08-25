@@ -103,6 +103,10 @@ class AuthService:
             if can_own_sub_sellers(user) and not eligibility.get("eligible"):
                 service.deactivate_active_sub_sellers(user, commit=True)
 
+        from app.services.entitlements import EntitlementService
+
+        entitlements = EntitlementService(self.db).entitlements_for_client(user.client_id)
+
         return UserMeResponse(
             **base.model_dump(),
             permissions=permissions,
@@ -112,6 +116,7 @@ class AuthService:
             can_manage_sub_sellers=bool(eligibility.get("can_manage_sub_sellers")),
             is_sub_seller=bool(eligibility.get("is_sub_seller")),
             previous_month_sales=eligibility.get("previous_month_sales"),
+            entitlements=entitlements,
         )
 
     def _build_2fa_pending_user(self, user: User) -> UserMeResponse:

@@ -840,19 +840,29 @@ class ProspectService:
                 )
             client = existing
         else:
-            client, portal_temp_password = client_service.create_client(
-                actor=actor,
-                first_name=prospect.first_name,
-                last_name=prospect.last_name,
-                email=prospect.email,
-                phone=prospect.phone,
-                source=source,
-                merchant_id=prospect.merchant_id,
-                is_qualified=prospect.is_qualified,
-                commit=False,
-            )
+            # Cliente de landing (curso/mentoría) con el mismo email: se suma CREDIT.
+            from app.services.entitlements import EntitlementService
+
+            orphan = EntitlementService(self.db).find_client_by_email(prospect.email)
+            if orphan is not None:
+                client = orphan
+            else:
+                client, portal_temp_password = client_service.create_client(
+                    actor=actor,
+                    first_name=prospect.first_name,
+                    last_name=prospect.last_name,
+                    email=prospect.email,
+                    phone=prospect.phone,
+                    source=source,
+                    merchant_id=prospect.merchant_id,
+                    is_qualified=prospect.is_qualified,
+                    commit=False,
+                )
         # Mantener la sede del prospecto (la del vendedor), no solo la del merchant
         client.sede_id = prospect.sede_id
+        from app.services.entitlements import EntitlementService
+
+        EntitlementService(self.db).ensure_credit_track(client)
 
         if prospect.docusign_envelope_id:
             envelope = self.db.get(DocusignEnvelope, prospect.docusign_envelope_id)

@@ -15,8 +15,13 @@ Esta carpeta viaja con el repositorio. Si clonás solo el backend en otra PC, el
 2. El `AGENTS.md` de la raíz apunta acá: Cursor lo carga al iniciar.
 3. Si el chat no tiene contexto, pedile: *“Leé agent/CONTEXT.md y agent/RULES.md”*.
 
+## Rama de trabajo
+
+Cursos/mentorías: `feature/cursos-mentorias`. Store/prod: `release/1.0.0`. Ciclo 2: `release/2.0.0`.
+
 ## Repo hermano
 
-- Frontend: `epoint-central-frontend` → Heroku `dev-epoint-crm-frontend`
-- Mobile: `epoint-central-mobile` (Expo; sin Heroku)
-- Este backend: GitHub `epoint-central-backend` → Heroku `dev-epoint-crm-backend`
+- Frontend: `epoint-frontend-central` → Heroku `dev-epoint-crm-frontend` / `epoint-crm-frontend`
+- Mobile: `epoint-mobile-central` (Expo; sin Heroku)
+- Landing: `AlexisGuanique/epoint-credits` → Heroku `epoint-credits` (llama `POST /api/v1/public/checkout`)
+- Este backend: GitHub `ceo2711/epoint-backend-central` → Heroku `dev-epoint-crm-backend` / `epoint-crm-backend`

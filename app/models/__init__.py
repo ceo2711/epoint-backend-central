@@ -9,9 +9,12 @@ from app.models.card_attachment_verification import CardAttachmentVerification
 from app.models.card_comment import CardComment
 from app.models.calendly_connection import CalendlyConnection
 from app.models.calendly_event import CalendlyEvent
+from app.models.catalog_product import CatalogProduct
 from app.models.chat_conversation import ChatConversation, ChatConversationMessage
 from app.models.client import Client
 from app.models.client_assignment import ClientAssignment
+from app.models.client_entitlement import ClientEntitlement
+from app.models.course import Course, CourseLesson, CourseLessonProgress, CourseModule
 from app.models.credential_submission import CredentialSubmission
 from app.models.docusign_connection import DocusignConnection
 from app.models.docusign_envelope import DocusignEnvelope
@@ -51,10 +54,16 @@ __all__ = [
     "CardComment",
     "CalendlyConnection",
     "CalendlyEvent",
+    "CatalogProduct",
     "ChatConversation",
     "ChatConversationMessage",
     "Client",
     "ClientAssignment",
+    "ClientEntitlement",
+    "Course",
+    "CourseLesson",
+    "CourseLessonProgress",
+    "CourseModule",
     "CredentialSubmission",
     "DocusignConnection",
     "DocusignEnvelope",

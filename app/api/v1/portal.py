@@ -25,6 +25,7 @@ from app.schemas.client import (
     VehicleResponse,
 )
 from app.schemas.common import MessageResponse
+from app.schemas.course import CourseDetailResponse, LessonPlayResponse
 from app.serializers.client import client_to_response
 from app.services.address import AddressProviderError, get_address_provider
 from app.services.client_onboarding_status import sync_client_onboarding_status
@@ -241,3 +242,36 @@ def add_vehicle(payload: VehicleCreate, current_user: CurrentUser, db: DbSession
     if client is not None:
         _sync_and_commit_if_changed(db, client)
     return VehicleResponse.model_validate(existing)
+
+
+@router.get("/courses", response_model=CourseDetailResponse)
+def portal_course(current_user: CurrentUser, db: DbSession) -> CourseDetailResponse:
+    from app.services.courses import CourseService
+
+    service = CourseService(db)
+    client_id = service.require_course_entitlement(current_user)
+    course = service.default_published_course()
+    return service.to_detail(course, client_id=client_id)
+
+
+@router.get("/courses/lessons/{lesson_id}/play", response_model=LessonPlayResponse)
+def portal_play_lesson(
+    lesson_id: int, current_user: CurrentUser, db: DbSession
+) -> LessonPlayResponse:
+    from app.services.courses import CourseService
+
+    service = CourseService(db)
+    service.require_course_entitlement(current_user)
+    return service.play_url(lesson_id)
+
+
+@router.post("/courses/lessons/{lesson_id}/complete", response_model=MessageResponse)
+def portal_complete_lesson(
+    lesson_id: int, current_user: CurrentUser, db: DbSession
+) -> MessageResponse:
+    from app.services.courses import CourseService
+
+    service = CourseService(db)
+    client_id = service.require_course_entitlement(current_user)
+    service.mark_complete(client_id=client_id, lesson_id=lesson_id)
+    return MessageResponse(message="Lección marcada como vista")

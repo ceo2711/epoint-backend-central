@@ -65,6 +65,7 @@ PERMISSIONS = [
     ("payments:read", "Ver links de pago"),
     ("payments:create", "Crear links de pago"),
     ("payments:manage", "Configurar proveedores de pago"),
+    ("courses:manage", "Cargar y publicar cursos"),
 ]
 
 ROLES = {
@@ -130,6 +131,7 @@ ROLES = {
             "boards:read",
             "boards:manage",
             "credentials:read",
+            "courses:manage",
         ],
     },
     "CLIENT": {
@@ -374,6 +376,30 @@ def seed() -> None:
                             requires_file_upload=card_data.get("requires_file_upload", False),
                         )
                     )
+
+        from app.models.catalog_product import CatalogProduct
+        from decimal import Decimal
+
+        for code, name, description, amount in (
+            ("COURSE", "Programa de crédito en video", "12 módulos / 36 lecciones", Decimal("497.00")),
+            ("MENTORSHIP", "Mentoría 1:1", "Sesiones en vivo con un asesor", Decimal("997.00")),
+        ):
+            row = db.execute(select(CatalogProduct).where(CatalogProduct.code == code)).scalar_one_or_none()
+            if row is None:
+                db.add(
+                    CatalogProduct(
+                        code=code,
+                        name=name,
+                        description=description,
+                        amount=amount,
+                        currency="USD",
+                        is_active=True,
+                    )
+                )
+
+        from app.services.courses import CourseService
+
+        CourseService(db).ensure_default_course()
 
         db.commit()
         print("Seed completado.")
