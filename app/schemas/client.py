@@ -138,6 +138,15 @@ class ClientPortalPasswordResponse(BaseModel):
     portal_login_url: str
 
 
+def _calendar_year_not_future(value: int | None) -> int | None:
+    if value is None:
+        return None
+    this_year = date.today().year
+    if value < 1900 or value > this_year:
+        raise ValueError(f"El año debe estar entre 1900 y {this_year}")
+    return value
+
+
 class AddressCreate(BaseModel):
     type: str = Field(pattern="^(CURRENT|PREVIOUS)$")
     street: str
@@ -146,6 +155,11 @@ class AddressCreate(BaseModel):
     zip_code: str
     residence_since_month: int | None = Field(default=None, ge=1, le=12)
     residence_since_year: int | None = Field(default=None, ge=1900, le=2100)
+
+    @field_validator("residence_since_year")
+    @classmethod
+    def residence_year_not_future(cls, value: int | None) -> int | None:
+        return _calendar_year_not_future(value)
 
 
 class AddressResponse(ORMBase):
@@ -190,6 +204,22 @@ class VehicleCreate(BaseModel):
     model: str
     year: int = Field(ge=1900, le=2100)
     color: str
+    license_plate: str | None = Field(default=None, max_length=20)
+
+    @field_validator("year")
+    @classmethod
+    def vehicle_year_not_future(cls, value: int) -> int:
+        return _calendar_year_not_future(value) or value
+
+    @field_validator("license_plate", mode="before")
+    @classmethod
+    def normalize_license_plate(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip().upper()
+            return None if not stripped else stripped
+        return value
 
 
 class VehicleResponse(ORMBase):
@@ -198,6 +228,7 @@ class VehicleResponse(ORMBase):
     model: str
     year: int
     color: str
+    license_plate: str | None = None
 
 
 class ProfileUpdate(BaseModel):
@@ -235,6 +266,19 @@ class ProfileUpdate(BaseModel):
         if len(digits) != 9:
             raise ValueError("El número de Seguro Social debe tener 9 dígitos (formato XXX-XX-XXXX).")
         return digits
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def date_of_birth_reasonable(cls, value: date | None) -> date | None:
+        if value is None:
+            return None
+        today = date.today()
+        if value > today:
+            raise ValueError("La fecha de nacimiento no puede ser futura")
+        oldest = date(today.year - 120, today.month, today.day)
+        if value.year < 1900 or value < oldest:
+            raise ValueError("La fecha de nacimiento no es válida")
+        return value
 
 
 class ClientSsnResponse(BaseModel):

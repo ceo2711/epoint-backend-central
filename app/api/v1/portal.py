@@ -227,13 +227,14 @@ def add_vehicle(payload: VehicleCreate, current_user: CurrentUser, db: DbSession
     existing = db.execute(
         select(Vehicle).where(Vehicle.client_id == client_id, Vehicle.order == payload.order)
     ).scalar_one_or_none()
+    data = payload.model_dump(exclude_unset=True)
     if existing:
-        for field, value in payload.model_dump().items():
+        for field, value in data.items():
             setattr(existing, field, value)
         db.commit()
         db.refresh(existing)
     else:
-        vehicle = Vehicle(client_id=client_id, **payload.model_dump())
+        vehicle = Vehicle(client_id=client_id, **data)
         db.add(vehicle)
         db.commit()
         db.refresh(vehicle)
