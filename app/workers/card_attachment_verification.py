@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -20,6 +21,7 @@ from app.services.board_attachment_verification_messages import (
 )
 from app.services.document_verification_messages import system_verification_failure_result
 from app.services.board_attachment_verification_rules import (
+    apply_report_date_freshness,
     build_board_attachment_context,
     is_board_attachment_approved,
     resolve_attachment_kind,
@@ -47,7 +49,7 @@ Critical rules:
 - document_type_matches is the most important field. Set false if the file is NOT the expected report type.
 - detected_document_type and detected_bureau must describe what you actually see, not what was requested.
 - name_matches: true only if the client's full name (or clear partial match) appears on the report.
-- is_recent: true ONLY if the report date is within the last 15 days. If the report date is older than 15 days, set is_recent=false and reject — the client must upload a newly generated report. If no date is visible, set is_recent=false unless the file clearly looks like a freshly generated official portal download (prefer rejecting when freshness cannot be confirmed).
+- is_recent: true ONLY if the report date is within the last 15 days INCLUDING today's date from the context block. A report dated today is recent — never treat today's date as future. If the report date is older than 15 days, set is_recent=false and reject — the client must upload a newly generated report. If no date is visible, set is_recent=false unless the file clearly looks like a freshly generated official portal download (prefer rejecting when freshness cannot be confirmed).
 - is_complete: true if tradelines/accounts section is visible (for credit reports) or all expected sections are present.
 - For PDF credit reports, color is NOT required — focus on readability and correct bureau branding.
 - Every reason must include both "en" and "es".
@@ -96,11 +98,13 @@ def run_card_attachment_verification(attachment_id: int) -> dict:
             list_title=board_list.title,
             requires_file_upload=card.requires_file_upload,
         )
+        today = date.today()
         type_context = build_board_attachment_context(
             attachment_kind=attachment_kind,
             client_name=client_name,
             card_title=card.title,
             list_title=board_list.title,
+            today=today,
         )
         try:
             result_text = llm.analyze_document_bytes(
@@ -113,6 +117,7 @@ def run_card_attachment_verification(attachment_id: int) -> dict:
             logger.exception("Error verificando adjunto %s", attachment_id)
             result = system_verification_failure_result()
 
+        apply_report_date_freshness(result, today)
         approved = is_board_attachment_approved(result, attachment_kind)
 
         if approved:

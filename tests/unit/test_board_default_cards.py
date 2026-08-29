@@ -27,6 +27,7 @@ def test_client_todo_default_cards():
     assert len(cards[2].comments) == 3
     assert "experian.com" in cards[0].description_md
     assert "taxes" in cards[1].description_md.lower()
+    assert "2 años fiscales" in cards[1].description_md
     assert "1-800-456-1244" in cards[2].description_md
 
 
@@ -45,14 +46,18 @@ def test_credenciales_default_cards():
         "Clarity Services",
     ]
     assert cards[-1].requires_file_upload is True
+    assert cards[1].requires_credentials is True
+    assert cards[2].requires_credentials is True
+    assert cards[3].requires_credentials is True
     assert cards[-1].description_md == ""
 
 
 def test_experian_default_cards():
     cards = default_cards_for_column("Experian")
 
-    assert len(cards) == 1
+    assert len(cards) == 2
     assert cards[0].title == "Accounts"
+    assert cards[1].title == "Inquiries"
     assert "Balance:" in cards[0].description_md
     assert "CAPITAL ONE" not in cards[0].description_md
 
@@ -60,8 +65,9 @@ def test_experian_default_cards():
 def test_transunion_default_cards():
     cards = default_cards_for_column("Transunion")
 
-    assert len(cards) == 1
+    assert len(cards) == 2
     assert cards[0].title == "Accounts"
+    assert cards[1].title == "Inquiries"
     assert cards[0].description_md == default_cards_for_column("Experian")[0].description_md
     assert "**Envíos**" not in cards[0].description_md
 
@@ -69,8 +75,9 @@ def test_transunion_default_cards():
 def test_equifax_default_cards():
     cards = default_cards_for_column("Equifax")
 
-    assert len(cards) == 1
+    assert len(cards) == 2
     assert cards[0].title == "Accounts"
+    assert cards[1].title == "Inquiries"
     assert cards[0].description_md == default_cards_for_column("Experian")[0].description_md
     assert "**Envíos**" not in cards[0].description_md
 

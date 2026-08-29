@@ -91,7 +91,7 @@ class DocusignClient:
             if "consent_required" in detail.lower():
                 raise DocusignApiError(
                     "DocuSign requiere consentimiento del usuario impersonado. "
-                    "Usá GET /docusign/consent-url y abrí el enlace como admin de DocuSign.",
+                    "Usa GET /docusign/consent-url y abre el enlace como admin de DocuSign.",
                     status_code=400,
                 )
             raise DocusignApiError(f"Error de autenticación DocuSign: {detail}", status_code=400)

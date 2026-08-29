@@ -569,7 +569,7 @@ class ChatbotActionHandler:
                 handled=True,
                 reply=t(
                     self.locale,
-                    "¿De qué cliente querés el **informe completo**? Decime el **nombre**, **email** o **ID** (ej. #103).",
+                    "¿De qué cliente quieres el **informe completo**? Dime el **nombre**, **email** o **ID** (ej. #103).",
                     "Which client do you want a **full report** for? Tell me their **name**, **email** or **ID** (e.g. #103).",
                 ),
             )

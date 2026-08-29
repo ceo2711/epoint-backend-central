@@ -15,7 +15,7 @@ def client_approved_in_app_title() -> str:
 def client_approved_in_app_body(*, first_name: str) -> str:
     return (
         f"Hola {first_name}, tu cuenta fue aprobada. "
-        "Revisá tu correo y WhatsApp: allí están tus credenciales para ingresar al portal "
+        "Revisa tu correo y WhatsApp: allí están tus credenciales para ingresar al portal "
         "y cargar tus datos y documentos."
     )
 
@@ -45,7 +45,7 @@ def client_approved_email_body(
 {merchant_block}
 ¡Bienvenido/a a Epoint!
 
-Tu solicitud fue aprobada. Ya podés ingresar al portal del cliente para completar tus datos personales y subir la documentación requerida.
+Tu solicitud fue aprobada. Ya puedes ingresar al portal del cliente para completar tus datos personales y subir la documentación requerida.
 
 Credenciales de acceso
 ──────────────────────
@@ -55,7 +55,7 @@ Contraseña temporal: {temp_password}
 
 En tu primer ingreso deberás cambiar la contraseña temporal.
 {app_block}
-Si tenés alguna consulta, respondé a este correo o contactá a tu asesor Epoint.
+Si tienes alguna consulta, responde a este correo o contacta a tu asesor Epoint.
 
 Saludos,
 Equipo Epoint
@@ -71,7 +71,7 @@ def client_approved_whatsapp_body(
 ) -> str:
     return (
         f"Hola {first_name}, ¡bienvenido/a a Epoint! Tu cuenta fue aprobada.\n\n"
-        f"Ingresá al portal para cargar tus datos y documentos:\n"
+        f"Ingresa al portal para cargar tus datos y documentos:\n"
         f"{portal_login_url}\n\n"
         f"Usuario: {email}\n"
         f"Contraseña temporal: {temp_password}\n\n"
@@ -123,17 +123,17 @@ Epoint Team
 """
     return f"""Hola {first_name},
 
-Te escribimos desde Epoint para recordarte amablemente que aún tenés pendiente completar tu onboarding en la plataforma.
+Te escribimos desde Epoint para recordarte amablemente que aún tienes pendiente completar tu onboarding en la plataforma.
 
-Para continuar con tu proceso, ingresá al portal y completá lo siguiente:
+Para continuar con tu proceso, ingresa al portal y completa lo siguiente:
 
 {items_block}
 
 Portal del cliente: {portal_login_url}
 
-Si ya subiste algún documento, puede estar en revisión. Si fue rechazado, volvé a subirlo desde la sección de documentos.
+Si ya subiste algún documento, puede estar en revisión. Si fue rechazado, vuelve a subirlo desde la sección de documentos.
 
-Ante cualquier duda, respondé a este correo o contactá a tu asesor Epoint.
+Ante cualquier duda, responde a este correo o contacta a tu asesor Epoint.
 
 Saludos,
 Equipo Epoint
@@ -156,10 +156,10 @@ def onboarding_reminder_whatsapp_body(
             "If a document was rejected, please upload it again from the platform."
         )
     return (
-        f"Hola {first_name}, te recordamos desde Epoint que aún tenés pendiente completar tu onboarding.\n\n"
+        f"Hola {first_name}, te recordamos desde Epoint que aún tienes pendiente completar tu onboarding.\n\n"
         f"Pendiente:\n{items_block}\n\n"
-        f"Ingresá al portal:\n{portal_login_url}\n\n"
-        "Si algún documento fue rechazado, volvé a subirlo desde la plataforma."
+        f"Ingresa al portal:\n{portal_login_url}\n\n"
+        "Si algún documento fue rechazado, vuelve a subirlo desde la plataforma."
     )
 
 
@@ -185,10 +185,10 @@ Te compartimos tu link de pago personalizado para completar el cobro de forma se
 
 Monto a pagar: {amount_formatted}
 {description_block}
-Completá tu pago en el siguiente enlace:
+Completa tu pago en el siguiente enlace:
 {payment_url}
 
-Si tenés alguna consulta sobre este pago, respondé a este correo o contactá a tu asesor Epoint.
+Si tienes alguna consulta sobre este pago, responde a este correo o contacta a tu asesor Epoint.
 
 Saludos,
 Equipo Epoint
@@ -227,7 +227,7 @@ def password_reset_email_body(
 
 Recibimos una solicitud para restablecer la contraseña de tu cuenta en Epoint.
 
-Para elegir una nueva contraseña, abrí el siguiente enlace (válido por {expire_minutes} minutos):
+Para elegir una nueva contraseña, abre el siguiente enlace (válido por {expire_minutes} minutos):
 
 {reset_url}
 

@@ -404,7 +404,7 @@ class DocusignService:
         if exc.status_code == 429:
             return HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="DocuSign limitó las consultas de estado. El contrato se actualizará por webhook o podés reintentar más tarde.",
+                detail="DocuSign limitó las consultas de estado. El contrato se actualizará por webhook o puedes reintentar más tarde.",
             )
         return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 

@@ -21,7 +21,7 @@ def _user(*, role_code: str = "ADMIN", email: str = "admin@epoint.com"):
 
 def test_update_profile_rejects_non_admin():
     db = MagicMock()
-    for role_code in ("CLIENT", "VENDEDOR", "SUPERVISOR"):
+    for role_code in ("VENDEDOR", "SUPERVISOR", "SALES_REP"):
         with pytest.raises(HTTPException) as exc:
             AuthService(db).update_profile(_user(role_code=role_code), UserProfileUpdate(
                 first_name="Ana",
@@ -29,6 +29,25 @@ def test_update_profile_rejects_non_admin():
                 email="ana@example.com",
             ))
         assert exc.value.status_code == 403
+
+
+def test_update_profile_allows_client_name_change():
+    db = MagicMock()
+    user = _user(role_code="CLIENT", email="karol@example.com")
+    user.client_id = None
+    service = AuthService(db)
+    service._build_user_me = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
+
+    service.update_profile(user, UserProfileUpdate(
+        first_name="Karol",
+        last_name="Nieto",
+        email="otro@example.com",
+    ))
+
+    assert user.first_name == "Karol"
+    assert user.last_name == "Nieto"
+    assert user.email == "karol@example.com"
+    db.commit.assert_called_once()
 
 
 def test_update_profile_rejects_duplicate_email():

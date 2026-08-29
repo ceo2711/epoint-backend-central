@@ -138,7 +138,7 @@ def format_pending_approval_answer(locale: str, pending: list[dict[str, Any]]) -
     parts.append(
         t(
             locale,
-            "\nSi querés, decime por ejemplo: *aprobar a [nombre]*, *aprobar todos* o *informe de [nombre]*.",
+            "\nSi quieres, dime por ejemplo: *aprobar a [nombre]*, *aprobar todos* o *informe de [nombre]*.",
             "\nYou can say: *approve [name]*, *approve all*, or *report for [name]*.",
         )
     )

@@ -185,7 +185,7 @@ def run_document_verification(document_id: int) -> dict:
                 title="Documento próximo a vencer",
                 body=(
                     f"Tu documento {document.type} vence el {document.expires_at}. "
-                    "Subí uno vigente desde el portal para poder continuar con el onboarding."
+                    "Sube uno vigente desde el portal para poder continuar con el onboarding."
                 ),
                 payload={"document_id": document.id, "client_id": client.id},
             )

@@ -334,7 +334,7 @@ class SubSellerService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Para registrar subvendedores necesitás al menos "
+                    "Para registrar subvendedores necesitas al menos "
                     f"{MIN_MONTHLY_SALES} ventas concretadas en alguno de los últimos "
                     f"{ELIGIBILITY_WINDOW_MONTHS} meses."
                 ),
@@ -397,8 +397,8 @@ class SubSellerService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "No podés reactivar subvendedores sin elegibilidad. "
-                    f"Necesitás al menos {MIN_MONTHLY_SALES} ventas en alguno de los últimos "
+                    "No puedes reactivar subvendedores sin elegibilidad. "
+                    f"Necesitas al menos {MIN_MONTHLY_SALES} ventas en alguno de los últimos "
                     f"{ELIGIBILITY_WINDOW_MONTHS} meses."
                 ),
             )
@@ -439,12 +439,12 @@ class SubSellerService:
         if not can_supervise_sales_reps(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés permiso para activar o desactivar vendedores",
+                detail="No tienes permiso para activar o desactivar vendedores",
             )
         if user_id == actor.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No podés desactivar tu propia cuenta",
+                detail="No puedes desactivar tu propia cuenta",
             )
         target = (
             self.db.execute(
@@ -484,7 +484,7 @@ class SubSellerService:
         if not can_supervise_sales_reps(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés permiso para reasignar subvendedores",
+                detail="No tienes permiso para reasignar subvendedores",
             )
         query = (
             select(User)
@@ -518,7 +518,7 @@ class SubSellerService:
         if not can_supervise_sales_reps(actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés permiso para reasignar subvendedores",
+                detail="No tienes permiso para reasignar subvendedores",
             )
 
         sub = (
@@ -682,7 +682,7 @@ class SubSellerService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Para registrar subvendedores necesitás al menos "
+                    "Para registrar subvendedores necesitas al menos "
                     f"{MIN_MONTHLY_SALES} ventas concretadas en alguno de los últimos "
                     f"{ELIGIBILITY_WINDOW_MONTHS} meses."
                 ),

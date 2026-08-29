@@ -129,7 +129,7 @@ def _log_twilio_error(recipient: str, exc: Exception) -> None:
         logger.error(
             "WhatsApp no enviado a %s: TWILIO_WHATSAPP_FROM (%s) no está registrado "
             "como remitente WhatsApp en tu cuenta Twilio. "
-            "Usá el Sandbox (whatsapp:+14155238886) para pruebas o registrá el número en "
+            "Usa el Sandbox (whatsapp:+14155238886) para pruebas o registrá el número en "
             "Twilio Console → Messaging → WhatsApp senders.",
             recipient,
             settings.twilio_whatsapp_from,

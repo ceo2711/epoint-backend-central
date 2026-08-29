@@ -167,7 +167,7 @@ def format_events(events: list[Any], *, locale: str) -> list[dict[str, Any]]:
 
 def format_events_reply(events: list[dict[str, Any]], *, locale: str, title: str) -> str:
     if not events:
-        return title + ("\n\nNo tenés reuniones programadas para ese período." if locale != "en" else "\n\nYou have no meetings scheduled for that period.")
+        return title + ("\n\nNo tienes reuniones programadas para ese período." if locale != "en" else "\n\nYou have no meetings scheduled for that period.")
 
     lines = [title, ""]
     for event in events:

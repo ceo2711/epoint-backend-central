@@ -70,6 +70,7 @@ PROFILE_FIELD_LABELS_ES: dict[str, str] = {
     "ssn": "SSN / Seguro Social",
     "date_of_birth": "Fecha de nacimiento",
     "address": "Dirección actual",
+    "previous_address": "Dirección anterior",
     "vehicle": "Datos del vehículo",
 }
 
@@ -77,6 +78,7 @@ PROFILE_FIELD_LABELS_EN: dict[str, str] = {
     "ssn": "SSN / Social Security Number",
     "date_of_birth": "Date of birth",
     "address": "Current address",
+    "previous_address": "Previous address",
     "vehicle": "Vehicle information",
 }
 
@@ -159,6 +161,18 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
     ).scalar_one_or_none()
     if current_addr is None:
         gaps.profile_items.append(profile_labels["address"])
+    else:
+        from app.services.residence import residence_less_than_two_years
+
+        if residence_less_than_two_years(
+            current_addr.residence_since_month,
+            current_addr.residence_since_year,
+        ):
+            previous_addr = db.execute(
+                select(Address).where(Address.client_id == client.id, Address.type == "PREVIOUS")
+            ).scalar_one_or_none()
+            if previous_addr is None or not (previous_addr.street and previous_addr.city):
+                gaps.profile_items.append(profile_labels["previous_address"])
 
     vehicle = db.execute(
         select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)

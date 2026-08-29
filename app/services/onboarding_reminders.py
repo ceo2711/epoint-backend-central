@@ -68,7 +68,7 @@ def run_onboarding_reminders(db: Session) -> dict:
         NotificationService(db).notify(
             event_type=NotificationEventType.CLIENT_ONBOARDING_INCOMPLETE.value,
             users=[portal_user],
-            title="Completá tu onboarding",
+            title="Completa tu onboarding",
             body=(
                 f"Hola {client.first_name}, te recordamos ingresar al portal y completar:\n{body_lines}"
             ),

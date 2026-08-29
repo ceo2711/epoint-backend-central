@@ -203,6 +203,18 @@ class VehicleResponse(ORMBase):
 class ProfileUpdate(BaseModel):
     ssn: str | None = Field(default=None, max_length=11)
     date_of_birth: date | None = None
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return None if not stripped else stripped
+        return value
 
     @field_validator("ssn", mode="before")
     @classmethod

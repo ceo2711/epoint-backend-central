@@ -75,7 +75,7 @@ class MerchantContextService:
         if not self.user_can_access_merchant(user, merchant_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés acceso a ese comercio",
+                detail="No tienes acceso a ese comercio",
             )
         merchant = self.db.get(Merchant, merchant_id)
         assert merchant is not None
@@ -124,7 +124,7 @@ class MerchantContextService:
         if not self.user_can_access_merchant(user, merchant_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés acceso a ese comercio",
+                detail="No tienes acceso a ese comercio",
             )
         merchant = self.db.get(Merchant, merchant_id)
         if merchant is None or not merchant.is_active:

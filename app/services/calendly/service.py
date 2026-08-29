@@ -230,7 +230,7 @@ class CalendlyService:
             if question.get("required") and not answer:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Completá el campo obligatorio: {question_name}",
+                    detail=f"Completa el campo obligatorio: {question_name}",
                 )
             if answer:
                 payload.append(self._build_question_answer_payload(question, answer))

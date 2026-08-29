@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 BoardAttachmentKind = str
@@ -88,9 +89,10 @@ ATTACHMENT_KIND_GUIDANCE: dict[str, dict[str, str]] = {
     },
     TAX_REPORT: {
         "description": (
-            "A tax document / informe de taxes: IRS Tax Return (Form 1040 or similar), Tax Transcript, "
-            "or another official tax report PDF/image. Must show the taxpayer's name and recognizable "
-            "tax form content (income, filing year, IRS/tax branding or form numbers)."
+            "A tax document / informe de taxes covering the last 2 fiscal years: IRS Tax Return "
+            "(Form 1040 or similar), Tax Transcript, or another official tax report PDF/image. "
+            "Must show the taxpayer's name and recognizable tax form content (income, filing year, "
+            "IRS/tax branding or form numbers)."
         ),
         "reject_examples": (
             "credit bureau reports, bank statements, utility bills, SSN cards, driver's licenses, "
@@ -132,28 +134,92 @@ def resolve_attachment_kind(*, card_title: str, list_title: str, requires_file_u
     return GENERIC_BOARD_UPLOAD
 
 
+def apply_report_date_freshness(
+    result: dict[str, Any],
+    today: date,
+    *,
+    max_age_days: int = BOARD_REPORT_MAX_AGE_DAYS,
+) -> dict[str, Any]:
+    """Corrige is_recent con la fecha real. Hoy no es futuro (timezone / alucinación del LLM)."""
+    raw = str(result.get("report_date") or "").strip()
+    parsed = _parse_report_date(raw)
+    if parsed is None:
+        return result
+
+    if parsed > today:
+        if (parsed - today).days <= 1:
+            parsed = today
+        else:
+            result["is_recent"] = False
+            result["report_date"] = parsed.isoformat()
+            return result
+
+    age_days = (today - parsed).days
+    is_recent = 0 <= age_days <= max_age_days
+    result["is_recent"] = is_recent
+    result["report_date"] = parsed.isoformat()
+    if is_recent:
+        _drop_future_date_rejection_reasons(result)
+    return result
+
+
+def _parse_report_date(raw: str) -> date | None:
+    if not raw:
+        return None
+    candidates = [raw[:10], raw]
+    formats = ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d")
+    for value in candidates:
+        for fmt in formats:
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def _drop_future_date_rejection_reasons(result: dict[str, Any]) -> None:
+    reasons = result.get("rejection_reasons")
+    if not isinstance(reasons, list):
+        return
+    filtered = [item for item in reasons if not _mentions_future_date(item)]
+    result["rejection_reasons"] = filtered
+
+
+def _mentions_future_date(item: Any) -> bool:
+    if isinstance(item, dict):
+        text = f"{item.get('en', '')} {item.get('es', '')}"
+    else:
+        text = str(item)
+    lowered = text.lower()
+    return "futuro" in lowered or "in the future" in lowered or "future date" in lowered
+
+
 def build_board_attachment_context(
     *,
     attachment_kind: str,
     client_name: str,
     card_title: str,
     list_title: str,
+    today: date | None = None,
 ) -> str:
     guidance = ATTACHMENT_KIND_GUIDANCE.get(attachment_kind, ATTACHMENT_KIND_GUIDANCE[GENERIC_BOARD_UPLOAD])
     bureau_line = guidance.get("bureau_rule")
     bureau_section = f"\nBureau rule: {bureau_line}" if bureau_line else ""
+    today_iso = (today or date.today()).isoformat()
 
     return (
         f"Board card: {card_title}\n"
         f"Board column: {list_title}\n"
         f"Expected upload kind: {attachment_kind}\n"
         f"Client full name: {client_name}\n"
+        f"Today's date (ground truth for recent/future): {today_iso}.\n"
         f"Required document: {guidance['description']}\n"
         f"REJECT (document_type_matches=false) if the file is any of: {guidance['reject_examples']}\n"
         "document_type_matches must be false when the content is a different document category, "
         "even if the PDF/image is readable."
         f"{bureau_section}\n"
-        f"Freshness rule: is_recent=true only if the report date is within the last {BOARD_REPORT_MAX_AGE_DAYS} days. "
+        f"Freshness rule: is_recent=true only if the report date is within the last {BOARD_REPORT_MAX_AGE_DAYS} days "
+        f"(including Today's date). A report dated today is recent, never 'in the future'. "
         f"If the report is older than {BOARD_REPORT_MAX_AGE_DAYS} days, set is_recent=false and reject — "
         "the client must upload a newly generated report.\n"
         "name_matches: true only if the client's full name (or a clear partial match) appears on the report."

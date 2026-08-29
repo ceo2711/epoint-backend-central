@@ -23,7 +23,7 @@ FIELD_LABELS: dict[str, str] = {
 EXPLICIT_MESSAGES: dict[tuple[str, str], str] = {
     ("string_too_short", "ssn"): "El número de Seguro Social debe tener 9 dígitos (formato XXX-XX-XXXX).",
     ("string_too_long", "ssn"): "El número de Seguro Social no puede tener más de 11 caracteres.",
-    ("missing", "date_of_birth"): "Ingresá tu fecha de nacimiento.",
+    ("missing", "date_of_birth"): "Ingresa tu fecha de nacimiento.",
     ("date_parsing", "date_of_birth"): "La fecha de nacimiento no es válida.",
     ("string_too_short", "password"): "La contraseña debe tener al menos 8 caracteres.",
 }
@@ -65,7 +65,7 @@ def humanize_validation_error(error: dict) -> str:
         return f"{label}: el valor es demasiado largo."
 
     if err_type == "missing":
-        return f"Ingresá {label.lower()}." if label else "Completá los campos obligatorios."
+        return f"Ingresa {label.lower()}." if label else "Completa los campos obligatorios."
 
     if err_type in {"date_parsing", "datetime_parsing"}:
         return f"{label}: ingresá una fecha válida."
@@ -82,7 +82,7 @@ def humanize_validation_error(error: dict) -> str:
         return f"{label}: debe ser menor o igual a {limit}."
 
     if err_type == "value_error.email" or err_type.endswith("email"):
-        return "Ingresá un correo electrónico válido."
+        return "Ingresa un correo electrónico válido."
 
     msg = str(error.get("msg", "")).strip()
     if msg:

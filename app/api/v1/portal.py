@@ -137,6 +137,8 @@ def update_profile(
         client=client,
         ssn=payload.ssn,
         date_of_birth=payload.date_of_birth,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
     )
     _sync_and_commit_if_changed(db, client)
     db.refresh(client, attribute_names=["merchant"])

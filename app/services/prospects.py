@@ -220,7 +220,7 @@ class ProspectService:
         from app.services.sede_scope import effective_sede_id
 
         if not self.merchant_ctx.user_can_access_merchant(actor, merchant_id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenés acceso a ese comercio")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes acceso a ese comercio")
 
         merchant = self.db.get(Merchant, merchant_id)
         if merchant is None:
@@ -281,7 +281,7 @@ class ProspectService:
             if sede_id is not None and sede_id != (actor_sede_id or owner_sede_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No podés asignar otra sede",
+                    detail="No puedes asignar otra sede",
                 )
             resolved_sede_id = owner_sede_id or actor_sede_id or merchant.sede_id
 
@@ -445,7 +445,7 @@ class ProspectService:
         if prospect.calendly_event_id is None and len(cleaned_note) < 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indicá cómo fue contactado el prospecto (mínimo 5 caracteres)",
+                detail="Indica cómo fue contactado el prospecto (mínimo 5 caracteres)",
             )
         if not cleaned_note and prospect.calendly_event_id is not None:
             cleaned_note = "Contactado tras la reunión vinculada"
@@ -527,7 +527,7 @@ class ProspectService:
                 status_code=400,
                 detail=(
                     "La reunión pertenece a otro vendedor. "
-                    "Solo podés vincularla a un prospecto asignado a ese mismo vendedor."
+                    "Solo puedes vincularla a un prospecto asignado a ese mismo vendedor."
                 ),
             )
 

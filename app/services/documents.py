@@ -266,7 +266,7 @@ class DocumentService:
             event_type=NotificationEventType.DOCUMENT_EXPIRING_SOON.value,
             users=portal_users,
             title="Documento próximo a vencer",
-            body=f"Tu documento {document.type} vence pronto. Subí una versión actualizada.",
+            body=f"Tu documento {document.type} vence pronto. Sube una versión actualizada.",
             payload={"document_id": document.id, "client_id": client.id},
         )
         self.db.commit()

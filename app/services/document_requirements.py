@@ -391,12 +391,12 @@ def build_documents_status_for_context(
     return {
         "ssn": slot(SSN_CARD),
         "identidad": {
-            "instruccion": "Subí licencia (frente y dorso) O una alternativa si no tenés licencia.",
+            "instruccion": "Sube licencia (frente y dorso) O una alternativa si no tienes licencia.",
             "opciones": identity_alternatives,
             "completa": _pick_identity_path(uploaded) is not None,
         },
         "comprobante_domicilio": {
-            "instruccion": "Subí Utility Bill O Bank Statement si no tenés factura de servicios.",
+            "instruccion": "Sube Utility Bill O Bank Statement si no tienes factura de servicios.",
             "opciones": address_alternatives,
             "completa": _pick_address_path(uploaded) is not None,
         },

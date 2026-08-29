@@ -69,7 +69,7 @@ def create_merchant(
         elif sede_id != actor_sede:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo podés crear comercios en tu sede",
+                detail="Solo puedes crear comercios en tu sede",
             )
 
     merchant = Merchant(

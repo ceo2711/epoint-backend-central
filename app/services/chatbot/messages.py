@@ -81,9 +81,9 @@ def friendly_registration_meta_reply(locale: str) -> str:
     return t(
         locale,
         (
-            "Sí, podés registrar **varios clientes seguidos** en esta conversación. "
+            "Sí, puedes registrar **varios clientes seguidos** en esta conversación. "
             "Cuando termino de cargar uno, te pido los datos del siguiente.\n\n"
-            "También podés pegar **varios en un solo mensaje** con este formato:\n\n"
+            "También puedes pegar **varios en un solo mensaje** con este formato:\n\n"
             "```\nDatos personales\n"
             "Nombre completo: Juan Pérez\n"
             "Email: juan@mail.com\n"
@@ -123,7 +123,7 @@ def friendly_register_missing(
                 f"¡Excelente! Ya tengo los datos de contacto de **{name}**.\n\n"
                 f"¿De qué **fuente** proviene? Estas son las opciones:\n\n"
                 f"{format_source_options(locale)}\n\n"
-                "Decime el nombre de la fuente (por ejemplo: WhatsApp o Página web)."
+                "Dime el nombre de la fuente (por ejemplo: WhatsApp o Página web)."
             ),
             (
                 f"Great! I have **{name}**'s contact details.\n\n"
@@ -139,7 +139,7 @@ def friendly_register_missing(
             (
                 f"Perfecto. ¿A qué **comercio / empresa** corresponde **{name}**?\n\n"
                 f"Opciones disponibles:\n\n{merchant_block}\n\n"
-                "Decime el nombre o código del comercio (por ejemplo: epoint-lab)."
+                "Dime el nombre o código del comercio (por ejemplo: epoint-lab)."
             ),
             (
                 f"Got it. Which **merchant / company** is **{name}** for?\n\n"
@@ -277,7 +277,7 @@ def friendly_advisor_prompt(locale: str, lines: list[str]) -> str:
     body = "\n".join(lines)
     return t(
         locale,
-        f"¿A qué **asesor** lo asignamos? Podés decirme el nombre o el email:\n\n{body}",
+        f"¿A qué **asesor** lo asignamos? Puedes decirme el nombre o el email:\n\n{body}",
         f"Which **advisor** should we assign? Tell me their name or email:\n\n{body}",
     )
 
@@ -335,7 +335,7 @@ def friendly_approve_need_advisor(locale: str) -> str:
 def friendly_reject_need_reason(locale: str) -> str:
     return t(
         locale,
-        "Para rechazar al cliente, escribí el **motivo** (al menos 5 caracteres).",
+        "Para rechazar al cliente, escribe el **motivo** (al menos 5 caracteres).",
         "To reject the client, write the **reason** (at least 5 characters).",
     )
 
@@ -351,7 +351,7 @@ def friendly_reject_one_intro(locale: str, *, full_name: str) -> str:
 def friendly_verify_pending_footer(locale: str) -> str:
     return t(
         locale,
-        "\n\nSi querés, decime por ejemplo: *aprobar a [nombre]*, *aprobar todos*, *rechazar a [nombre]* o *rechazar todos*.",
+        "\n\nSi quieres, dime por ejemplo: *aprobar a [nombre]*, *aprobar todos*, *rechazar a [nombre]* o *rechazar todos*.",
         "\n\nYou can say: *approve [name]*, *approve all*, *reject [name]*, or *reject all*.",
     )
 
@@ -360,12 +360,12 @@ def friendly_upload_document_start(locale: str, *, for_staff: bool) -> str:
     if for_staff:
         return t(
             locale,
-            "Perfecto, vamos a **subir un documento** para el cliente. Elegí el tipo abajo o decime cuál es (ej. licencia frente, SSN).",
+            "Perfecto, vamos a **subir un documento** para el cliente. Elige el tipo abajo o dime cuál es (ej. licencia frente, SSN).",
             "Great, let's **upload a document** for the client. Pick the type below or tell me which one (e.g. license front, SSN).",
         )
     return t(
         locale,
-        "Dale, vamos a **subir un documento**. Elegí el tipo abajo o decime cuál es (ej. licencia frente, SSN).",
+        "Dale, vamos a **subir un documento**. Elige el tipo abajo o dime cuál es (ej. licencia frente, SSN).",
         "Sure, let's **upload a document**. Pick the type below or tell me which one (e.g. license front, SSN).",
     )
 
@@ -373,7 +373,7 @@ def friendly_upload_document_start(locale: str, *, for_staff: bool) -> str:
 def friendly_upload_document_need_client(locale: str) -> str:
     return t(
         locale,
-        "¿Para qué **cliente** es el documento? Decime el **#ID** o el nombre.",
+        "¿Para qué **cliente** es el documento? Dime el **#ID** o el nombre.",
         "Which **client** is this document for? Tell me the **#ID** or name.",
     )
 
@@ -381,7 +381,7 @@ def friendly_upload_document_need_client(locale: str) -> str:
 def friendly_upload_document_need_type(locale: str) -> str:
     return t(
         locale,
-        "¿Qué **tipo de documento** querés subir? Elegí una opción abajo.",
+        "¿Qué **tipo de documento** quieres subir? Elige una opción abajo.",
         "Which **document type** do you want to upload? Pick an option below.",
     )
 
@@ -389,7 +389,7 @@ def friendly_upload_document_need_type(locale: str) -> str:
 def friendly_upload_document_ready(locale: str, *, document_label: str) -> str:
     return t(
         locale,
-        f"Listo, vamos con **{document_label}**. Tocá el clip 📎 y elegí el archivo (PDF o imagen).",
+        f"Listo, vamos con **{document_label}**. Tocá el clip 📎 y elige el archivo (PDF o imagen).",
         f"Got it — **{document_label}**. Tap the clip 📎 and choose the file (PDF or image).",
     )
 
@@ -397,7 +397,7 @@ def friendly_upload_document_ready(locale: str, *, document_label: str) -> str:
 def friendly_upload_board_start(locale: str) -> str:
     return t(
         locale,
-        "Vamos a **adjuntar un archivo a una tarjeta** del tablero. Elegí la tarjeta abajo o decime el título / #ID.",
+        "Vamos a **adjuntar un archivo a una tarjeta** del tablero. Elige la tarjeta abajo o dime el título / #ID.",
         "Let's **attach a file to a board card**. Pick the card below or tell me the title / #ID.",
     )
 
@@ -405,7 +405,7 @@ def friendly_upload_board_start(locale: str) -> str:
 def friendly_upload_board_need_client(locale: str) -> str:
     return t(
         locale,
-        "¿De qué **cliente** es la tarjeta? Decime el **#ID** o el nombre.",
+        "¿De qué **cliente** es la tarjeta? Dime el **#ID** o el nombre.",
         "Which **client's** card is it? Tell me the **#ID** or name.",
     )
 
@@ -413,7 +413,7 @@ def friendly_upload_board_need_client(locale: str) -> str:
 def friendly_upload_board_need_card(locale: str) -> str:
     return t(
         locale,
-        "¿A qué **tarjeta** del tablero querés adjuntar el archivo?",
+        "¿A qué **tarjeta** del tablero quieres adjuntar el archivo?",
         "Which board **card** should receive the file?",
     )
 
@@ -421,6 +421,6 @@ def friendly_upload_board_need_card(locale: str) -> str:
 def friendly_upload_board_ready(locale: str, *, card_title: str) -> str:
     return t(
         locale,
-        f"Perfecto, tarjeta **{card_title}**. Tocá el clip 📎 y elegí el archivo.",
+        f"Perfecto, tarjeta **{card_title}**. Tocá el clip 📎 y elige el archivo.",
         f"Perfect — card **{card_title}**. Tap the clip 📎 and choose the file.",
     )

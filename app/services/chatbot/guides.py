@@ -166,8 +166,8 @@ GUIDES: list[dict[str, Any]] = [
         "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("registrar", "registro", "nuevo cliente", "alta", "register"),
         "pasos": [
-            "Desde el chat: pedí registrar un cliente y completá nombre, email, teléfono, fuente y comercio.",
-            "También podés hacerlo desde Clientes → Agregar cliente.",
+            "Desde el chat: pedí registrar un cliente y completa nombre, email, teléfono, fuente y comercio.",
+            "También puedes hacerlo desde Clientes → Agregar cliente.",
             "Si venís de un prospecto, usá la conversión desde el detalle del prospecto o tras un pago.",
             "Podés registrar varios seguidos en el chat o pegar bloques estructurados en un solo mensaje.",
         ],
@@ -182,7 +182,7 @@ GUIDES: list[dict[str, Any]] = [
             "Andá a Clientes y filtrá por estado «Pendiente de revisión».",
             "Para aprobar solo se necesitan: nombre completo, email, teléfono, fuente y comercio.",
             "Documentos y datos del portal NO bloquean la aprobación inicial.",
-            "Desde el chat podés decir: «aprobar a Juan», «aprobar todos», «rechazar a #123 porque…».",
+            "Desde el chat puedes decir: «aprobar a Juan», «aprobar todos», «rechazar a #123 porque…».",
             "El asesor se asigna automáticamente más adelante, cuando el cliente completa datos y documentos (salvo que onboarding lo asigne antes a mano).",
         ],
         "urls": ["/clientes"],
@@ -208,7 +208,7 @@ GUIDES: list[dict[str, Any]] = [
         "keywords": ("documento", "documentos", "subir", "adjunt", "clip", "upload", "tablero"),
         "pasos": [
             "Usá el clip 📎 del chat: elegí si es documento del cliente o adjunto de una tarjeta del tablero.",
-            "También podés subirlos desde el detalle del cliente (Documentos / Tablero) o desde el portal del cliente.",
+            "También puedes subirlos desde el detalle del cliente (Documentos / Tablero) o desde el portal del cliente.",
             "Los documentos pasan por verificación automática con IA; el estado aparece en el detalle.",
         ],
     },
@@ -243,7 +243,7 @@ GUIDES: list[dict[str, Any]] = [
         "pasos": [
             "Andá a Calendario y conectá tu Personal Access Token de Calendly.",
             "Desde ahí ves reuniones, enlace público y vinculación con prospectos.",
-            "En el chat podés pedir «mis reuniones de hoy/semana» y, si está habilitado, agendar/cancelar/reprogramar.",
+            "En el chat puedes pedir «mis reuniones de hoy/semana» y, si está habilitado, agendar/cancelar/reprogramar.",
         ],
         "urls": ["/calendario"],
     },
@@ -254,7 +254,7 @@ GUIDES: list[dict[str, Any]] = [
         "keywords": ("pago", "pagos", "link de pago", "paypal", "authorize"),
         "pasos": [
             "Andá a Pagos → Nuevo link de pago.",
-            "Completá datos del cliente, monto y proveedor; opcionalmente vinculá un prospecto y enviá el email.",
+            "Completa datos del cliente, monto y proveedor; opcionalmente vincula un prospecto y envía el email.",
             "El link se copia al portapapeles para compartirlo.",
         ],
         "urls": ["/pagos"],

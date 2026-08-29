@@ -370,7 +370,7 @@ def deactivate_user(
     current_user: Annotated[User, Depends(require_permissions("users:delete"))],
 ) -> MessageResponse:
     if user_id == current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No podés desactivar tu propia cuenta")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puedes desactivar tu propia cuenta")
     user = _get_staff_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")

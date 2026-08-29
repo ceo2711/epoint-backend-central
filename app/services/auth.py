@@ -331,7 +331,24 @@ class AuthService:
         return self._build_user_me(user)
 
     def update_profile(self, user: User, payload: UserProfileUpdate) -> UserMeResponse:
+        from app.models.client import Client
         from app.services.role_access import is_sede_admin
+
+        if user.role.code == "CLIENT":
+            user.first_name = payload.first_name.strip()
+            user.last_name = payload.last_name.strip()
+            if user.client_id:
+                client = self.db.get(Client, user.client_id)
+                if client is not None:
+                    client.first_name = user.first_name
+                    client.last_name = user.last_name
+            self.db.commit()
+            refreshed = self.db.execute(
+                select(User)
+                .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+                .where(User.id == user.id)
+            ).unique().scalar_one()
+            return self._build_user_me(refreshed)
 
         if not is_sede_admin(user):
             raise HTTPException(

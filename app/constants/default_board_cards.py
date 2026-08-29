@@ -48,7 +48,13 @@ Por favor congelar su reporte directamente con LexisNexis.
 1. Ingrese a la página de LexisNexis: [Security Freeze - LexisNexis Risk Solutions Consumer Disclosure](https://consumer.risk.lexisnexis.com/freeze)
 2. Baje hasta el final de la página donde aparecen las opciones para congelar.
 3. Llame al número indicado para solicitar el Security Freeze: 📞 **1-800-456-1244**
-4. Complete el proceso por teléfono."""
+4. Complete el proceso por teléfono.
+
+**Credenciales de esta tarjeta**
+
+Usa el formulario cifrado de abajo para **ChexSystems, Innovis y Clarity Services**.
+
+Las claves de Experian, Equifax y TransUnion van en las tarjetas de la columna **Credenciales**."""
 
 _CHEXSYSTEMS_COMMENT = """Paso a paso para registrarse en el portal de ChexSystems:
 
@@ -93,12 +99,13 @@ Colocar una lista de los bancos con los que tiene alguna relación, bien sea tar
 
 _CLIENT_TODO_TAXES_DESCRIPTION = """**Descripción**
 
-Subí tu informe de taxes (Tax Return / declaración de impuestos o Tax Transcript del IRS) en PDF o imagen clara.
+Sube tu informe de taxes de los **últimos 2 años fiscales** (Tax Return / declaración de impuestos o Tax Transcript del IRS) en PDF o imagen clara.
 
 **Requisitos:**
 - Debe verse el nombre del contribuyente
 - Debe ser un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe de taxes oficial)
-- Preferí archivos recién generados o del año fiscal correspondiente
+- Cubre los últimos 2 años fiscales
+- Prefiere archivos recién generados o del año fiscal correspondiente
 
 Si el archivo no es un informe de taxes válido, será rechazado y deberás volver a subirlo."""
 
@@ -118,37 +125,27 @@ Fecha Nacimiento:"""
 
 _CREDENTIALS_EXPERIAN_DESCRIPTION = """**Descripción**
 
-Nombre de usuario:
-
-Contraseña:"""
+Carga aquí el usuario y la contraseña de **Experian** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
 
 _CREDENTIALS_EQUIFAX_DESCRIPTION = """**Descripción**
 
-Equifax:
-
-
-"""
+Carga aquí el usuario y la contraseña de **Equifax** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
 
 _CREDENTIALS_TRANSUNION_DESCRIPTION = """**Descripción**
 
-TransUnion:
-
-
-"""
+Carga aquí el usuario y la contraseña de **TransUnion** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
 
 _CREDENTIALS_CHEXSYSTEMS_DESCRIPTION = """**Descripción**
 
-ChexySystems:
-
-
-"""
+Carga aquí el usuario y la contraseña de **ChexSystems** con el formulario cifrado de esta tarjeta."""
 
 _CREDENTIALS_INNOVIS_DESCRIPTION = """**Descripción**
 
-Innovis:
+Carga aquí el usuario y la contraseña de **Innovis** con el formulario cifrado de esta tarjeta."""
 
+_INQUIRIES_DESCRIPTION = """**Descripción**
 
-"""
+Lista las inquiries (consultas de crédito) de este buró: acreedor, fecha y tipo (hard/soft)."""
 
 _ACCOUNTS_TEMPLATE_DESCRIPTION = """**Descripción**
 
@@ -289,26 +286,31 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             title="Experian",
             description_md=_CREDENTIALS_EXPERIAN_DESCRIPTION,
             position=1,
+            requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Equifax",
             description_md=_CREDENTIALS_EQUIFAX_DESCRIPTION,
             position=2,
+            requires_credentials=True,
         ),
         DefaultBoardCard(
             title="TransUnion",
             description_md=_CREDENTIALS_TRANSUNION_DESCRIPTION,
             position=3,
+            requires_credentials=True,
         ),
         DefaultBoardCard(
             title="ChexSystems",
             description_md=_CREDENTIALS_CHEXSYSTEMS_DESCRIPTION,
             position=4,
+            requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Innovis",
             description_md=_CREDENTIALS_INNOVIS_DESCRIPTION,
             position=5,
+            requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Clarity Services",
@@ -323,6 +325,11 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
             position=0,
         ),
+        DefaultBoardCard(
+            title="Inquiries",
+            description_md=_INQUIRIES_DESCRIPTION,
+            position=1,
+        ),
     ),
     "Transunion": (
         DefaultBoardCard(
@@ -330,12 +337,22 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
             position=0,
         ),
+        DefaultBoardCard(
+            title="Inquiries",
+            description_md=_INQUIRIES_DESCRIPTION,
+            position=1,
+        ),
     ),
     "Equifax": (
         DefaultBoardCard(
             title="Accounts",
             description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
             position=0,
+        ),
+        DefaultBoardCard(
+            title="Inquiries",
+            description_md=_INQUIRIES_DESCRIPTION,
+            position=1,
         ),
     ),
     "Personal Fonding Sequence (2)": _title_only_cards(_PERSONAL_FUNDING_SEQUENCE_2_CARD_TITLES),

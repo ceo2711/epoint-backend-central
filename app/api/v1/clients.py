@@ -69,7 +69,7 @@ def list_clients(
         if not merchant_context.user_can_access_merchant(current_user, merchant_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenés acceso a ese comercio",
+                detail="No tienes acceso a ese comercio",
             )
         scope_merchant_id = merchant_id
         scope_all_merchants = False

@@ -85,7 +85,7 @@ def resolve_sede_for_user(
         if requested_sede_id is not None and requested_sede_id != actor.sede_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo podés asignar usuarios a tu sede",
+                detail="Solo puedes asignar usuarios a tu sede",
             )
         return actor.sede_id
 
@@ -113,7 +113,7 @@ def assert_actor_can_assign_role(actor: User, role: Role) -> None:
         if role.code not in BRANCH_MANAGER_ASSIGNABLE_ROLES:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No podés asignar ese rol",
+                detail="No puedes asignar ese rol",
             )
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")

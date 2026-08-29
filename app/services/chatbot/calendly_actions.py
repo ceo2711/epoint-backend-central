@@ -62,7 +62,7 @@ class CalendlyChatActions:
     def _write_disabled_reply(self) -> str:
         return t(
             self.locale,
-            "Por ahora solo podés **consultar** reuniones de Calendly desde el CRM. "
+            "Por ahora solo puedes **consultar** reuniones de Calendly desde el CRM. "
             "Para crear, reprogramar o cancelar, usá Calendly directamente.",
             "For now you can only **view** Calendly meetings from the CRM. "
             "To create, reschedule or cancel, use Calendly directly.",
@@ -74,7 +74,7 @@ class CalendlyChatActions:
     def _not_connected_reply(self) -> str:
         return t(
             self.locale,
-            "No tenés Calendly conectado. Conectalo desde el calendario antes de gestionar reuniones.",
+            "No tienes Calendly conectado. Conéctalo desde el calendario antes de gestionar reuniones.",
             "Calendly is not connected. Connect it from the calendar page before managing meetings.",
         )
 
@@ -267,7 +267,7 @@ class CalendlyChatActions:
         detail = self.calendly.get_event_type_detail(self.user, event_type_uri=uri, user_id=self.user.id)
         return ActionResult(
             handled=True,
-            reply=f"Tipo **{name}**. Decime la **fecha** (DD/MM/AAAA, hoy o mañana).",
+            reply=f"Tipo **{name}**. Dime la **fecha** (DD/MM/AAAA, hoy o mañana).",
             pending_action=pending,
             calendly_options=self._options(
                 step="date",
@@ -311,7 +311,7 @@ class CalendlyChatActions:
         action = str(base.get("action") or "create_calendly_event")
         return ActionResult(
             handled=True,
-            reply="Completá los datos del invitado en el panel o decime nombre y email.",
+            reply="Completa los datos del invitado en el panel o dime nombre y email.",
             pending_action=PendingChatAction(action=action, draft=base),
             calendly_options=self._options(step="invitee", draft_summary=base, custom_questions=base.get("custom_questions") or []),
         )
@@ -403,7 +403,7 @@ class CalendlyChatActions:
             return await self._cancel_event(event_id)
         return ActionResult(
             handled=True,
-            reply="Decime el ID de la reunión a cancelar.",
+            reply="Dime el ID de la reunión a cancelar.",
             pending_action=PendingChatAction(action="cancel_calendly_event", draft={"step": "pick_event"}),
             calendly_options=self._options(step="events_list", events=format_events(events, locale=self.locale)),
         )
@@ -429,7 +429,7 @@ class CalendlyChatActions:
             return await self._start_edit_event(event_id)
         return ActionResult(
             handled=True,
-            reply="Decime qué reunión reprogramar.",
+            reply="Dime qué reunión reprogramar.",
             pending_action=PendingChatAction(action="update_calendly_event", draft={"step": "pick_event"}),
             calendly_options=self._options(step="events_list", events=format_events(events, locale=self.locale)),
         )
@@ -452,7 +452,7 @@ class CalendlyChatActions:
         )
         return ActionResult(
             handled=True,
-            reply=f"Reprogramando reunión #{event_id}. Decime la **nueva fecha**.",
+            reply=f"Reprogramando reunión #{event_id}. Dime la **nueva fecha**.",
             pending_action=pending,
             calendly_options=self._options(step="date", draft_summary=pending.draft, event_types=format_event_types(types, locale=self.locale)),
         )

@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 from sqlalchemy import delete, func, select
@@ -24,6 +25,8 @@ from app.services.storage import get_storage_provider
 from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
 
 from app.services.role_access import is_onboarding_area_leader
+
+logger = logging.getLogger(__name__)
 
 def _is_onboarding_leader(user) -> bool:
     return is_onboarding_area_leader(user)
@@ -484,6 +487,27 @@ class BoardService:
         if attachment.verification_status:
             self._queue_attachment_verification(attachment)
         return attachment
+
+    def delete_attachment(self, *, attachment: CardAttachment, actor: User) -> None:
+        status = attachment.verification_status
+        is_client = actor.role.code == "CLIENT"
+        is_staff = actor.role.code in {"ADMIN", "BRANCH_MANAGER", "ADVISOR", "AREA_LEADER"}
+        if is_client:
+            if status == DocumentVerificationStatus.APROBADO.value:
+                raise ValueError("No puedes eliminar un archivo ya aprobado")
+            if status == DocumentVerificationStatus.EN_PROCESO.value:
+                raise ValueError("Espera a que termine la verificación para eliminar el archivo")
+        elif not is_staff:
+            raise ValueError("No tienes permiso para eliminar este archivo")
+
+        storage = get_storage_provider()
+        try:
+            storage.delete_object(attachment.storage_key)
+        except Exception:
+            logger.warning("No se pudo borrar el objeto de storage %s", attachment.storage_key, exc_info=True)
+
+        self.db.delete(attachment)
+        self.db.commit()
 
     def _should_verify_attachment(self, *, card: BoardCard, actor: User) -> bool:
         if actor.role.code == "CLIENT":

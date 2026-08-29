@@ -369,14 +369,14 @@ class ClientService:
             if not merchant_ctx.user_can_access_merchant(actor, merchant_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tenés acceso a ese comercio",
+                    detail="No tienes acceso a ese comercio",
                 )
             merchant = self._get_active_merchant(merchant_id)
         elif default_merchant_id is not None:
             if not merchant_ctx.user_can_access_merchant(actor, default_merchant_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tenés acceso al comercio activo",
+                    detail="No tienes acceso al comercio activo",
                 )
             merchant = self._get_active_merchant(default_merchant_id)
         else:
@@ -1145,6 +1145,8 @@ class ClientService:
         client: Client,
         ssn: str | None = None,
         date_of_birth=None,
+        first_name: str | None = None,
+        last_name: str | None = None,
     ) -> Client:
         if ssn:
             client.ssn_encrypted = encrypt_value(ssn)
@@ -1156,6 +1158,18 @@ class ClientService:
             )
         if date_of_birth:
             client.date_of_birth = date_of_birth
+        if first_name:
+            client.first_name = first_name
+        if last_name:
+            client.last_name = last_name
+        if first_name or last_name:
+            for portal_user in self.db.execute(
+                select(User).where(User.client_id == client.id)
+            ).scalars().all():
+                if first_name:
+                    portal_user.first_name = first_name
+                if last_name:
+                    portal_user.last_name = last_name
         self.db.commit()
         self.db.refresh(client)
         return client
@@ -1188,6 +1202,8 @@ class ClientService:
         ).scalar_one_or_none()
         if not current_addr:
             return False
+        # Dirección anterior: la pide el portal web. No bloquear check_data_complete
+        # (mobile 1.0.0 solo envía CURRENT y no podría desbloquear el tablero).
         vehicle = self.db.execute(
             select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
         ).scalar_one_or_none()

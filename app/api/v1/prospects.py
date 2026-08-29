@@ -248,7 +248,7 @@ def check_prospect_availability(
 ) -> ProspectAvailabilityResponse:
     service = ProspectService(db)
     if not MerchantContextService(db).user_can_access_merchant(current_user, merchant_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenés acceso a ese comercio")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes acceso a ese comercio")
     result = service.check_contact_availability(
         email=email,
         phone=phone,

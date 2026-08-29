@@ -52,7 +52,7 @@ def resolve_influencer_sede_id(actor: User, sede_id: int | None) -> int:
     if sede_id is not None and sede_id != actor_sede:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No podés administrar influencers de otra sede",
+            detail="No puedes administrar influencers de otra sede",
         )
     return actor_sede
 

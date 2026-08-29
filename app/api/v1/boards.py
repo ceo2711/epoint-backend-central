@@ -61,7 +61,7 @@ def _is_board_staff(user: User) -> bool:
 
 def _require_board_staff(user: User) -> None:
     if not _is_board_staff(user):
-        raise HTTPException(status_code=403, detail="No tenés permiso para modificar el tablero")
+        raise HTTPException(status_code=403, detail="No tienes permiso para modificar el tablero")
 
 
 def _require_board_card_delete(user: User) -> None:
@@ -548,6 +548,21 @@ def get_attachment_content(
         media_type=attachment.mime_type or media_type,
         headers={"Content-Disposition": f'inline; filename="{attachment.original_filename}"'},
     )
+
+
+@router.delete("/attachments/{attachment_id}", response_model=MessageResponse)
+def delete_attachment(
+    attachment_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> MessageResponse:
+    attachment = _get_attachment_for_user(attachment_id, current_user, db, merchant_id=merchant_id)
+    try:
+        BoardService(db).delete_attachment(attachment=attachment, actor=current_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MessageResponse(message="Archivo eliminado")
 
 
 @router.post("/cards/{card_id}/comments", response_model=CardCommentResponse)
