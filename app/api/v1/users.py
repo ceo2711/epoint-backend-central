@@ -21,6 +21,7 @@ from app.services.sede_scope import (
     resolve_sede_for_user,
     sync_user_merchants_for_sede,
 )
+from app.services.staff_users import StaffUserService
 from app.services.sub_sellers import SubSellerService
 from app.services.user_serialization import serialize_user
 
@@ -361,6 +362,25 @@ def delete_user_avatar(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     _assert_can_manage_target(current_user, user)
     return AuthService(db).delete_avatar(user)
+
+
+@router.delete("/{user_id}/account", response_model=MessageResponse)
+def delete_staff_user(
+    user_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> MessageResponse:
+    """Elimina un empleado de la plataforma. Solo administrador global."""
+    if not is_global_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede eliminar empleados",
+        )
+    user = _get_staff_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    StaffUserService(db).delete_staff_user(actor=current_user, target=user)
+    return MessageResponse(message="Usuario eliminado")
 
 
 @router.delete("/{user_id}", response_model=MessageResponse)
