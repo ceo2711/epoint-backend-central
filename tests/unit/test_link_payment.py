@@ -27,6 +27,7 @@ def _link(**kwargs):
         "prospect_id": None,
         "currency": "USD",
         "amount": 100,
+        "amount_paid": 0,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)

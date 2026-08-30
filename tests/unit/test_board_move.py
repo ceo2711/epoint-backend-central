@@ -7,6 +7,7 @@ from app.models.board import Board
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.client import Client
+from app.models.document import Document
 from app.services.boards import BoardService
 
 
@@ -18,6 +19,7 @@ def db_session():
         Board.__table__,
         BoardList.__table__,
         BoardCard.__table__,
+        Document.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     session = sessionmaker(bind=engine)()

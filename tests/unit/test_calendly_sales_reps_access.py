@@ -22,10 +22,10 @@ def _service() -> CalendlyService:
     return CalendlyService(db)
 
 
-def test_advisor_can_list_sales_reps_for_client_filter() -> None:
-    with patch("app.services.sede_scope.effective_sede_id", return_value=1):
-        result = _service().list_sales_reps(_user(role="ADVISOR", area="ASESORES"))
-    assert result == []
+def test_advisor_cannot_list_sales_reps_for_client_filter() -> None:
+    with pytest.raises(HTTPException) as exc:
+        _service().list_sales_reps(_user(role="ADVISOR", area="ASESORES"))
+    assert exc.value.status_code == 403
 
 
 def test_onboarding_leader_can_list_sales_reps_for_client_filter() -> None:

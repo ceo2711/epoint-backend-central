@@ -9,7 +9,7 @@ from app.services.chatbot.calendly_intents import EVENT_ID_PATTERN, OPTION_NUMBE
 
 DEFAULT_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 DATE_ISO_PATTERN = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
-DATE_DMY_PATTERN = re.compile(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})")
+DATE_NUMERIC_PATTERN = re.compile(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})")
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 
@@ -19,9 +19,11 @@ def parse_date_input(text: str) -> str | None:
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
 
-    match = DATE_DMY_PATTERN.search(cleaned)
+    match = DATE_NUMERIC_PATTERN.search(cleaned)
     if match:
-        day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        first, second, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        # Prefer MM/DD/YYYY; if the first number cannot be a month, try DD/MM.
+        month, day = (first, second) if first <= 12 else (second, first)
         try:
             return date(year, month, day).isoformat()
         except ValueError:
@@ -124,7 +126,7 @@ def format_slots(slots: list[dict[str, Any]], *, locale: str) -> list[dict[str, 
         else:
             start_dt = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
         local = start_dt.astimezone(DEFAULT_TZ)
-        label = local.strftime("%H:%M") if locale == "en" else local.strftime("%I:%M %p").lstrip("0")
+        label = local.strftime("%I:%M %p").lstrip("0")
         formatted.append(
             {
                 "index": index + 1,
@@ -158,8 +160,8 @@ def format_events(events: list[Any], *, locale: str) -> list[dict[str, Any]]:
                 "invitee_name": event.invitee_name if hasattr(event, "invitee_name") else event.get("invitee_name"),
                 "invitee_email": event.invitee_email if hasattr(event, "invitee_email") else event.get("invitee_email"),
                 "invitee_comment": event.invitee_comment if hasattr(event, "invitee_comment") else event.get("invitee_comment"),
-                "start_label": local_start.strftime("%d/%m/%Y %H:%M"),
-                "end_label": local_end.strftime("%H:%M"),
+                "start_label": f"{local_start.strftime('%m/%d/%Y')} {local_start.strftime('%I:%M %p').lstrip('0')}",
+                "end_label": local_end.strftime("%I:%M %p").lstrip("0"),
             }
         )
     return rows

@@ -34,6 +34,8 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
   "is_complete": true/false,
   "is_color": true/false,
   "corners_cut": true/false,
+  "hands_visible": true/false,
+  "is_centered": true/false,
   "is_expired": true/false,
   "expires_at": "YYYY-MM-DD or null",
   "document_type_matches": true/false,
@@ -47,11 +49,15 @@ VERIFICATION_PROMPT = """Analyze the uploaded file for onboarding verification a
 
 Critical rules:
 - Always respect Today's date from the context block when judging whether dates are past, current, or future.
-- Prefer APPROVING imperfect but usable phone photos. Reject only for: wrong primary document type, unreadable blur, clearly different person, or clearly expired ID.
+- Prefer APPROVING imperfect but usable phone photos of a FLAT, CENTERED document. Still reject for: wrong primary document type, unreadable blur, clearly different person, clearly expired ID, visible hands/fingers, or a document that is being held / not centered.
+- Presentation is a HARD rule (does not get a quality pass): the document must be photographed or scanned from above on a flat surface, reasonably centered, with no person holding it.
+- hands_visible: true if ANY human hand, finger, thumb, fingernail, or skin is touching, holding, or covering the document. A perfectly readable SSN card held between fingers MUST be rejected (hands_visible=true, is_centered=false).
+- is_centered: true only when the document is the centered primary subject (flat on a table/scanner or a clean crop). false if someone is holding it, it is a selfie, it is shown at the edge of the frame, or a hand dominates the photo. Slight tilt of a flat card is OK.
+- Example that MUST be rejected: SSN card held in a hand with a thumb on the card edge — even if the name and number are perfectly clear and match the client.
 - Judge the DOMINANT / PRIMARY document in the frame. If another paper is partially visible underneath or in the background, IGNORE it.
 - document_type_matches: true when the primary subject is the requested type (or a close accepted alternative for that slot). false only when the primary subject is clearly something else.
 - detected_document_type must describe the primary document you see.
-- is_complete: true unless large parts of the primary document are missing from the frame. Background clutter does not make it incomplete.
+- is_complete: true unless large parts of the primary document are missing from the frame. Background clutter does not make it incomplete. A hand covering the card DOES make presentation invalid (hands_visible=true).
 - is_color: true for normal camera photos/scans; do not reject for mild color cast or near-grayscale.
 - corners_cut: true ONLY when a major corner of the primary document is cropped out of the photo.
 - detected_name must be the name as printed on the document (or null if none).
@@ -59,7 +65,7 @@ Critical rules:
 - address_matches: Prefer true when any service/mailing address is visible on utility bills / bank statements.
 - is_expired: only for ID documents with a real expiration date visible (license FRONT, passport, green card, work permit). For SSN cards, utility bills, bank statements, and driver's license BACK always set is_expired=false and expires_at=null unless a clear past expiration is visible on that side.
 - Every reason must include both "en" and "es".
-- If rejected, rejection_reasons must explain the main issue.
+- If rejected, rejection_reasons must explain the main issue (including hands / not centered when that is why).
 - If approved, approval_reasons must cite verified facts — never claim a match that is false."""
 
 

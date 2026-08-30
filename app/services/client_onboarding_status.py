@@ -7,6 +7,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.constants.default_board_cards import is_optional_onboarding_card
 from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
 from app.models.board import Board
 from app.models.board_list import BoardList
@@ -138,7 +139,8 @@ def sync_client_onboarding_status(
         lists[-1],
     )
     all_cards = [card for board_list in lists for card in board_list.cards]
-    if not all_cards:
+    required_cards = [card for card in all_cards if not is_optional_onboarding_card(card.title)]
+    if not required_cards:
         return client.status != previous
 
     # No avanzar el tablero si los docs mínimos ya no están OK.
@@ -147,7 +149,7 @@ def sync_client_onboarding_status(
     ):
         return client.status != previous
 
-    all_in_completed = all(card.list_id == completed_list.id for card in all_cards)
+    all_in_completed = all(card.list_id == completed_list.id for card in required_cards)
 
     if all_in_completed and client.status in {
         ClientStatus.LISTO_PARA_TRABAJAR.value,

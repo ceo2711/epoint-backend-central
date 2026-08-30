@@ -781,7 +781,8 @@ class CalendlyService:
                     start_time = event.start_time
                     if start_time.tzinfo is None:
                         start_time = start_time.replace(tzinfo=timezone.utc)
-                    start_label = start_time.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+                    start_dt = start_time.astimezone(timezone.utc)
+                    start_label = f"{start_dt.strftime('%m/%d/%Y')} {start_dt.strftime('%I:%M %p').lstrip('0')} UTC"
                     invitee = event.invitee_name or event.invitee_email or "Un invitado"
                     meeting_name = event.event_type_name or event.name
                     created_notifications.extend(

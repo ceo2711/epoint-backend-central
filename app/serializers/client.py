@@ -28,6 +28,7 @@ def client_to_response(
     client: Client,
     *,
     has_unread_inbound_email: bool = False,
+    source_prospect_status: str | None = None,
 ) -> ClientResponse:
     merchant = None
     if client.merchant:
@@ -78,6 +79,7 @@ def client_to_response(
         signed_contract=client_signed_contract_brief(client),
         board_unlocked=_compute_board_unlocked(client),
         has_unread_inbound_email=has_unread_inbound_email,
+        source_prospect_status=source_prospect_status,
     )
 
 

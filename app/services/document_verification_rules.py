@@ -107,12 +107,23 @@ _NAME_SOFT_MATCH_RULE = (
 
 _QUALITY_SOFT_RULE = (
     "Quality bias (IMPORTANT): phone photos are imperfect. Prefer APPROVING when the primary "
-    "document type is correct and key fields are readable enough. "
+    "document type is correct, key fields are readable enough, AND the document is flat/"
+    "centered with no hands. "
     "Set is_complete=true unless large parts of the PRIMARY document are missing from the frame. "
     "Set is_color=true for normal phone/camera photos (do not reject for slight color cast, "
     "flash, or near-grayscale scans of a color card). "
     "Set corners_cut=false unless a major corner of the PRIMARY document is clearly cropped out. "
-    "Background clutter, shadows, glare, or another paper behind must NOT cause rejection."
+    "Background clutter, shadows, glare, or another paper behind must NOT cause rejection. "
+    "Hands, fingers, thumbs, or fingernails ARE a hard reject — not background clutter."
+)
+
+_PRESENTATION_HARD_RULE = (
+    "Presentation (HARD REJECT): Place the document flat and centered. "
+    "Set hands_visible=true if any hand, finger, thumb, fingernail, or skin is holding or "
+    "covering the document — even if every printed field is perfectly readable and matches. "
+    "Set is_centered=false if the document is held up, taken as a selfie, or is not the "
+    "centered subject. A readable SSN held between fingers MUST be rejected. "
+    "Ask the client to photograph the document from above on a flat surface, or upload a clean scan."
 )
 
 DOCUMENT_TYPE_GUIDANCE: dict[str, dict[str, str]] = {
@@ -121,13 +132,15 @@ DOCUMENT_TYPE_GUIDANCE: dict[str, dict[str, str]] = {
             "A physical or scanned US Social Security card issued by the SSA. "
             "It must show 'Social Security' / SSA branding, the cardholder's name, "
             "and a 9-digit Social Security Number (XXX-XX-XXXX, partial masking allowed). "
+            "The card must be flat and centered in the photo/scan — no hands or fingers. "
             "IMPORTANT: Social Security cards do NOT expire. Always set is_expired=false "
             "and expires_at=null. Do not invent expiration dates from issue dates, "
             "signatures, or other printed numbers."
         ),
         "reject_examples": (
             "invoices, receipts, bank statements, utility bills, tax forms, reports, "
-            "screenshots of unrelated apps, driver's licenses, passports, or any non-SSN document."
+            "screenshots of unrelated apps, driver's licenses, passports, any non-SSN document, "
+            "or an SSN card held in a hand / with fingers or a thumb visible on the card."
         ),
         "expiry_rule": (
             "SSN cards never expire. Set is_expired=false and expires_at=null always."
@@ -258,6 +271,7 @@ def build_document_type_context(
     if guidance.get("address_rule"):
         extra_rules += f"\n{guidance['address_rule']}"
     extra_rules += f"\n{_QUALITY_SOFT_RULE}"
+    extra_rules += f"\n{_PRESENTATION_HARD_RULE}"
     return (
         f"Today's date (use this as ground truth for 'recent' / 'future'): {today_iso}.\n"
         f"Expected upload slot: {document_type}.\n"
@@ -378,6 +392,15 @@ def normalize_verification_result(
     return normalized
 
 
+def _has_presentation_issue(result: dict[str, Any], document_type: str) -> bool:
+    """Rechaza fotos con manos o documentos de identidad que no están centrados."""
+    if result.get("hands_visible") is True:
+        return True
+    if document_type in IDENTITY_DOCUMENT_TYPES and result.get("is_centered") is False:
+        return True
+    return False
+
+
 def _detected_type_conflicts(document_type: str, result: dict[str, Any]) -> bool:
     """Rechaza cuando la IA aprueba el tipo pero la etiqueta detectada indica otro documento.
 
@@ -406,6 +429,8 @@ def is_verification_approved(
     result = normalize_verification_result(result, document_type, client_name=client_name)
 
     if _detected_type_conflicts(document_type, result):
+        return False
+    if _has_presentation_issue(result, document_type):
         return False
 
     approved = (

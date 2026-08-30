@@ -96,6 +96,20 @@ def build_rejection_messages(
                 "El documento tiene esquinas cortadas.",
             )
         )
+    if result.get("hands_visible") is True:
+        messages.append(
+            _msg(
+                "Hands or fingers are visible. Photograph or scan the document flat and centered, with no hands.",
+                "Se ven manos o dedos. Fotografiá o escaneá el documento plano y centrado, sin manos.",
+            )
+        )
+    if result.get("is_centered") is False:
+        messages.append(
+            _msg(
+                "The document must be centered in the photo. Place it on a flat surface and capture it from above.",
+                "El documento debe estar centrado. Colocalo sobre una superficie plana y fotografiálo desde arriba.",
+            )
+        )
     if result.get("is_expired", False):
         messages.append(
             _msg(

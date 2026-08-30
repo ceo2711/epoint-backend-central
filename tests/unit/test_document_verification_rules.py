@@ -10,6 +10,8 @@ def _quality_pass_result(**overrides):
         "is_complete": True,
         "is_color": True,
         "corners_cut": False,
+        "hands_visible": False,
+        "is_centered": True,
         "is_expired": False,
         "document_type_matches": True,
         "detected_document_type": "SSN card",
@@ -41,6 +43,26 @@ def test_ssn_rejected_when_detected_type_conflicts():
 def test_ssn_approved_only_with_all_required_flags():
     result = _quality_pass_result()
     assert is_verification_approved(result, "SSN_CARD") is True
+
+
+def test_ssn_rejected_when_hands_visible_even_if_readable():
+    result = _quality_pass_result(hands_visible=True)
+    assert is_verification_approved(result, "SSN_CARD") is False
+
+
+def test_ssn_rejected_when_not_centered():
+    result = _quality_pass_result(is_centered=False)
+    assert is_verification_approved(result, "SSN_CARD") is False
+
+
+def test_utility_bill_not_blocked_by_centering_flag():
+    result = _quality_pass_result(
+        detected_document_type="Electric Utility Bill",
+        name_matches=True,
+        address_matches=True,
+        is_centered=False,
+    )
+    assert is_verification_approved(result, "UTILITY_BILL") is True
 
 
 def test_missing_document_type_matches_fails_closed():
@@ -176,3 +198,5 @@ def test_build_document_type_context_includes_expected_type():
     assert "Social Security" in context
     assert "do NOT expire" in context or "never expire" in context
     assert "Today's date" in context
+    assert "hands_visible" in context or "HARD REJECT" in context
+    assert "centered" in context.lower()

@@ -200,3 +200,23 @@ def test_sync_advances_to_completado_when_all_cards_done(db_session):
 
     assert sync_client_onboarding_status(db_session, client) is True
     assert client.status == ClientStatus.ONBOARDING_COMPLETADO.value
+
+
+def test_sync_completes_when_only_taxes_card_is_pending(db_session):
+    """Taxes ya no bloquea el cierre del onboarding."""
+    client = _make_client(db_session, status=ClientStatus.ONBOARDING_EN_PROGRESO.value)
+    _seed_required_docs(db_session, client.id)
+    board = Board(client_id=client.id, template_code="DEFAULT_ONBOARDING")
+    db_session.add(board)
+    db_session.flush()
+    ideas = BoardList(board_id=board.id, title="Ideas a realizar", position=0)
+    done = BoardList(board_id=board.id, title="Completed", position=1)
+    db_session.add_all([ideas, done])
+    db_session.flush()
+    db_session.add(BoardCard(list_id=done.id, title="Reportes: Experian, Equifax y TransUnion", position=0))
+    db_session.add(BoardCard(list_id=ideas.id, title="Informe de Taxes", position=0, status="PENDIENTE"))
+    db_session.commit()
+    db_session.refresh(client)
+
+    assert sync_client_onboarding_status(db_session, client) is True
+    assert client.status == ClientStatus.ONBOARDING_COMPLETADO.value

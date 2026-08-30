@@ -76,6 +76,13 @@ class DocusignSendEnvelopeResponse(BaseModel):
     message: str = "Contrato enviado correctamente"
 
 
+class DocusignResendReminderResponse(BaseModel):
+    envelope: DocusignEnvelopeResponse
+    message: str
+    email_sent: bool = False
+    docusign_resent: bool = False
+
+
 class DocusignRegisterClientRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)

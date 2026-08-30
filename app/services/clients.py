@@ -453,7 +453,7 @@ class ClientService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Solo puede editar clientes pendientes o rechazados",
             )
-        ssn = fields.pop("ssn", None)
+        fields.pop("ssn", None)
         date_of_birth = fields.pop("date_of_birth", None)
         if "email" in fields and fields["email"] is not None:
             self.assert_email_available(
@@ -479,14 +479,6 @@ class ClientService:
                     setattr(client, key, value.strip())
                 else:
                     setattr(client, key, value)
-        if ssn:
-            client.ssn_encrypted = encrypt_value(ssn)
-            self.audit.log(
-                actor=actor,
-                action="SSN_UPDATED",
-                entity_type="client",
-                entity_id=client.id,
-            )
         if date_of_birth is not None:
             client.date_of_birth = date_of_birth
         self.audit.log(actor=actor, action="CLIENT_UPDATED", entity_type="client", entity_id=client.id)

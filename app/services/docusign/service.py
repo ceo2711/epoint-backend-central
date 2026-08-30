@@ -1163,6 +1163,29 @@ class DocusignService:
 
         return DocusignSendEnvelopeResponse(envelope=self._map_envelope(row))
 
+    def resend_signing_reminder(
+        self, actor: User, envelope_id: int, *, merchant_id: int
+    ) -> tuple[DocusignEnvelopeResponse, bool, bool]:
+        """Reenvía el recordatorio de firma (email Epoint + correo DocuSign)."""
+        from app.services.contract_reminders import (
+            UNSIGNED_ENVELOPE_STATUSES,
+            send_unsigned_contract_reminder,
+        )
+
+        self.ensure_access(actor)
+        row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
+        if (row.status or "").lower() not in UNSIGNED_ENVELOPE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo se puede recordar un contrato pendiente de firma",
+            )
+        email_sent, docusign_resent = send_unsigned_contract_reminder(row)
+        if email_sent:
+            row.last_contract_reminder_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(row)
+        return self._map_envelope(row), email_sent, docusign_resent
+
     def sync_envelope_status(
         self,
         actor: User,

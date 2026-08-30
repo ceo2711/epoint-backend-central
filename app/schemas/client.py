@@ -31,27 +31,6 @@ class ClientUpdate(BaseModel):
     source: str | None = Field(default=None, max_length=40)
     merchant_id: int | None = None
     date_of_birth: date | None = None
-    ssn: str | None = Field(default=None, max_length=11)
-
-    @field_validator("ssn", mode="before")
-    @classmethod
-    def normalize_ssn(cls, value: object) -> object:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            stripped = value.strip()
-            return None if not stripped else stripped
-        return value
-
-    @field_validator("ssn")
-    @classmethod
-    def validate_ssn(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        digits = re.sub(r"\D", "", value)
-        if len(digits) != 9:
-            raise ValueError("El número de Seguro Social debe tener 9 dígitos (formato XXX-XX-XXXX).")
-        return digits
 
 
 class ClientReject(BaseModel):
@@ -121,6 +100,7 @@ class ClientResponse(ORMBase):
         description="True cuando el cliente ya puede ver/usar el tablero del portal",
     )
     has_unread_inbound_email: bool = False
+    source_prospect_status: str | None = None
 
 class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False

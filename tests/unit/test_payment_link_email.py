@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from app.services.email.payment_link import PaymentLinkEmailPayload, send_payment_link_email
+from app.services.notifications.templates import payment_link_email_body, payment_reminder_email_body
 
 
 def _sample_payload() -> PaymentLinkEmailPayload:
@@ -47,3 +48,24 @@ def test_send_payment_link_email_via_resend(mock_send: MagicMock, monkeypatch):
     assert "https://app.ePoint.com/pagar/abc123" in call_args["text"]
     assert "html" in call_args
     assert "Completar pago" in call_args["html"]
+    assert "https://app.ePoint.com/pagar/abc123" in call_args["html"]
+
+
+def test_payment_email_bodies_include_payment_url():
+    url = "https://app.ePoint.com/pagar/token-xyz"
+    initial = payment_link_email_body(
+        first_name="Ana",
+        amount_formatted="USD 3,000.00",
+        payment_url=url,
+    )
+    reminder = payment_reminder_email_body(
+        first_name="Ana",
+        remaining_formatted="USD 2,000.00",
+        total_formatted="USD 3,000.00",
+        payment_url=url,
+        paid_formatted="USD 1,000.00",
+    )
+    assert url in initial
+    assert "completar tu pago" in initial.lower()
+    assert url in reminder
+    assert "completá tu pago" in reminder.lower()

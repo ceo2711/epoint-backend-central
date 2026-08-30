@@ -54,7 +54,7 @@ from app.services.totp import (
 from app.utils.mime import resolve_content_type
 
 PASSWORD_RESET_SENT_MESSAGE = (
-    "Si el correo est? registrado, recibir?s un enlace para restablecer tu contrase?a."
+    "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
 )
 CLIENT_ROLE_CODE = "CLIENT"
 AVATAR_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -178,13 +178,13 @@ class AuthService:
         )
 
         if user is None or not verify_password(payload.password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inv?lidas")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
 
         from app.services.role_access import can_own_sub_sellers, is_sub_seller
         from app.services.sub_sellers import SubSellerService
 
         if is_sub_seller(user):
-            # Debe bloquear antes del 2FA si el padre perdi? elegibilidad.
+            # Debe bloquear antes del 2FA si el padre perdió elegibilidad.
             SubSellerService(self.db).assert_sub_seller_may_login(user)
         elif not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo")
@@ -192,7 +192,7 @@ class AuthService:
         user.last_login_at = datetime.now(timezone.utc)
         self.db.commit()
 
-        # 2FA: responder YA. Elegibilidad /me completo se hace tras verificar el c?digo.
+        # 2FA: responder YA. Elegibilidad /me completo se hace tras verificar el código.
         # App Review (Apple) entra sin TOTP; el resto de clientes sigue obligado.
         if user.totp_enabled and not is_app_review_email(user.email):
             temp_token = create_2fa_pending_token(
@@ -222,11 +222,11 @@ class AuthService:
     def verify_2fa(self, payload: TwoFactorVerifyRequest) -> LoginResponse:
         token_payload = safe_decode_token(payload.temp_token)
         if token_payload is None or token_payload.get("type") != "2fa_pending":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesi?n 2FA inv?lida o expirada")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
 
         user_id = token_payload.get("sub")
         if not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesi?n 2FA inv?lida o expirada")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
 
         user = (
             self.db.execute(
@@ -238,11 +238,11 @@ class AuthService:
             .scalar_one_or_none()
         )
         if user is None or not user.is_active or not user.totp_enabled or not user.totp_secret_encrypted:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesi?n 2FA inv?lida o expirada")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión 2FA inválida o expirada")
 
         secret = decrypt_totp_secret(user.totp_secret_encrypted)
         if not verify_totp_code(secret=secret, code=payload.code):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="C?digo de verificaci?n inv?lido")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
 
         access_token, refresh_token = self._issue_session_tokens(user)
         self.db.commit()
@@ -258,7 +258,7 @@ class AuthService:
         if user.totp_enabled:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El doble factor ya est? activado",
+                detail="El doble factor ya está activado",
             )
 
         secret = generate_totp_secret()
@@ -275,17 +275,17 @@ class AuthService:
         if user.totp_enabled:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El doble factor ya est? activado",
+                detail="El doble factor ya está activado",
             )
         if not user.totp_secret_encrypted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Primero deb?s iniciar la configuraci?n del doble factor",
+                detail="Primero debés iniciar la configuración del doble factor",
             )
 
         secret = decrypt_totp_secret(user.totp_secret_encrypted)
         if not verify_totp_code(secret=secret, code=payload.code):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="C?digo de verificaci?n inv?lido")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
 
         user.totp_enabled = True
         user.totp_confirmed_at = datetime.now(timezone.utc)
@@ -295,19 +295,19 @@ class AuthService:
     def refresh_token(self, payload: RefreshTokenRequest) -> TokenResponse:
         token_payload = safe_decode_token(payload.refresh_token)
         if token_payload is None or token_payload.get("type") != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inv?lido")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inválido")
 
         jti = token_payload.get("jti")
         user_id = token_payload.get("sub")
         if not jti or not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inv?lido")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inválido")
 
         session = self.db.execute(
             select(UserSession).where(UserSession.jti == jti, UserSession.is_revoked.is_(False))
         ).scalar_one_or_none()
 
         if session is None or session.expires_at < datetime.now(timezone.utc):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesi?n expirada o revocada")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión expirada o revocada")
 
         user = self.db.get(User, int(user_id))
         if user is None or not user.is_active:
@@ -325,7 +325,7 @@ class AuthService:
             if session:
                 session.is_revoked = True
                 self.db.commit()
-        return MessageResponse(message="Sesi?n cerrada")
+        return MessageResponse(message="Sesión cerrada")
 
     def get_me(self, user: User) -> UserMeResponse:
         return self._build_user_me(user)
@@ -364,7 +364,7 @@ class AuthService:
             if existing is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="El email ya est? registrado",
+                    detail="El email ya está registrado",
                 )
 
         user.first_name = payload.first_name.strip()
@@ -390,7 +390,7 @@ class AuthService:
         if not file_bytes:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo de avatar est? vac?o",
+                detail="El archivo de avatar está vacío",
             )
         if len(file_bytes) > AVATAR_MAX_BYTES:
             raise HTTPException(
@@ -402,7 +402,7 @@ class AuthService:
         if mime_type not in AVATAR_ALLOWED_MIME:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Solo se permiten im?genes JPEG, PNG o WebP",
+                detail="Solo se permiten imágenes JPEG, PNG o WebP",
             )
 
         storage = get_storage_provider()
@@ -449,16 +449,16 @@ class AuthService:
 
     def change_password(self, user: User, payload: ChangePasswordRequest) -> MessageResponse:
         if not verify_password(payload.current_password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contrase?a actual incorrecta")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contraseña actual incorrecta")
 
         user.password_hash = hash_password(payload.new_password)
         user.must_change_password = False
         self._sync_client_portal_password(user, payload.new_password)
         self.db.commit()
-        return MessageResponse(message="Contrase?a actualizada correctamente")
+        return MessageResponse(message="Contraseña actualizada correctamente")
 
     def _sync_client_portal_password(self, user: User, plain_password: str) -> None:
-        """Guarda la contrase?a de portal cifrada para que el staff de onboarding pueda verla."""
+        """Guarda la contraseña de portal cifrada para que el staff de onboarding pueda verla."""
         role_code = user.role.code if user.role is not None else None
         if role_code is None:
             self.db.refresh(user, attribute_names=["role"])
@@ -535,7 +535,7 @@ class AuthService:
         if reset_row is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El enlace de restablecimiento es inv?lido o expir?",
+                detail="El enlace de restablecimiento es inválido o expiró",
             )
 
         user = (
@@ -550,7 +550,7 @@ class AuthService:
         if user is None or not user.is_active or user.role.code != CLIENT_ROLE_CODE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El enlace de restablecimiento es inv?lido o expir?",
+                detail="El enlace de restablecimiento es inválido o expiró",
             )
 
         user.password_hash = hash_password(payload.new_password)
@@ -568,4 +568,4 @@ class AuthService:
             session.is_revoked = True
 
         self.db.commit()
-        return MessageResponse(message="Contrase?a actualizada correctamente")
+        return MessageResponse(message="Contraseña actualizada correctamente")

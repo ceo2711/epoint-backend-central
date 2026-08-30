@@ -26,6 +26,7 @@ SALES_STATUSES = (
     ProspectStatus.LEAD_CONTACTADO.value,
     ProspectStatus.LEAD_CERRADO.value,
     ProspectStatus.CONTRATO_ENVIADO.value,
+    ProspectStatus.PAGO_PARCIAL.value,
     ProspectStatus.PAGO_COMPLETADO.value,
 )
 

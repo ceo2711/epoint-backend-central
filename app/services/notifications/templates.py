@@ -181,14 +181,84 @@ def payment_link_email_body(
     provider_name = provider_label or "nuestro proveedor de pagos"
     return f"""Hola {first_name},
 {merchant_block}
-Te compartimos tu link de pago personalizado para completar el cobro de forma segura a través de {provider_name}.
+Te compartimos tu link de pago personalizado para completar tu pago de forma segura a través de {provider_name}.
 
 Monto a pagar: {amount_formatted}
 {description_block}
-Completa tu pago en el siguiente enlace:
+Usá este link para completar tu pago:
 {payment_url}
 
 Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
+
+Saludos,
+Equipo Epoint
+"""
+
+
+def payment_reminder_email_body(
+    *,
+    first_name: str,
+    remaining_formatted: str,
+    total_formatted: str,
+    payment_url: str,
+    paid_formatted: str | None = None,
+) -> str:
+    paid_line = f"\nYa recibimos {paid_formatted}." if paid_formatted else ""
+    return f"""Hola {first_name},
+
+Te recordamos que todavía tenés un saldo pendiente en Epoint.
+
+Monto total: {total_formatted}{paid_line}
+Saldo a completar: {remaining_formatted}
+
+Completá tu pago en el siguiente enlace:
+{payment_url}
+
+Si tenés dudas de la plataforma, visitá https://epointsolution.com/ o respondé este correo: tu mensaje llega al equipo en Epoint.
+
+Saludos,
+Equipo Epoint
+"""
+
+
+def board_reminder_email_body(
+    *,
+    first_name: str,
+    pending_items: list[str],
+    board_url: str,
+) -> str:
+    items = "\n".join(f"• {item}" for item in pending_items) if pending_items else "• Tareas pendientes en tu tablero"
+    return f"""Hola {first_name},
+
+Tu tablero en Epoint tiene tareas pendientes. Completalas para seguir avanzando: reportes, credenciales u otras cards abiertas.
+
+Pendientes:
+{items}
+
+Entrá a tu tablero:
+{board_url}
+
+Si tenés dudas, visitá https://epointsolution.com/ o respondé este correo: tu mensaje llega al equipo en Epoint.
+
+Saludos,
+Equipo Epoint
+"""
+
+
+def contract_reminder_email_body(
+    *,
+    first_name: str,
+    contract_subject: str,
+) -> str:
+    return f"""Hola {first_name},
+
+Te recordamos que todavía tenés un contrato pendiente de firma en Epoint.
+
+Contrato: {contract_subject}
+
+Revisá tu bandeja de entrada (también spam): DocuSign te envió o reenvió un correo con el botón para firmar el documento.
+
+Si no encontrás el email de firma, respondé este correo y te lo reenviamos.
 
 Saludos,
 Equipo Epoint

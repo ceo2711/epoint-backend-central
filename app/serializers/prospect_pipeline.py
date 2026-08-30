@@ -26,9 +26,14 @@ def envelope_brief(env) -> ProspectEnvelopeBrief:
 
 
 def payment_brief(link) -> ProspectPaymentBrief:
+    from app.services.payments.amounts import remaining_amount
+
     return ProspectPaymentBrief(
         id=link.id,
         amount=link.amount,
+        amount_paid=getattr(link, "amount_paid", None) or 0,
+        remaining_amount=remaining_amount(link),
+        allow_partial=bool(getattr(link, "allow_partial", False)),
         currency=link.currency,
         status=link.status,
         payment_url=link.payment_url,

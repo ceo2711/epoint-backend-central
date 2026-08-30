@@ -50,6 +50,26 @@ def test_build_approval_messages_from_flags():
     assert any("readable" in item.lower() or "clear" in item.lower() for item in localized["en"])
 
 
+def test_build_rejection_messages_hands_visible():
+    messages = build_rejection_messages(
+        {
+            "is_readable": True,
+            "is_complete": True,
+            "is_color": True,
+            "document_type_matches": True,
+            "name_matches": True,
+            "hands_visible": True,
+            "is_centered": False,
+        },
+        document_type="SSN_CARD",
+        client_name="Alexis Guanique",
+    )
+    localized = to_localized_lists(messages)
+    assert any("hand" in item.lower() for item in localized["en"])
+    assert any("mano" in item.lower() or "dedo" in item.lower() for item in localized["es"])
+    assert any("center" in item.lower() for item in localized["en"])
+
+
 def test_build_rejection_messages_wrong_document_type():
     messages = build_rejection_messages(
         {

@@ -87,7 +87,7 @@ def test_build_context_credit_bureau_reports_requires_fresh_report():
 def test_resolve_taxes_card():
     kind = resolve_attachment_kind(
         card_title="Informe de Taxes",
-        list_title="Client TO DO",
+        list_title="Ideas a realizar",
         requires_file_upload=True,
     )
     assert kind == TAX_REPORT

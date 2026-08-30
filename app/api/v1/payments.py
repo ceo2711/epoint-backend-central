@@ -13,6 +13,7 @@ from app.schemas.payment import (
     PaymentLinkResponse,
     PaymentRegisterClientRequest,
     PaymentRegisterClientResponse,
+    PublicPaymentAmountRequest,
     PublicPaymentLinkResponse,
 )
 from app.services.payments.service import PaymentService
@@ -81,6 +82,28 @@ def create_payment_link(
     )
 
 
+@router.post("/links/{link_id}/resend", response_model=PaymentLinkCreateResponse)
+def resend_payment_link_email(
+    link_id: int,
+    current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    merchant_id: ActiveMerchantId,
+    db: DbSession,
+) -> PaymentLinkCreateResponse:
+    result = PaymentService(db).resend_link_email(current_user, link_id, merchant_id=merchant_id)
+    if result.email_sent:
+        message = "Reenviamos el link de pago al cliente para completar el cobro."
+    else:
+        message = (
+            "No se pudo enviar el email — compartí el link manualmente con el cliente "
+            "para que complete el pago."
+        )
+    return PaymentLinkCreateResponse(
+        link=result.link,
+        message=message,
+        email_sent=result.email_sent,
+    )
+
+
 @router.post("/links/{link_id}/cancel", response_model=PaymentLinkResponse)
 def cancel_payment_link(
     link_id: int,
@@ -114,10 +137,24 @@ def get_public_payment_link(token: str, db: DbSession) -> PublicPaymentLinkRespo
     return PaymentService(db).get_public_link(token)
 
 
+@router.post("/public/{token}/checkout", response_model=PublicPaymentLinkResponse)
+def prepare_public_checkout(
+    token: str,
+    db: DbSession,
+    payload: PublicPaymentAmountRequest = PublicPaymentAmountRequest(),
+) -> PublicPaymentLinkResponse:
+    """Crea el checkout del monto elegido (pago total o parcial)."""
+    return PaymentService(db).prepare_public_checkout(token, amount=payload.amount)
+
+
 @router.post("/public/{token}/complete", response_model=PublicPaymentLinkResponse)
-def complete_public_payment_stub(token: str, db: DbSession) -> PublicPaymentLinkResponse:
+def complete_public_payment_stub(
+    token: str,
+    db: DbSession,
+    payload: PublicPaymentAmountRequest = PublicPaymentAmountRequest(),
+) -> PublicPaymentLinkResponse:
     """Completa el pago en modo stub o confirma retorno PayPal."""
-    return PaymentService(db).complete_public_payment(token)
+    return PaymentService(db).complete_public_payment(token, amount=payload.amount)
 
 
 @router.post("/public/{token}/confirm-return", response_model=PublicPaymentLinkResponse)

@@ -137,6 +137,12 @@ class Settings(BaseSettings):
 
     # Recordatorios automáticos de onboarding incompleto (0 = deshabilitado; corre dentro de la API)
     onboarding_reminder_interval_minutes: int = 0
+    # No reenviar recordatorio de saldo de pago antes de N horas
+    payment_reminder_cooldown_hours: int = 24
+    # No reenviar recordatorio de firma de contrato antes de N horas
+    contract_reminder_cooldown_hours: int = 24
+    # No reenviar recordatorio de tareas del tablero antes de N horas
+    board_reminder_cooldown_hours: int = 24
 
     # Calendly Scheduling API (crear/editar/cancelar). Requiere plan Standard+ en Calendly.
     calendly_write_enabled: bool = False
@@ -277,6 +283,10 @@ class Settings(BaseSettings):
     @property
     def portal_login_url(self) -> str:
         return f"{self.portal_base_url}/login"
+
+    @property
+    def portal_board_url(self) -> str:
+        return f"{self.portal_base_url}/portal/tablero"
 
     @property
     def docusign_webhook_url(self) -> str | None:

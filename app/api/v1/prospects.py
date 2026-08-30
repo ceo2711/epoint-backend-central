@@ -14,6 +14,7 @@ from app.schemas.common import (
 )
 from app.services.email import CustomMessageEmailPayload, send_custom_message_email
 from app.services.email.custom_message import sanitize_message_html
+from app.schemas.payment import PaymentLinkCreateResponse
 from app.schemas.prospect import (
     ProspectAvailabilityResponse,
     ProspectCalendlyBrief,
@@ -34,6 +35,7 @@ from app.schemas.prospect import (
     SalesRepBrief,
 )
 from app.services.merchant_context import MerchantContextService
+from app.services.payments.service import PaymentService
 from app.services.prospects import ProspectService
 
 router = APIRouter(prefix="/prospects", tags=["Prospectos"])
@@ -87,15 +89,9 @@ def _envelope_brief(env) -> ProspectEnvelopeBrief:
 
 
 def _payment_brief(link) -> ProspectPaymentBrief:
-    return ProspectPaymentBrief(
-        id=link.id,
-        amount=link.amount,
-        currency=link.currency,
-        status=link.status,
-        payment_url=link.payment_url,
-        paid_at=link.paid_at,
-        created_at=link.created_at,
-    )
+    from app.serializers.prospect_pipeline import payment_brief
+
+    return payment_brief(link)
 
 
 def _to_detail(
@@ -542,6 +538,30 @@ def link_payment_link(
     )
     detail = service.get_prospect_detail(current_user, prospect.id, merchant_id=active_merchant_id)
     return _to_response(detail)
+
+
+@router.post("/{prospect_id}/send-balance-payment", response_model=PaymentLinkCreateResponse)
+def send_balance_payment(
+    prospect_id: int,
+    current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    db: DbSession,
+    active_merchant_id: ActiveMerchantId,
+) -> PaymentLinkCreateResponse:
+    result = PaymentService(db).send_balance_for_prospect(
+        current_user, prospect_id, merchant_id=active_merchant_id
+    )
+    if result.email_sent:
+        message = "Enviamos el link de pago al cliente para completar el saldo hasta 3000 USD."
+    else:
+        message = (
+            "Link listo. No se pudo enviar el email — compartilo manualmente "
+            "para que el cliente complete el pago."
+        )
+    return PaymentLinkCreateResponse(
+        link=result.link,
+        message=message,
+        email_sent=result.email_sent,
+    )
 
 
 @router.post("/{prospect_id}/convert", response_model=ProspectConvertResponse)

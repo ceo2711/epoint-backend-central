@@ -26,8 +26,16 @@ from app.schemas.payment import (
     PaymentRegisterClientRequest,
     PublicPaymentLinkResponse,
 )
+from app.services.payments.amounts import (
+    STANDARD_INITIAL_PAYMENT,
+    is_open_payment,
+    is_payment_satisfied,
+    remaining_amount,
+    remaining_to_standard,
+)
 from app.services.clients import ClientService
 from app.services.email.payment_link import PaymentLinkEmailPayload, send_payment_link_email
+from app.services.email.payment_reminder import PaymentReminderEmailPayload, send_payment_reminder_email
 from app.services.notifications.service import NotificationService
 from app.services.payments.authorize_provider import AuthorizePaymentProvider
 from app.services.payments.base import PaymentProviderError
@@ -116,6 +124,9 @@ class PaymentService:
             customer_email=link.customer_email,
             customer_phone=link.customer_phone,
             amount=link.amount,
+            amount_paid=link.amount_paid or Decimal("0.00"),
+            remaining_amount=remaining_amount(link),
+            allow_partial=bool(link.allow_partial),
             currency=link.currency,
             provider=link.provider,  # type: ignore[arg-type]
             status=link.status,  # type: ignore[arg-type]
@@ -174,8 +185,25 @@ class PaymentService:
         rows = self.db.execute(stmt).unique().scalars().all()
         return [self._to_response(row) for row in rows], int(total)
 
+    @staticmethod
+    def normalize_create_amount(*, allow_partial: bool, amount: Decimal) -> Decimal:
+        """Pago inicial: 3000 USD fijos, salvo que se marque parcial (monto menor)."""
+        if not allow_partial:
+            return STANDARD_INITIAL_PAYMENT
+        if amount <= 0 or amount >= STANDARD_INITIAL_PAYMENT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Con pago parcial el monto debe ser mayor a 0 y menor a 3000 USD",
+            )
+        return amount
+
     def create_link(
-        self, user: User, payload: PaymentLinkCreate, *, merchant_id: int
+        self,
+        user: User,
+        payload: PaymentLinkCreate,
+        *,
+        merchant_id: int,
+        standardize_amount: bool = True,
     ) -> PaymentLinkCreateResult:
         self.ensure_access(user)
         if not self.settings.payments_enabled:
@@ -184,6 +212,31 @@ class PaymentService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Proveedor no disponible. Usa Authorize.net o PayPal.",
+            )
+
+        amount = (
+            self.normalize_create_amount(allow_partial=bool(payload.allow_partial), amount=payload.amount)
+            if standardize_amount
+            else payload.amount
+        )
+        if standardize_amount and not payload.allow_partial and payload.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            prospect_svc = ProspectService(self.db)
+            prospect = prospect_svc._get_prospect_for_user(
+                user, payload.prospect_id, merchant_id=merchant_id
+            )
+            leftover = remaining_to_standard(prospect_svc.list_linked_payment_links(prospect))
+            if leftover <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Este prospecto ya cubrió el pago inicial de 3000 USD",
+                )
+            amount = leftover
+        if amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El monto debe ser mayor a 0",
             )
 
         token = uuid.uuid4().hex
@@ -195,38 +248,21 @@ class PaymentService:
         external_url: str | None = None
 
         try:
-            # En PAYMENT_TEST no creamos checkout real: el portal aprueba con "Pagar".
+            # El monto lo define el vendedor. En PAYMENT_TEST el portal aprueba con "Pagar".
             if not self.settings.payment_test:
-                if payload.provider == PaymentProvider.AUTHORIZE.value and self.authorize.is_configured:
-                    result = self.authorize.create_checkout_link(
-                        amount=payload.amount,
-                        currency=payload.currency,
-                        customer_email=str(payload.customer_email),
-                        customer_first_name=payload.customer_first_name,
-                        customer_last_name=payload.customer_last_name,
-                        customer_phone=payload.customer_phone,
-                        description=payload.description,
-                        reference_id=token,
-                        return_url=success_url,
-                        cancel_url=cancel_url,
-                    )
-                    external_id = result.external_id
-                    external_url = result.checkout_url
-                elif payload.provider == PaymentProvider.PAYPAL.value and self.paypal.is_configured:
-                    result = self.paypal.create_checkout_link(
-                        amount=payload.amount,
-                        currency=payload.currency,
-                        customer_email=str(payload.customer_email),
-                        customer_first_name=payload.customer_first_name,
-                        customer_last_name=payload.customer_last_name,
-                        customer_phone=payload.customer_phone,
-                        description=payload.description,
-                        reference_id=token,
-                        return_url=success_url,
-                        cancel_url=cancel_url,
-                    )
-                    external_id = result.external_id
-                    external_url = result.checkout_url
+                external_id, external_url = self._create_provider_checkout(
+                    provider=payload.provider,
+                    amount=amount,
+                    currency=payload.currency,
+                    customer_email=str(payload.customer_email),
+                    customer_first_name=payload.customer_first_name,
+                    customer_last_name=payload.customer_last_name,
+                    customer_phone=payload.customer_phone,
+                    description=payload.description,
+                    reference_id=token,
+                    return_url=success_url,
+                    cancel_url=cancel_url,
+                )
         except PaymentProviderError as exc:
             logger.warning("Checkout externo falló (%s); usando portal local", exc)
             if not self.stub_mode:
@@ -249,7 +285,9 @@ class PaymentService:
             customer_last_name=payload.customer_last_name.strip(),
             customer_email=str(payload.customer_email).strip().lower(),
             customer_phone=payload.customer_phone.strip(),
-            amount=payload.amount,
+            amount=amount,
+            amount_paid=Decimal("0.00"),
+            allow_partial=bool(payload.allow_partial),
             currency=payload.currency.upper(),
             provider=payload.provider,
             status=PaymentLinkStatus.PENDING.value,
@@ -273,24 +311,7 @@ class PaymentService:
 
         email_sent = False
         if payload.send_email:
-            merchant_name: str | None = None
-            if merchant_id:
-                merchant_row = self.db.get(Merchant, merchant_id)
-                merchant_name = merchant_row.name if merchant_row else None
-            email_sent = send_payment_link_email(
-                PaymentLinkEmailPayload(
-                    recipient_email=link.customer_email,
-                    first_name=link.customer_first_name,
-                    amount=link.amount,
-                    currency=link.currency,
-                    # Ir directo al checkout (PayPal/Authorize) cuando exista; si no, portal.
-                    payment_url=link.payment_url or portal_url,
-                    provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
-                    payment_link_id=link.id,
-                    description=link.description,
-                    merchant_name=merchant_name,
-                )
-            )
+            email_sent = self._send_link_email(link, merchant_id=merchant_id)
             if not email_sent:
                 logger.warning(
                     "No se pudo enviar email de pago a %s (link_id=%s)",
@@ -303,8 +324,8 @@ class PaymentService:
     def cancel_link(self, user: User, link_id: int, *, merchant_id: int) -> PaymentLinkResponse:
         self.ensure_access(user)
         link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
-        if link.status != PaymentLinkStatus.PENDING.value:
-            raise HTTPException(status_code=400, detail="Solo se pueden cancelar links pendientes")
+        if link.status != PaymentLinkStatus.PENDING.value or remaining_amount(link) < link.amount:
+            raise HTTPException(status_code=400, detail="Solo se pueden cancelar links pendientes sin cobros")
         link.status = PaymentLinkStatus.CANCELLED.value
         if link.prospect_id is not None:
             from app.services.prospects import ProspectService
@@ -314,13 +335,118 @@ class PaymentService:
         self.db.refresh(link)
         return self._to_response(link)
 
+    def _send_link_email(self, link: PaymentLink, *, merchant_id: int | None) -> bool:
+        leftover = remaining_amount(link)
+        payment_url = link.payment_url
+        if not payment_url:
+            return False
+        merchant_name: str | None = None
+        if merchant_id:
+            merchant_row = self.db.get(Merchant, merchant_id)
+            merchant_name = merchant_row.name if merchant_row else None
+        paid = Decimal(link.amount_paid or 0)
+        if paid > 0:
+            return send_payment_reminder_email(
+                PaymentReminderEmailPayload(
+                    recipient_email=link.customer_email,
+                    first_name=link.customer_first_name,
+                    remaining=leftover,
+                    total=link.amount,
+                    paid=paid,
+                    currency=link.currency,
+                    payment_url=payment_url,
+                    payment_link_id=link.id,
+                    description=link.description,
+                    provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+                )
+            )
+        return send_payment_link_email(
+            PaymentLinkEmailPayload(
+                recipient_email=link.customer_email,
+                first_name=link.customer_first_name,
+                amount=leftover or link.amount,
+                currency=link.currency,
+                payment_url=payment_url,
+                provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+                payment_link_id=link.id,
+                description=link.description,
+                merchant_name=merchant_name,
+            )
+        )
+
+    def resend_link_email(
+        self, user: User, link_id: int, *, merchant_id: int
+    ) -> PaymentLinkCreateResult:
+        self.ensure_access(user)
+        link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
+        if not is_open_payment(link):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo se puede reenviar un link pendiente o con saldo",
+            )
+        email_sent = self._send_link_email(link, merchant_id=merchant_id)
+        if not email_sent:
+            logger.warning(
+                "No se pudo reenviar email de pago a %s (link_id=%s)",
+                link.customer_email,
+                link.id,
+            )
+        return PaymentLinkCreateResult(link=self._to_response(link), email_sent=email_sent)
+
+    def send_balance_for_prospect(
+        self, user: User, prospect_id: int, *, merchant_id: int
+    ) -> PaymentLinkCreateResult:
+        """Reenvía el link abierto o crea uno por el saldo hasta 3000 USD."""
+        from app.services.prospects import ProspectService
+
+        self.ensure_access(user)
+        prospect_svc = ProspectService(self.db)
+        prospect = prospect_svc._get_prospect_for_user(user, prospect_id, merchant_id=merchant_id)
+        links = prospect_svc.list_linked_payment_links(prospect)
+        leftover = remaining_to_standard(links)
+        if leftover <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este prospecto ya cubrió el pago inicial de 3000 USD",
+            )
+        open_link = next((link for link in links if is_open_payment(link)), None)
+        if open_link is not None:
+            email_sent = self._send_link_email(open_link, merchant_id=merchant_id)
+            if not email_sent:
+                logger.warning(
+                    "No se pudo enviar email de saldo a %s (link_id=%s)",
+                    open_link.customer_email,
+                    open_link.id,
+                )
+            return PaymentLinkCreateResult(link=self._to_response(open_link), email_sent=email_sent)
+
+        last = links[0] if links else None
+        provider = last.provider if last else self.settings.payments_default_provider_normalized
+        if provider not in ACTIVE_PROVIDERS:
+            provider = PaymentProvider.AUTHORIZE.value
+        payload = PaymentLinkCreate(
+            customer_first_name=prospect.first_name,
+            customer_last_name=prospect.last_name,
+            customer_email=prospect.email,
+            customer_phone=prospect.phone,
+            amount=leftover,
+            provider=provider,  # type: ignore[arg-type]
+            prospect_id=prospect.id,
+            send_email=True,
+            allow_partial=False,
+            description="Saldo para completar el pago inicial de USD 3000",
+        )
+        return self.create_link(user, payload, merchant_id=merchant_id, standardize_amount=False)
+
     def get_public_link(self, token: str) -> PublicPaymentLinkResponse:
         link = self._get_link_by_token(token)
-        can_pay = link.status == PaymentLinkStatus.PENDING.value and self.settings.payments_enabled
+        leftover = remaining_amount(link)
+        can_pay = is_open_payment(link) and self.settings.payments_enabled
         checkout_url = link.external_checkout_url if not self.stub_mode else None
         hosted_payment_token: str | None = None
         if (
             not self.stub_mode
+            and not link.allow_partial
             and link.provider == PaymentProvider.AUTHORIZE.value
             and link.external_checkout_id
         ):
@@ -331,6 +457,9 @@ class PaymentService:
             customer_last_name=link.customer_last_name,
             customer_email=link.customer_email,
             amount=link.amount,
+            amount_paid=link.amount_paid or Decimal("0.00"),
+            remaining_amount=leftover,
+            allow_partial=bool(link.allow_partial),
             currency=link.currency,
             provider=link.provider,  # type: ignore[arg-type]
             status=link.status,  # type: ignore[arg-type]
@@ -343,9 +472,79 @@ class PaymentService:
             provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
         )
 
-    def complete_public_payment(self, token: str) -> PublicPaymentLinkResponse:
+    def prepare_public_checkout(
+        self,
+        token: str,
+        *,
+        amount: Decimal | None = None,
+    ) -> PublicPaymentLinkResponse:
         link = self._get_link_by_token(token)
-        if link.status != PaymentLinkStatus.PENDING.value:
+        charge = self._resolve_charge_amount(link, amount)
+        if self.stub_mode or self.settings.payment_test:
+            link.pending_charge_amount = charge
+            self.db.commit()
+            return self.get_public_link(token)
+
+        portal_url = f"{self.settings.portal_base_url}/pagar/{link.public_token}"
+        try:
+            external_id, external_url = self._create_provider_checkout(
+                provider=link.provider,
+                amount=charge,
+                currency=link.currency,
+                customer_email=link.customer_email,
+                customer_first_name=link.customer_first_name,
+                customer_last_name=link.customer_last_name,
+                customer_phone=link.customer_phone,
+                description=link.description,
+                reference_id=link.public_token,
+                return_url=f"{portal_url}?paid=1",
+                cancel_url=portal_url,
+            )
+        except PaymentProviderError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        if not external_url and not external_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No hay un checkout disponible para este proveedor",
+            )
+        link.pending_charge_amount = charge
+        link.external_checkout_id = external_id
+        link.external_checkout_url = external_url
+        self.db.commit()
+        leftover = remaining_amount(link)
+        hosted_payment_token = None
+        checkout_url = external_url
+        if link.provider == PaymentProvider.AUTHORIZE.value and external_id:
+            hosted_payment_token = external_id
+            checkout_url = self.authorize.hosted_base
+        return PublicPaymentLinkResponse(
+            customer_first_name=link.customer_first_name,
+            customer_last_name=link.customer_last_name,
+            customer_email=link.customer_email,
+            amount=link.amount,
+            amount_paid=link.amount_paid or Decimal("0.00"),
+            remaining_amount=leftover,
+            allow_partial=bool(link.allow_partial),
+            currency=link.currency,
+            provider=link.provider,  # type: ignore[arg-type]
+            status=link.status,  # type: ignore[arg-type]
+            description=link.description,
+            stub_mode=self.stub_mode,
+            payment_test=self.settings.payment_test,
+            can_pay=True,
+            checkout_url=checkout_url,
+            hosted_payment_token=hosted_payment_token,
+            provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+        )
+
+    def complete_public_payment(
+        self,
+        token: str,
+        *,
+        amount: Decimal | None = None,
+    ) -> PublicPaymentLinkResponse:
+        link = self._get_link_by_token(token)
+        if not is_open_payment(link):
             raise HTTPException(status_code=400, detail="Este link ya no está disponible para pago")
         if not self.stub_mode:
             if link.provider == PaymentProvider.PAYPAL.value and link.external_checkout_id:
@@ -356,7 +555,7 @@ class PaymentService:
                 status_code=400,
                 detail="El pago debe completarse en el checkout del proveedor",
             )
-        self._mark_paid(link)
+        self._apply_received_payment(link, charged=self._resolve_charge_amount(link, amount))
         self.db.commit()
         return self.get_public_link(token)
 
@@ -372,8 +571,8 @@ class PaymentService:
         if link.provider == PaymentProvider.AUTHORIZE.value:
             # Authorize redirige a ?paid=1 solo después de pagar (botón Continuar).
             # El webhook puede haber marcado paid; si sigue pending, lo confirmamos acá.
-            if link.status == PaymentLinkStatus.PENDING.value:
-                self._mark_paid(link)
+            if is_open_payment(link):
+                self._apply_received_payment(link)
                 self.db.commit()
             return self.get_public_link(token)
         raise HTTPException(status_code=400, detail="Este link no admite confirmación de retorno")
@@ -391,8 +590,8 @@ class PaymentService:
             custom_id = resource.get("custom_id") or resource.get("invoice_id")
             if custom_id:
                 link = self._get_link_by_token(str(custom_id), raise_if_missing=False)
-                if link and link.status == PaymentLinkStatus.PENDING.value:
-                    self._mark_paid(link)
+                if link and is_open_payment(link):
+                    self._apply_received_payment(link)
                     self.db.commit()
         return {"received": True}
 
@@ -407,8 +606,8 @@ class PaymentService:
             )
             if invoice:
                 link = self._get_link_by_invoice_ref(str(invoice))
-                if link and link.status == PaymentLinkStatus.PENDING.value:
-                    self._mark_paid(link)
+                if link and is_open_payment(link):
+                    self._apply_received_payment(link)
                     self.db.commit()
         return {"received": True}
 
@@ -422,7 +621,7 @@ class PaymentService:
     ) -> tuple[int, str]:
         self.ensure_access(user)
         link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
-        if link.status != PaymentLinkStatus.PAID.value:
+        if not is_payment_satisfied(link):
             raise HTTPException(status_code=400, detail="El pago debe estar completado antes de registrar al cliente")
         if link.client_id is not None:
             raise HTTPException(status_code=400, detail="Este pago ya tiene un cliente registrado")
@@ -478,26 +677,101 @@ class PaymentService:
     def _capture_paypal_if_completed(self, link: PaymentLink) -> None:
         if not link.external_checkout_id or not self.paypal.is_configured:
             return
-        if link.status != PaymentLinkStatus.PENDING.value:
+        if not is_open_payment(link):
             return
         try:
             order = self.paypal.get_order(link.external_checkout_id)
             order_status = str(order.get("status", "")).upper()
             if order_status == "COMPLETED":
-                self._mark_paid(link)
+                self._apply_received_payment(link)
                 return
             if order_status == "APPROVED":
                 capture = self.paypal.capture_order(link.external_checkout_id)
                 if str(capture.get("status", "")).upper() == "COMPLETED":
-                    self._mark_paid(link)
+                    self._apply_received_payment(link)
         except PaymentProviderError as exc:
             logger.warning("No se pudo capturar orden PayPal %s: %s", link.external_checkout_id, exc)
 
-    def _mark_paid(self, link: PaymentLink) -> None:
+    def _resolve_charge_amount(self, link: PaymentLink, amount: Decimal | None) -> Decimal:
+        leftover = remaining_amount(link)
+        if leftover <= 0:
+            raise HTTPException(status_code=400, detail="Este link ya no tiene saldo pendiente")
+        if not is_open_payment(link):
+            raise HTTPException(status_code=400, detail="Este link ya no está disponible para pago")
+        # El link cobra el monto enviado por el vendedor (saldo de este link).
+        charge = leftover
+        if charge <= 0 or charge > leftover:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El monto debe ser mayor a 0 y hasta {link.currency} {leftover:.2f}",
+            )
+        return charge.quantize(Decimal("0.01"))
+
+    def _create_provider_checkout(
+        self,
+        *,
+        provider: str,
+        amount: Decimal,
+        currency: str,
+        customer_email: str,
+        customer_first_name: str,
+        customer_last_name: str,
+        customer_phone: str,
+        description: str | None,
+        reference_id: str,
+        return_url: str,
+        cancel_url: str,
+    ) -> tuple[str | None, str | None]:
+        if provider == PaymentProvider.AUTHORIZE.value and self.authorize.is_configured:
+            result = self.authorize.create_checkout_link(
+                amount=amount,
+                currency=currency,
+                customer_email=customer_email,
+                customer_first_name=customer_first_name,
+                customer_last_name=customer_last_name,
+                customer_phone=customer_phone,
+                description=description,
+                reference_id=reference_id,
+                return_url=return_url,
+                cancel_url=cancel_url,
+            )
+            return result.external_id, result.checkout_url
+        if provider == PaymentProvider.PAYPAL.value and self.paypal.is_configured:
+            result = self.paypal.create_checkout_link(
+                amount=amount,
+                currency=currency,
+                customer_email=customer_email,
+                customer_first_name=customer_first_name,
+                customer_last_name=customer_last_name,
+                customer_phone=customer_phone,
+                description=description,
+                reference_id=reference_id,
+                return_url=return_url,
+                cancel_url=cancel_url,
+            )
+            return result.external_id, result.checkout_url
+        return None, None
+
+    def _apply_received_payment(self, link: PaymentLink, *, charged: Decimal | None = None) -> None:
         if link.status == PaymentLinkStatus.PAID.value:
             return
-        link.status = PaymentLinkStatus.PAID.value
-        link.paid_at = datetime.now(timezone.utc)
+        charge = charged or link.pending_charge_amount or remaining_amount(link)
+        leftover = remaining_amount(link)
+        if charge <= 0:
+            return
+        if charge > leftover:
+            charge = leftover
+        link.amount_paid = Decimal(link.amount_paid or 0) + charge
+        link.pending_charge_amount = None
+        if remaining_amount(link) <= 0:
+            link.status = PaymentLinkStatus.PAID.value
+            link.paid_at = datetime.now(timezone.utc)
+        else:
+            link.status = PaymentLinkStatus.PARTIAL.value
+            if link.paid_at is None:
+                link.paid_at = datetime.now(timezone.utc)
+            link.external_checkout_id = None
+            link.external_checkout_url = None
 
         converted_client = None
         if link.prospect_id is None:
@@ -540,20 +814,32 @@ class PaymentService:
         if not recipients:
             return
 
+        leftover_now = remaining_amount(link)
+        customer = f"{link.customer_first_name} {link.customer_last_name}"
+        if leftover_now > 0:
+            title = "Pago parcial recibido"
+            body = (
+                f"{customer} pagó {link.currency} {charge:.2f} de {link.amount:.2f}. "
+                f"Saldo pendiente: {link.currency} {leftover_now:.2f}."
+            )
+        else:
+            title = "Pago recibido"
+            body = f"{customer} completó el pago de {link.currency} {link.amount:.2f}."
+
         NotificationService(self.db).notify(
             event_type="PAYMENT_LINK_COMPLETED",
             users=recipients,
-            title="Pago recibido",
-            body=(
-                f"{link.customer_first_name} {link.customer_last_name} completó el pago de "
-                f"{link.currency} {link.amount}."
-            ),
+            title=title,
+            body=body,
             payload={
                 "payment_link_id": link.id,
                 "prospect_id": link.prospect_id,
                 "customer_email": link.customer_email,
-                "customer_name": f"{link.customer_first_name} {link.customer_last_name}",
-                "amount": str(link.amount),
+                "customer_name": customer,
+                "amount": str(charge),
+                "total_amount": str(link.amount),
+                "amount_paid": str(link.amount_paid or 0),
+                "remaining_amount": str(leftover_now),
                 "currency": link.currency,
             },
             commit=True,

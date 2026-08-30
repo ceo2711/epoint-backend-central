@@ -105,6 +105,9 @@ class ProspectEnvelopeBrief(ORMBase):
 class ProspectPaymentBrief(ORMBase):
     id: int
     amount: Decimal
+    amount_paid: Decimal = Decimal("0.00")
+    remaining_amount: Decimal | None = None
+    allow_partial: bool = False
     currency: str
     status: str
     payment_url: str

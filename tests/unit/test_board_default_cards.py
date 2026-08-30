@@ -2,7 +2,10 @@ from unittest.mock import MagicMock, patch
 
 from app.constants.default_board_cards import (
     EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL,
+    TAXES_CARD_COLUMN,
+    TAXES_CARD_TITLE,
     default_cards_for_column,
+    is_optional_onboarding_card,
 )
 from app.services.default_board_cards import (
     apply_default_cards_to_board_list,
@@ -16,19 +19,28 @@ from app.services.default_board_cards import (
 def test_client_todo_default_cards():
     cards = default_cards_for_column("Client TO DO")
 
-    assert len(cards) == 4
+    assert len(cards) == 3
     assert cards[0].title == "Reportes: Experian, Equifax y TransUnion"
-    assert cards[1].title == "Informe de Taxes"
-    assert cards[2].title == "Apertura de Cuentas & Freeze"
-    assert cards[3].title == "Lista de bancos con relacion"
+    assert cards[1].title == "Apertura de Cuentas & Freeze"
+    assert cards[2].title == "Lista de bancos con relacion"
     assert cards[0].requires_file_upload is True
-    assert cards[1].requires_file_upload is True
-    assert cards[2].requires_credentials is True
-    assert len(cards[2].comments) == 3
+    assert cards[1].requires_credentials is True
+    assert len(cards[1].comments) == 3
     assert "experian.com" in cards[0].description_md
-    assert "taxes" in cards[1].description_md.lower()
-    assert "2 años fiscales" in cards[1].description_md
-    assert "1-800-456-1244" in cards[2].description_md
+    assert "1-800-456-1244" in cards[1].description_md
+    assert TAXES_CARD_TITLE not in {card.title for card in cards}
+
+
+def test_taxes_card_lives_in_ideas_and_is_optional():
+    cards = default_cards_for_column(TAXES_CARD_COLUMN)
+
+    assert len(cards) == 1
+    assert cards[0].title == TAXES_CARD_TITLE
+    assert cards[0].requires_file_upload is True
+    assert "no es obligatoria" in cards[0].description_md
+    assert "entidad financiera" in cards[0].description_md
+    assert is_optional_onboarding_card(TAXES_CARD_TITLE) is True
+    assert is_optional_onboarding_card("Apertura de Cuentas & Freeze") is False
 
 
 def test_credenciales_default_cards():
@@ -129,7 +141,7 @@ def test_create_board_card_from_default_adds_comments():
     db = MagicMock()
     board_list = MagicMock(id=10)
     author = MagicMock(id=7)
-    card_def = default_cards_for_column("Client TO DO")[2]
+    card_def = default_cards_for_column("Client TO DO")[1]
 
     create_board_card_from_default(
         db,
@@ -150,8 +162,8 @@ def test_apply_default_cards_to_board_list_uses_column_title():
 
     created = apply_default_cards_to_board_list(db, board_list=board_list)
 
-    assert len(created) == 4
-    assert db.add.call_count == 7
+    assert len(created) == 3
+    assert db.add.call_count == 6
 
 
 def test_merge_missing_default_cards_skips_existing_titles():
@@ -160,7 +172,7 @@ def test_merge_missing_default_cards_skips_existing_titles():
     author = MagicMock(id=7)
 
     db.execute.return_value.scalars.return_value.all.side_effect = [
-        ["Informe de Taxes"],
+        ["Reportes: Experian, Equifax y TransUnion"],
         [],
     ]
     db.execute.return_value.scalar_one_or_none.return_value = author
@@ -171,14 +183,13 @@ def test_merge_missing_default_cards_skips_existing_titles():
     ) as create_mock:
         created = merge_missing_default_cards_to_board_list(db, board_list=board_list)
 
-    assert len(created) == 3
+    assert len(created) == 2
     created_titles = {call.kwargs["card_def"].title for call in create_mock.call_args_list}
     assert created_titles == {
-        "Reportes: Experian, Equifax y TransUnion",
         "Apertura de Cuentas & Freeze",
         "Lista de bancos con relacion",
     }
-    assert "Informe de Taxes" not in created_titles
+    assert TAXES_CARD_TITLE not in created_titles
 
 
 def test_resolve_default_comment_author_prefers_system_user():

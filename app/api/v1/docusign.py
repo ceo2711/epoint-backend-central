@@ -9,6 +9,7 @@ from app.schemas.docusign import (
     DocusignEnvelopeResponse,
     DocusignRegisterClientRequest,
     DocusignRegisterClientResponse,
+    DocusignResendReminderResponse,
     DocusignSendEnvelopeRequest,
     DocusignSendEnvelopeResponse,
     DocusignTemplateDetailResponse,
@@ -102,6 +103,33 @@ def send_envelope(
     db: DbSession,
 ) -> DocusignSendEnvelopeResponse:
     return DocusignService(db).send_envelope(current_user, payload, merchant_id=merchant_id)
+
+
+@router.post("/envelopes/{envelope_id}/resend-reminder", response_model=DocusignResendReminderResponse)
+def resend_envelope_signing_reminder(
+    envelope_id: int,
+    current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
+    db: DbSession,
+) -> DocusignResendReminderResponse:
+    envelope, email_sent, docusign_resent = DocusignService(db).resend_signing_reminder(
+        current_user,
+        envelope_id,
+        merchant_id=merchant_id,
+    )
+    if email_sent:
+        message = "Enviamos un recordatorio para que el cliente firme el contrato."
+    else:
+        message = (
+            "No se pudo enviar el email de recordatorio. "
+            "Pedile al cliente que revise el correo de DocuSign."
+        )
+    return DocusignResendReminderResponse(
+        envelope=envelope,
+        message=message,
+        email_sent=email_sent,
+        docusign_resent=docusign_resent,
+    )
 
 
 @router.post("/envelopes/{envelope_id}/sync", response_model=DocusignEnvelopeResponse)

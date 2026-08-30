@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 
 from app.api.deps import ActiveMerchantId, DbSession, get_user_permissions, require_permissions
 from app.models.client import Client
+from app.models.prospect import Prospect
 from app.models.user import User
 from app.schemas.client import (
     ClientApprove,
@@ -52,6 +53,17 @@ router = APIRouter(prefix="/clients", tags=["Clientes"])
 
 def _to_response(client: Client) -> ClientResponse:
     return client_to_response(client)
+
+
+def _source_prospect_statuses(db, client_ids: list[int]) -> dict[int, str]:
+    if not client_ids:
+        return {}
+    rows = db.execute(
+        select(Prospect.converted_client_id, Prospect.status).where(
+            Prospect.converted_client_id.in_(client_ids)
+        )
+    ).all()
+    return {client_id: status for client_id, status in rows if client_id is not None}
 
 
 @router.get("", response_model=PaginatedResponse[ClientResponse])
@@ -101,9 +113,14 @@ def list_clients(
     )
     sync_receiving_inbox(db)
     unread_ids = unread_inbound_client_ids(db, [c.id for c in clients])
+    prospect_statuses = _source_prospect_statuses(db, [c.id for c in clients])
     return PaginatedResponse(
         items=[
-            client_to_response(c, has_unread_inbound_email=c.id in unread_ids)
+            client_to_response(
+                c,
+                has_unread_inbound_email=c.id in unread_ids,
+                source_prospect_status=prospect_statuses.get(c.id),
+            )
             for c in clients
         ],
         total=total,
@@ -256,6 +273,10 @@ def get_client(
             client_id,
             merchant_id=merchant_id,
         )
+    if response.source_prospect is not None:
+        response.source_prospect_status = response.source_prospect.status
+    elif response.source_prospect_status is None:
+        response.source_prospect_status = _source_prospect_statuses(db, [client.id]).get(client.id)
     if not can_view_onboarding:
         response.date_of_birth = None
         response.has_ssn = False

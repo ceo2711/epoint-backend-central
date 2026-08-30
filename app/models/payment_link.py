@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -22,6 +22,7 @@ class PaymentProvider(str, enum.Enum):
 
 class PaymentLinkStatus(str, enum.Enum):
     PENDING = "pending"
+    PARTIAL = "partial"
     PAID = "paid"
     EXPIRED = "expired"
     CANCELLED = "cancelled"
@@ -41,6 +42,9 @@ class PaymentLink(Base):
     customer_email: Mapped[str] = mapped_column(String(255), index=True)
     customer_phone: Mapped[str] = mapped_column(String(30))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    pending_charge_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    allow_partial: Mapped[bool] = mapped_column(Boolean, default=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     provider: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default=PaymentLinkStatus.PENDING.value, index=True)
@@ -49,6 +53,7 @@ class PaymentLink(Base):
     external_checkout_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_checkout_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_payment_reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     client_registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

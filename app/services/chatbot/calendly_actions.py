@@ -267,7 +267,11 @@ class CalendlyChatActions:
         detail = self.calendly.get_event_type_detail(self.user, event_type_uri=uri, user_id=self.user.id)
         return ActionResult(
             handled=True,
-            reply=f"Tipo **{name}**. Dime la **fecha** (DD/MM/AAAA, hoy o mañana).",
+            reply=(
+                f"Tipo **{name}**. Dime la **fecha** (MM/DD/YYYY, hoy o mañana)."
+                if self.locale != "en"
+                else f"Type **{name}**. Tell me the **date** (MM/DD/YYYY, today or tomorrow)."
+            ),
             pending_action=pending,
             calendly_options=self._options(
                 step="date",

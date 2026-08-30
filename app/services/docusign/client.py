@@ -281,6 +281,31 @@ class DocusignClient:
             f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}/recipients",
         )
 
+    def resend_envelope(self, envelope_id: str, *, signer_email: str | None = None) -> None:
+        """Reenvía el correo de firma de DocuSign al firmante."""
+        recipients = self.get_recipients(envelope_id)
+        signers = list(recipients.get("signers") or [])
+        if signer_email:
+            email_norm = signer_email.strip().lower()
+            signers = [
+                signer
+                for signer in signers
+                if (signer.get("email") or "").strip().lower() == email_norm
+            ]
+        payload_signers = [
+            {"recipientId": signer["recipientId"]}
+            for signer in signers
+            if signer.get("recipientId")
+        ]
+        if not payload_signers:
+            raise DocusignApiError("No hay firmantes para reenviar el contrato")
+        self._request(
+            "PUT",
+            f"/v2.1/accounts/{self.account_id}/envelopes/{envelope_id}/recipients",
+            params={"resend_envelope": "true"},
+            json_body={"signers": payload_signers},
+        )
+
     @staticmethod
     def _parse_docusign_datetime(value: str | None) -> datetime | None:
         if not value:

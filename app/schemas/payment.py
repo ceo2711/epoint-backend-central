@@ -4,9 +4,12 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.services.payments.amounts import STANDARD_INITIAL_PAYMENT
+
 
 PaymentProviderLiteral = Literal["authorize", "paypal", "stripe"]
-PaymentLinkStatusLiteral = Literal["pending", "paid", "expired", "cancelled"]
+PaymentLinkStatusLiteral = Literal["pending", "partial", "paid", "expired", "cancelled"]
+DEFAULT_PAYMENT_AMOUNT = STANDARD_INITIAL_PAYMENT
 
 
 class PaymentProviderStatus(BaseModel):
@@ -34,12 +37,13 @@ class PaymentLinkCreate(BaseModel):
     customer_last_name: str = Field(min_length=1, max_length=100)
     customer_email: EmailStr
     customer_phone: str = Field(min_length=5, max_length=30)
-    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    amount: Decimal = Field(default=DEFAULT_PAYMENT_AMOUNT, gt=0, max_digits=12, decimal_places=2)
     currency: str = Field(default="USD", min_length=3, max_length=3)
     provider: PaymentProviderLiteral
     description: str | None = Field(default=None, max_length=2000)
     prospect_id: int | None = None
     send_email: bool = True
+    allow_partial: bool = False
 
 
 class PaymentLinkResponse(BaseModel):
@@ -53,6 +57,9 @@ class PaymentLinkResponse(BaseModel):
     customer_email: str
     customer_phone: str
     amount: Decimal
+    amount_paid: Decimal = Decimal("0.00")
+    remaining_amount: Decimal | None = None
+    allow_partial: bool = False
     currency: str
     provider: PaymentProviderLiteral
     status: PaymentLinkStatusLiteral
@@ -78,6 +85,9 @@ class PublicPaymentLinkResponse(BaseModel):
     customer_last_name: str
     customer_email: str
     amount: Decimal
+    amount_paid: Decimal = Decimal("0.00")
+    remaining_amount: Decimal
+    allow_partial: bool = False
     currency: str
     provider: PaymentProviderLiteral
     status: PaymentLinkStatusLiteral
@@ -88,6 +98,10 @@ class PublicPaymentLinkResponse(BaseModel):
     checkout_url: str | None = None
     hosted_payment_token: str | None = None
     provider_label: str | None = None
+
+
+class PublicPaymentAmountRequest(BaseModel):
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
 
 
 class PaymentRegisterClientRequest(BaseModel):

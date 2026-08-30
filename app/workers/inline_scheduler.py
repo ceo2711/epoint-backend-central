@@ -15,26 +15,66 @@ _scheduler_stop: threading.Event | None = None
 STARTUP_DELAY_SECONDS = 90
 
 
-def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
+def _reminder_loop(
+    interval_minutes: int,
+    stop_event: threading.Event,
+    *,
+    run_onboarding: bool,
+) -> None:
     from app.workers.onboarding_reminders import run_onboarding_reminders_job
     from app.workers.sub_seller_eligibility import run_sub_seller_eligibility_enforcement_job
 
     logger.info(
-        "Recordatorios de onboarding activos — primer ciclo en %s s, luego cada %s min",
+        "Recordatorios activos — primer ciclo en %s s, luego cada %s min (onboarding=%s)",
         STARTUP_DELAY_SECONDS,
         interval_minutes,
+        run_onboarding,
     )
     if stop_event.wait(STARTUP_DELAY_SECONDS):
         return
     while not stop_event.is_set():
         if stop_event.is_set():
             break
+        if run_onboarding:
+            try:
+                run_onboarding_reminders_job(stop_event=stop_event)
+            except Exception:
+                if stop_event.is_set():
+                    break
+                logger.exception("Error en ciclo de recordatorios onboarding")
+
+        if stop_event.is_set():
+            break
         try:
-            run_onboarding_reminders_job(stop_event=stop_event)
+            from app.workers.payment_reminders import run_payment_reminders_job
+
+            run_payment_reminders_job(stop_event=stop_event)
         except Exception:
             if stop_event.is_set():
                 break
-            logger.exception("Error en ciclo de recordatorios onboarding")
+            logger.exception("Error en ciclo de recordatorios de pago")
+
+        if stop_event.is_set():
+            break
+        try:
+            from app.workers.contract_reminders import run_contract_reminders_job
+
+            run_contract_reminders_job(stop_event=stop_event)
+        except Exception:
+            if stop_event.is_set():
+                break
+            logger.exception("Error en ciclo de recordatorios de contrato")
+
+        if stop_event.is_set():
+            break
+        try:
+            from app.workers.board_reminders import run_board_reminders_job
+
+            run_board_reminders_job(stop_event=stop_event)
+        except Exception:
+            if stop_event.is_set():
+                break
+            logger.exception("Error en ciclo de recordatorios de tablero")
 
         if stop_event.is_set():
             break
@@ -52,8 +92,12 @@ def _reminder_loop(interval_minutes: int, stop_event: threading.Event) -> None:
 def start_onboarding_reminder_scheduler(settings: Settings) -> threading.Event | None:
     global _scheduler_thread, _scheduler_stop
 
-    if settings.onboarding_reminder_interval_minutes <= 0:
-        return None
+    run_onboarding = settings.onboarding_reminder_interval_minutes > 0
+    interval_minutes = (
+        settings.onboarding_reminder_interval_minutes
+        if run_onboarding
+        else 60
+    )
 
     with _start_lock:
         if _scheduler_thread is not None and _scheduler_thread.is_alive():
@@ -65,7 +109,8 @@ def start_onboarding_reminder_scheduler(settings: Settings) -> threading.Event |
         stop_event = threading.Event()
         thread = threading.Thread(
             target=_reminder_loop,
-            args=(settings.onboarding_reminder_interval_minutes, stop_event),
+            args=(interval_minutes, stop_event),
+            kwargs={"run_onboarding": run_onboarding},
             daemon=True,
             name="onboarding-reminders",
         )

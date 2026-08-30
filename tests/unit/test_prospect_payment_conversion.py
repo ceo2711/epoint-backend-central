@@ -47,6 +47,23 @@ def test_ready_for_conversion_false_without_signed_contract():
     assert svc._ready_for_conversion(prospect) is False
 
 
+def test_ready_for_conversion_true_with_partial_payment():
+    svc = ProspectService.__new__(ProspectService)
+    svc.db = MagicMock()
+    svc.db.get.return_value = SimpleNamespace(
+        status=PaymentLinkStatus.PARTIAL.value,
+        amount_paid=1000,
+        amount=3000,
+    )
+    svc._seller_marked_contacted = MagicMock(return_value=True)
+    svc.list_linked_envelopes = MagicMock(
+        return_value=[SimpleNamespace(status="completed")],
+    )
+    prospect = _prospect()
+
+    assert svc._ready_for_conversion(prospect) is True
+
+
 def test_ready_for_conversion_true_with_contact_signed_contract_and_payment():
     svc = _paid_service()
     svc._seller_marked_contacted = MagicMock(return_value=True)

@@ -22,7 +22,8 @@ class TestDocusignClientLinking:
 
         onboarding = MagicMock()
         onboarding.id = 9
-        onboarding.role.code = "ONBOARDING_MANAGER"
+        onboarding.role.code = "AREA_LEADER"
+        onboarding.area.code = "ONBOARDING"
 
         assert DocusignService._resolve_sent_by_user_id(onboarding, client) == 42
 

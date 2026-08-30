@@ -118,13 +118,17 @@ def test_run_onboarding_reminders_skips_clients_without_active_portal_user(db_se
     db_session.commit.assert_called_once()
 
 
-def test_scheduler_disabled_when_interval_zero():
+def test_scheduler_starts_when_onboarding_interval_zero():
     settings = Settings(
         database_url="postgresql://test:test@localhost:5432/test",
         jwt_secret_key="test-secret-key-for-unit-tests-only-32chars",
         onboarding_reminder_interval_minutes=0,
     )
-    assert start_onboarding_reminder_scheduler(settings) is None
+    stop_event = start_onboarding_reminder_scheduler(settings)
+    assert stop_event is not None
+    from app.workers.inline_scheduler import stop_onboarding_reminder_scheduler
+
+    stop_onboarding_reminder_scheduler()
 
 
 def test_scheduler_starts_when_interval_positive():

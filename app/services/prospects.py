@@ -19,6 +19,13 @@ from app.models.enums import (
 )
 from app.models.merchant import Merchant
 from app.models.payment_link import PaymentLink, PaymentLinkStatus
+from app.services.payments.amounts import (
+    is_open_payment,
+    is_payment_satisfied,
+    is_standard_initial_complete,
+    paid_total,
+    remaining_to_standard,
+)
 from app.models.prospect import Prospect
 from app.models.prospect_history import ProspectHistory
 from app.models.user import User
@@ -54,6 +61,11 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         ProspectStatus.LEAD_CERRADO.value,
     },
     ProspectStatus.CONTRATO_ENVIADO.value: {
+        ProspectStatus.PAGO_PARCIAL.value,
+        ProspectStatus.PAGO_COMPLETADO.value,
+        ProspectStatus.LEAD_CERRADO.value,
+    },
+    ProspectStatus.PAGO_PARCIAL.value: {
         ProspectStatus.PAGO_COMPLETADO.value,
         ProspectStatus.LEAD_CERRADO.value,
     },
@@ -62,10 +74,15 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 }
 
 # Estados donde el contacto ya ocurrió en el flujo normal (sin saltar pasos).
-# PAGO_COMPLETADO NO implica contacto: el pago puede llegar antes.
+# Un pago (parcial o completo) NO implica contacto: el pago puede llegar antes.
 CONTACT_DONE_STATUSES = frozenset({
     ProspectStatus.LEAD_CONTACTADO.value,
     ProspectStatus.CONTRATO_ENVIADO.value,
+})
+
+PAYMENT_RECEIVED_STATUSES = frozenset({
+    ProspectStatus.PAGO_PARCIAL.value,
+    ProspectStatus.PAGO_COMPLETADO.value,
 })
 
 CONVERSION_REQUIREMENTS_DETAIL = (
@@ -198,6 +215,14 @@ class ProspectService:
             if linked is not None:
                 rows.insert(0, linked)
         return rows
+
+    def _status_from_payments(self, prospect: Prospect) -> str | None:
+        links = self.list_linked_payment_links(prospect)
+        if paid_total(links) <= 0:
+            return None
+        if is_standard_initial_complete(links):
+            return ProspectStatus.PAGO_COMPLETADO.value
+        return ProspectStatus.PAGO_PARCIAL.value
 
     def create_prospect(
         self,
@@ -427,7 +452,7 @@ class ProspectService:
         )
         self.db.commit()
         self.db.refresh(prospect)
-        if new_status == ProspectStatus.PAGO_COMPLETADO.value:
+        if new_status in PAYMENT_RECEIVED_STATUSES:
             self.try_auto_convert(prospect.id, actor=actor)
         return prospect
 
@@ -453,9 +478,9 @@ class ProspectService:
         target = ProspectStatus.LEAD_CONTACTADO.value
 
         # Caso raro: pago llegó antes del contacto. El vendedor debe poder marcar
-        # contactado sin bajar el estado de PAGO_COMPLETADO.
+        # contactado sin bajar el estado de pago (parcial o completo).
         if (
-            current == ProspectStatus.PAGO_COMPLETADO.value
+            current in PAYMENT_RECEIVED_STATUSES
             and not self._seller_marked_contacted(prospect)
         ):
             self._add_history(
@@ -725,10 +750,10 @@ class ProspectService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El email del link de pago no coincide con el del prospecto",
             )
-        if link.status != PaymentLinkStatus.PENDING.value:
+        if not is_open_payment(link):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Solo se puede vincular un link de pago pendiente. Los links pagados no se reasignan.",
+                detail="Solo se puede vincular un link de pago pendiente o con saldo. Los links pagados no se reasignan.",
             )
         if link.prospect_id is not None and link.prospect_id != prospect.id:
             raise HTTPException(
@@ -754,22 +779,43 @@ class ProspectService:
         previous = prospect.status
         # El pago actualiza el estado, pero NUNCA implica que el vendedor contactó.
         # Contactado solo lo marca el vendedor (mark_contacted / historial LEAD_CONTACTADO).
-        if previous != ProspectStatus.PAGO_COMPLETADO.value:
-            prospect.status = ProspectStatus.PAGO_COMPLETADO.value
-            early_payment = previous in {
-                ProspectStatus.PENDIENTE_CONTACTAR.value,
-                ProspectStatus.LEAD_CONTACTADO.value,
-            }
+        target = self._status_from_payments(prospect)
+        if target is None:
+            return None
+        early_payment = previous in {
+            ProspectStatus.PENDIENTE_CONTACTAR.value,
+            ProspectStatus.LEAD_CONTACTADO.value,
+        }
+        links = self.list_linked_payment_links(prospect)
+        paid = paid_total(links)
+        leftover = remaining_to_standard(links)
+        if target == ProspectStatus.PAGO_PARCIAL.value:
+            event_type = ProspectHistoryEventType.PAYMENT_PARTIAL.value
+            prefix = (
+                "Pago parcial recibido (antes de contacto/contrato). "
+                if early_payment
+                else "Pago parcial recibido. "
+            )
+            note = (
+                f"{prefix}Pagado {link.currency} {paid:.2f} de "
+                f"{link.currency} 3000.00. Saldo: {link.currency} {leftover:.2f}."
+            )
+        else:
+            event_type = ProspectHistoryEventType.PAYMENT_COMPLETED.value
             note = (
                 "Pago completado (antes de contacto/contrato; el vendedor debe "
                 "marcar contactado y completar el pipeline)"
-                if early_payment
+                if early_payment and previous != ProspectStatus.PAGO_PARCIAL.value
                 else "Pago completado"
             )
+            if previous == ProspectStatus.PAGO_PARCIAL.value:
+                note = "Saldo cancelado — pago completo"
+        if previous != target or target == ProspectStatus.PAGO_PARCIAL.value:
+            prospect.status = target
             self._add_history(
                 prospect,
                 actor=actor,
-                event_type=ProspectHistoryEventType.PAYMENT_COMPLETED.value,
+                event_type=event_type,
                 from_status=previous,
                 to_status=prospect.status,
                 note=note,
@@ -872,13 +918,14 @@ class ProspectService:
 
         previous_status = prospect.status
         prospect.converted_client_id = client.id
-        prospect.status = ProspectStatus.PAGO_COMPLETADO.value
+        payment_status = self._status_from_payments(prospect) or ProspectStatus.PAGO_PARCIAL.value
+        prospect.status = payment_status
         self._add_history(
             prospect,
             actor=actor,
             event_type=ProspectHistoryEventType.CONVERTED.value,
             from_status=previous_status,
-            to_status=ProspectStatus.PAGO_COMPLETADO.value,
+            to_status=payment_status,
             note=f"Convertido a cliente #{client.id}",
         )
         self.audit.log(
@@ -1064,14 +1111,16 @@ class ProspectService:
 
         1. El vendedor marcó contactado
         2. Hay un contrato firmado
-        3. Hay un pago completado
+        3. Hay un pago (completo o parcial)
         """
-        if prospect.status != ProspectStatus.PAGO_COMPLETADO.value:
+        if prospect.status not in PAYMENT_RECEIVED_STATUSES:
             return False
         if prospect.payment_link_id is None:
             return False
         link = self.db.get(PaymentLink, prospect.payment_link_id)
-        if link is None or link.status != PaymentLinkStatus.PAID.value:
+        if link is None:
+            return False
+        if not is_payment_satisfied(link):
             return False
         if not self._seller_marked_contacted(prospect):
             return False

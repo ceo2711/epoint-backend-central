@@ -120,7 +120,7 @@ def test_bulk_register_saves_first_and_reports_duplicate_failures(merchant):
 
     def create_side_effect(**kwargs):
         if kwargs["first_name"] == "Ramon":
-            return created
+            return created, None
         raise HTTPException(
             status_code=409,
             detail="El email ya está registrado por Ramon Silva Paez (cliente #101)",

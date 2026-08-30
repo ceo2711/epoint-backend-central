@@ -97,15 +97,19 @@ Colocar una lista de los bancos con los que tiene alguna relación, bien sea tar
 - Tarjetas de crédito
 - Incluso cuentas o bancos cerrados"""
 
+TAXES_CARD_TITLE = "Informe de Taxes"
+TAXES_CARD_COLUMN = "Ideas a realizar"
+
 _CLIENT_TODO_TAXES_DESCRIPTION = """**Descripción**
 
-Sube tu informe de taxes de los **últimos 2 años fiscales** (Tax Return / declaración de impuestos o Tax Transcript del IRS) en PDF o imagen clara.
+Esta tarjeta **no es obligatoria para completar el onboarding**.
 
-**Requisitos:**
+El informe de taxes (Tax Return / declaración de impuestos o Tax Transcript del IRS de los últimos 2 años fiscales) se pide **solo cuando una entidad financiera lo requiera** más adelante.
+
+Cuando te lo soliciten:
+- Subí un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe oficial)
 - Debe verse el nombre del contribuyente
-- Debe ser un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe de taxes oficial)
 - Cubre los últimos 2 años fiscales
-- Prefiere archivos recién generados o del año fiscal correspondiente
 
 Si el archivo no es un informe de taxes válido, será rechazado y deberás volver a subirlo."""
 
@@ -253,15 +257,9 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             requires_file_upload=True,
         ),
         DefaultBoardCard(
-            title="Informe de Taxes",
-            description_md=_CLIENT_TODO_TAXES_DESCRIPTION,
-            position=1,
-            requires_file_upload=True,
-        ),
-        DefaultBoardCard(
             title="Apertura de Cuentas & Freeze",
             description_md=_CLIENT_TODO_ACCOUNTS_DESCRIPTION,
-            position=2,
+            position=1,
             requires_credentials=True,
             comments=(
                 DefaultBoardCardComment(body=_CHEXSYSTEMS_COMMENT),
@@ -272,7 +270,15 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
         DefaultBoardCard(
             title="Lista de bancos con relacion",
             description_md=_CLIENT_TODO_BANKS_DESCRIPTION,
-            position=3,
+            position=2,
+        ),
+    ),
+    TAXES_CARD_COLUMN: (
+        DefaultBoardCard(
+            title=TAXES_CARD_TITLE,
+            description_md=_CLIENT_TODO_TAXES_DESCRIPTION,
+            position=0,
+            requires_file_upload=True,
         ),
     ),
     "Credenciales": (
@@ -379,3 +385,13 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
 
 def default_cards_for_column(column_title: str) -> tuple[DefaultBoardCard, ...]:
     return DEFAULT_BOARD_CARDS_BY_COLUMN.get(column_title, ())
+
+
+def is_taxes_card(title: str | None) -> bool:
+    normalized = (title or "").strip().lower()
+    return "tax" in normalized or "impuesto" in normalized
+
+
+def is_optional_onboarding_card(title: str | None) -> bool:
+    """Cards que no bloquean el cierre del onboarding (p. ej. taxes a pedido)."""
+    return is_taxes_card(title)
