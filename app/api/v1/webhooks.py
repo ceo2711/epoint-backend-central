@@ -57,5 +57,6 @@ async def resend_inbound_webhook(request: Request, db: DbSession) -> dict[str, A
         html_body=html_body,
         resend_email_id=email_id,
         to_emails=parsed["to_emails"],
+        created_at=parsed.get("created_at"),
     )
     return {"ok": True, "ingested": row is not None}

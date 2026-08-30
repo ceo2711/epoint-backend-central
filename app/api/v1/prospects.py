@@ -435,39 +435,56 @@ def send_prospect_email(
     return MessageResponse(message=f"Email enviado a {prospect.email}")
 
 
-@router.get("/{prospect_id}/emails", response_model=list[SentEmailResponse])
+@router.get("/{prospect_id}/emails", response_model=PaginatedResponse[SentEmailResponse])
 def list_prospect_emails(
     prospect_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("prospects:read"))],
     active_merchant_id: ActiveMerchantId,
-) -> list[SentEmailResponse]:
-    from sqlalchemy import select
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=50),
+) -> PaginatedResponse[SentEmailResponse]:
+    from sqlalchemy import func, select
     from sqlalchemy.orm import joinedload
 
     service = ProspectService(db)
     prospect = service._get_prospect_for_user(current_user, prospect_id, merchant_id=active_merchant_id)
+    filters = SentEmail.prospect_id == prospect.id
+    total = int(
+        db.execute(select(func.count()).select_from(SentEmail).where(filters)).scalar_one()
+    )
     rows = (
         db.execute(
             select(SentEmail)
             .options(joinedload(SentEmail.sent_by))
-            .where(SentEmail.prospect_id == prospect.id)
-            .order_by(SentEmail.created_at.desc())
+            .where(filters)
+            .order_by(SentEmail.created_at.desc(), SentEmail.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
         .scalars()
         .all()
     )
-    return [
+    items = [
         SentEmailResponse(
             id=row.id,
             subject=row.subject,
             message_html=row.message_html,
             recipient_email=row.recipient_email,
-            sent_by_name=f"{row.sent_by.first_name} {row.sent_by.last_name}".strip(),
+            sent_by_name=f"{row.sent_by.first_name} {row.sent_by.last_name}".strip()
+            if row.sent_by
+            else "",
             created_at=row.created_at,
         )
         for row in rows
     ]
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=max(1, math.ceil(total / page_size)) if total else 1,
+    )
 
 
 @router.post("/{prospect_id}/link-calendly", response_model=ProspectResponse)

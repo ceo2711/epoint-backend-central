@@ -334,19 +334,28 @@ def send_client_email(
     return MessageResponse(message=f"Email enviado a {client.email}")
 
 
-@router.get("/{client_id}/emails", response_model=list[SentEmailResponse])
+@router.get("/{client_id}/emails", response_model=PaginatedResponse[SentEmailResponse])
 def list_client_emails(
     client_id: int,
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
     merchant_id: ActiveMerchantId,
-) -> list[SentEmailResponse]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=50),
+) -> PaginatedResponse[SentEmailResponse]:
     service = ClientService(db)
     client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     sync_receiving_inbox(db)
-    return list_client_thread(db, client)
+    items, total = list_client_thread(db, client, page=page, page_size=page_size)
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=max(1, math.ceil(total / page_size)) if total else 1,
+    )
 
 
 @router.post("/{client_id}/emails/mark-read", response_model=MessageResponse)

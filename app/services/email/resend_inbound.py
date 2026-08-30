@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import logging
+from datetime import datetime
 from typing import Any, Mapping
 
 from app.core.config import Settings, get_settings
@@ -65,6 +66,9 @@ def parse_resend_inbound_payload(payload: dict[str, Any]) -> dict[str, Any]:
         data.get("id") if data.get("object") == "email" else None,
         payload.get("email_id"),
     )
+    created_at = _parse_datetime(
+        data.get("created_at") or payload.get("created_at")
+    )
 
     return {
         "from_email": _extract_email(from_raw),
@@ -73,6 +77,7 @@ def parse_resend_inbound_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "text": text,
         "html": html_body,
         "resend_email_id": email_id or None,
+        "created_at": created_at,
     }
 
 
@@ -113,13 +118,16 @@ def sync_receiving_inbox(db, settings: Settings | None = None, *, limit: int = 2
     if not settings.resend_inbound_sync or not settings.resend_api_key:
         return 0
     ingested = 0
-    for item in list_receiving_emails(settings, limit=limit):
+    receiving = list(reversed(list_receiving_emails(settings, limit=limit)))
+    for item in receiving:
         email_id = _first_str(item.get("id"), item.get("email_id"))
         detail = fetch_receiving_email(email_id, settings) if email_id else None
         source = detail or item
         parsed = parse_resend_inbound_payload(source)
         if email_id and not parsed["resend_email_id"]:
             parsed["resend_email_id"] = email_id
+        if parsed.get("created_at") is None:
+            parsed["created_at"] = _parse_datetime(item.get("created_at"))
         text = parsed["text"]
         html_body = parsed["html"] or None
         if not text and not html_body and email_id and detail is None:
@@ -132,6 +140,7 @@ def sync_receiving_inbox(db, settings: Settings | None = None, *, limit: int = 2
             html_body=html_body,
             resend_email_id=parsed["resend_email_id"],
             to_emails=parsed["to_emails"],
+            created_at=parsed.get("created_at"),
         )
         if row is not None:
             ingested += 1
@@ -171,6 +180,17 @@ def _header(headers: Mapping[str, str], name: str) -> str:
         if key.lower() == name.lower():
             return str(value or "").strip()
     return ""
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _first_str(*values: Any) -> str:

@@ -24,15 +24,37 @@ from app.services.notifications.service import NotificationService
 
 logger = logging.getLogger(__name__)
 
+# Cabecera de cita de Gmail/Outlook, incluso si el From parte la línea.
 _QUOTE_SPLIT = re.compile(
-    r"\n(?:On .+wrote:|El .+escribió:|-{2,} ?Original Message ?-{2,}|_{2,}\s*$)",
-    re.IGNORECASE | re.MULTILINE,
+    r"\n(?:On [\s\S]{0,240}?wrote:|El [\s\S]{0,240}?escribi[oó]:|"
+    r"-{2,}\s*Original Message\s*-{2,}|_{5,}\s*$)",
+    re.IGNORECASE,
+)
+_GMAIL_QUOTE_HTML = re.compile(
+    r'<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>.*$',
+    re.IGNORECASE | re.DOTALL,
+)
+_BLOCKQUOTE_HTML = re.compile(
+    r"<blockquote\b[^>]*>.*$",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
 def normalize_email(value: str) -> str:
     _, addr = parseaddr((value or "").strip())
     return (addr or value).strip().lower()
+
+
+def html_to_text(html_body: str) -> str:
+    text = (html_body or "").replace("\r\n", "\n")
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</(?:p|div|tr|h[1-6]|li)>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def strip_quoted_reply(text: str) -> str:
@@ -50,22 +72,45 @@ def strip_quoted_reply(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def extract_client_reply(text: str, html_body: str | None = None) -> str:
+    """Deja solo el mensaje nuevo del cliente, sin la cita del mail original."""
+    html_src = html_body or ""
+    without_quotes = _GMAIL_QUOTE_HTML.sub("", html_src)
+    without_quotes = _BLOCKQUOTE_HTML.sub("", without_quotes)
+    for candidate in (
+        strip_quoted_reply(text),
+        strip_quoted_reply(html_to_text(without_quotes)),
+        strip_quoted_reply(html_to_text(html_src)),
+    ):
+        if candidate:
+            return candidate
+    return ""
+
+
 def html_from_plain(text: str) -> str:
     escaped = html.escape(text).replace("\n", "<br />")
     return f"<p>{escaped}</p>" if escaped else "<p></p>"
 
 
+def inbound_display_html(text: str, html_body: str | None = None) -> str:
+    cleaned = extract_client_reply(text, html_body)
+    return html_from_plain(cleaned or "(sin texto)")
+
+
 def serialize_sent_email(row: SentEmail, *, client_name: str = "") -> SentEmailResponse:
     if row.direction == EMAIL_DIRECTION_INBOUND:
         sender = client_name or row.from_email or row.recipient_email
-    elif row.sent_by is not None:
-        sender = f"{row.sent_by.first_name} {row.sent_by.last_name}".strip()
+        message_html = inbound_display_html("", row.message_html)
     else:
-        sender = ""
+        message_html = row.message_html
+        if row.sent_by is not None:
+            sender = f"{row.sent_by.first_name} {row.sent_by.last_name}".strip()
+        else:
+            sender = ""
     return SentEmailResponse(
         id=row.id,
         subject=row.subject,
-        message_html=row.message_html,
+        message_html=message_html,
         recipient_email=row.recipient_email,
         sent_by_name=sender,
         created_at=row.created_at,
@@ -90,20 +135,32 @@ def unread_inbound_client_ids(db: Session, client_ids: list[int]) -> set[int]:
     return {int(client_id) for (client_id,) in rows if client_id is not None}
 
 
-def list_client_thread(db: Session, client: Client) -> list[SentEmailResponse]:
+def list_client_thread(
+    db: Session,
+    client: Client,
+    *,
+    page: int = 1,
+    page_size: int = 15,
+) -> tuple[list[SentEmailResponse], int]:
     name = f"{client.first_name} {client.last_name}".strip()
+    filters = SentEmail.client_id == client.id
+    total = int(
+        db.execute(select(func.count()).select_from(SentEmail).where(filters)).scalar_one()
+    )
     rows = (
         db.execute(
             select(SentEmail)
             .options(joinedload(SentEmail.sent_by))
-            .where(SentEmail.client_id == client.id)
-            .order_by(SentEmail.created_at.desc())
+            .where(filters)
+            .order_by(SentEmail.created_at.desc(), SentEmail.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
         .unique()
         .scalars()
         .all()
     )
-    return [serialize_sent_email(row, client_name=name) for row in rows]
+    return [serialize_sent_email(row, client_name=name) for row in rows], total
 
 
 def mark_client_inbound_read(db: Session, client_id: int) -> int:
@@ -130,6 +187,7 @@ def ingest_inbound_client_email(
     html_body: str | None,
     resend_email_id: str | None,
     to_emails: list[str] | None = None,
+    created_at: datetime | None = None,
 ) -> SentEmail | None:
     sender = normalize_email(from_email)
     if not sender or "@" not in sender:
@@ -141,6 +199,9 @@ def ingest_inbound_client_email(
             select(SentEmail).where(SentEmail.resend_email_id == resend_email_id)
         ).scalar_one_or_none()
         if existing is not None:
+            if created_at is not None and existing.created_at != created_at:
+                existing.created_at = created_at
+                db.commit()
             return existing
 
     from app.models.client_assignment import ClientAssignment
@@ -158,13 +219,8 @@ def ingest_inbound_client_email(
         logger.info("Inbound email sin cliente para %s", sender)
         return None
 
-    body_text = strip_quoted_reply(text) or strip_quoted_reply(
-        re.sub(r"<[^>]+>", " ", html_body or "")
-    )
-    message_html = html_body.strip() if html_body and html_body.strip() else html_from_plain(body_text)
-    if not body_text and not html_body:
-        body_text = "(sin texto)"
-        message_html = html_from_plain(body_text)
+    body_text = extract_client_reply(text, html_body) or "(sin texto)"
+    message_html = html_from_plain(body_text)
 
     row = SentEmail(
         client_id=client.id,
@@ -176,6 +232,8 @@ def ingest_inbound_client_email(
         resend_email_id=resend_email_id,
         sent_by_user_id=None,
     )
+    if created_at is not None:
+        row.created_at = created_at
     db.add(row)
     db.flush()
 

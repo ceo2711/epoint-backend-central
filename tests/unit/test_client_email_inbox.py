@@ -4,7 +4,9 @@ import hmac
 from unittest.mock import MagicMock, patch
 
 from app.services.client_email_inbox import (
+    extract_client_reply,
     ingest_inbound_client_email,
+    inbound_display_html,
     normalize_email,
     strip_quoted_reply,
 )
@@ -28,6 +30,50 @@ def test_strip_quoted_reply_drops_quoted_lines():
     assert strip_quoted_reply(body) == "Listo, gracias."
 
 
+_GMAIL_REPLY_ES = """\
+sdfsdfsdfsdfsdfsdfsdfzdsgdfgdfg
+
+El sáb, 29 ago 2026 a las 22:41, Epoint Corporation (<notificaciones@mail.epointcorporation.com>) escribió:
+Epoint Corporation
+Epoint Corporation
+
+asfdklsjadhfglkdsjhgfkjsdfhgdfg
+Hola Eliangi Liduvina,
+
+dfgdfgdfgdfgdfgdfg
+Eberths Perozo
+Epoint Corporation
+
+Si tienes dudas de la plataforma, visita soporte técnico o responde este correo: tu mensaje llega al equipo en Epoint.
+
+© Epoint Corporation
+"""
+
+
+def test_strip_quoted_reply_gmail_spanish_header():
+    assert strip_quoted_reply(_GMAIL_REPLY_ES) == "sdfsdfsdfsdfsdfsdfsdfzdsgdfgdfg"
+
+
+def test_extract_client_reply_from_html_template():
+    html_body = """
+    <div dir="ltr">sdfsdfsdfsdfsdfsdfsdfzdsgdfgdfg</div>
+    <div class="gmail_quote">
+      <div class="gmail_attr">El sáb, 29 ago 2026 a las 22:41, Epoint Corporation
+      (&lt;notificaciones@mail.epointcorporation.com&gt;) escribió:<br></div>
+      <blockquote>Epoint Corporation<br>asfdklsjadhfglkdsjhgfkjsdfhgdfg
+      <p>Si tienes dudas de la plataforma</p></blockquote>
+    </div>
+    """
+    assert extract_client_reply("", html_body) == "sdfsdfsdfsdfsdfsdfsdfzdsgdfgdfg"
+
+
+def test_inbound_display_html_omits_original_template():
+    html = inbound_display_html(_GMAIL_REPLY_ES, None)
+    assert "sdfsdfsdfsdfsdfsdfsdfzdsgdfgdfg" in html
+    assert "Si tienes dudas de la plataforma" not in html
+    assert "asfdklsjadhfglkdsjhgfkjsdfhgdfg" not in html
+
+
 def test_parse_fixture_payload():
     parsed = parse_resend_inbound_payload(
         {
@@ -44,6 +90,21 @@ def test_parse_fixture_payload():
     assert parsed["subject"] == "Re: Bienvenida"
     assert parsed["text"] == "Hola equipo"
     assert parsed["resend_email_id"] == "re_fixture_1"
+    assert parsed["created_at"] is None
+
+
+def test_parse_resend_created_at():
+    parsed = parse_resend_inbound_payload(
+        {
+            "from": "alex@example.com",
+            "subject": "Re: Hola",
+            "created_at": "2026-08-29T22:41:00.000Z",
+        }
+    )
+    assert parsed["created_at"] is not None
+    assert parsed["created_at"].year == 2026
+    assert parsed["created_at"].month == 8
+    assert parsed["created_at"].day == 29
 
 
 def test_parse_resend_event_payload():
