@@ -14,6 +14,10 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class InboxSyncResponse(BaseModel):
+    ingested: int
+
+
 class SendCustomEmailRequest(BaseModel):
     subject: str
     message_html: str

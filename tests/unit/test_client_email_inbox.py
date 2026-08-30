@@ -216,6 +216,7 @@ def test_ingest_creates_inbound_and_notifies(mock_client_service_cls, mock_notif
     service = mock_client_service_cls.return_value
     service._get_active_advisors.return_value = [advisor]
     service._get_mentionable_onboarding.return_value = [onboarding]
+    mock_notify_cls.return_value.notify.return_value = []
 
     result = ingest_inbound_client_email(
         db,

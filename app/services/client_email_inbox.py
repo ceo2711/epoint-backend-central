@@ -250,9 +250,10 @@ def ingest_inbound_client_email(
         seen.add(user.id)
         recipients.append(user)
 
+    created_notifications = []
     if recipients:
         preview = body_text.replace("\n", " ").strip()[:140] or "(sin texto)"
-        NotificationService(db).notify(
+        created_notifications = NotificationService(db).notify(
             event_type=NotificationEventType.CLIENT_EMAIL_RECEIVED.value,
             users=recipients,
             title="Nuevo email del cliente",
@@ -262,5 +263,9 @@ def ingest_inbound_client_email(
         )
 
     db.commit()
+    if created_notifications:
+        from app.services.notifications.hub import notification_hub
+
+        notification_hub.publish_in_app(created_notifications)
     db.refresh(row)
     return row

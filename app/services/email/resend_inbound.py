@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import time
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -110,17 +111,54 @@ def list_receiving_emails(settings: Settings | None = None, *, limit: int = 20) 
     return items if isinstance(items, list) else []
 
 
-def sync_receiving_inbox(db, settings: Settings | None = None, *, limit: int = 20) -> int:
+_last_sync_monotonic = 0.0
+_SYNC_COOLDOWN_SECONDS = 15
+
+
+def sync_receiving_inbox(
+    db,
+    settings: Settings | None = None,
+    *,
+    limit: int = 20,
+    force: bool = False,
+) -> int:
     """Importa Receiving → hilo local. Para local/dev sin túnel de webhook."""
+    from sqlalchemy import select
+
+    from app.models.sent_email import SentEmail
     from app.services.client_email_inbox import ingest_inbound_client_email
 
     settings = settings or get_settings()
     if not settings.resend_inbound_sync or not settings.resend_api_key:
         return 0
+
+    global _last_sync_monotonic
+    now = time.monotonic()
+    if not force and now - _last_sync_monotonic < _SYNC_COOLDOWN_SECONDS:
+        return 0
+    _last_sync_monotonic = now
+
+    receiving = list_receiving_emails(settings, limit=limit)
+    email_ids = [
+        email_id
+        for item in receiving
+        if (email_id := _first_str(item.get("id"), item.get("email_id")))
+    ]
+    existing_ids: set[str] = set()
+    if email_ids:
+        existing_ids = set(
+            db.execute(
+                select(SentEmail.resend_email_id).where(SentEmail.resend_email_id.in_(email_ids))
+            )
+            .scalars()
+            .all()
+        )
+
     ingested = 0
-    receiving = list(reversed(list_receiving_emails(settings, limit=limit)))
-    for item in receiving:
+    for item in reversed(receiving):
         email_id = _first_str(item.get("id"), item.get("email_id"))
+        if email_id and email_id in existing_ids:
+            continue
         detail = fetch_receiving_email(email_id, settings) if email_id else None
         source = detail or item
         parsed = parse_resend_inbound_payload(source)
@@ -142,8 +180,10 @@ def sync_receiving_inbox(db, settings: Settings | None = None, *, limit: int = 2
             to_emails=parsed["to_emails"],
             created_at=parsed.get("created_at"),
         )
-        if row is not None:
+        if row is not None and (not email_id or email_id not in existing_ids):
             ingested += 1
+            if email_id:
+                existing_ids.add(email_id)
     return ingested
 
 

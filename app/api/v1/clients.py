@@ -26,6 +26,7 @@ from app.schemas.client import (
 )
 from app.models.sent_email import SentEmail
 from app.schemas.common import (
+    InboxSyncResponse,
     MessageResponse,
     PaginatedResponse,
     SendCustomEmailRequest,
@@ -98,6 +99,7 @@ def list_clients(
         onboarding_only=onboarding_only,
         sales_rep_id=sales_rep_id,
     )
+    sync_receiving_inbox(db)
     unread_ids = unread_inbound_client_ids(db, [c.id for c in clients])
     return PaginatedResponse(
         items=[
@@ -166,6 +168,15 @@ def get_client_stats(
 ) -> ClientStatsResponse:
     service = ClientService(db)
     return ClientStatsResponse(**service.get_client_stats(current_user, merchant_id=merchant_id))
+
+
+@router.post("/inbox/sync", response_model=InboxSyncResponse)
+def sync_client_inbox(
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+) -> InboxSyncResponse:
+    ingested = sync_receiving_inbox(db)
+    return InboxSyncResponse(ingested=ingested)
 
 
 @router.post("/bulk-delete", response_model=ClientBulkDeleteResponse)
@@ -347,7 +358,7 @@ def list_client_emails(
     client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    sync_receiving_inbox(db)
+    sync_receiving_inbox(db, force=True)
     items, total = list_client_thread(db, client, page=page, page_size=page_size)
     return PaginatedResponse(
         items=items,
