@@ -163,17 +163,21 @@ def list_client_thread(
     return [serialize_sent_email(row, client_name=name) for row in rows], total
 
 
-def mark_client_inbound_read(db: Session, client_id: int) -> int:
+def mark_client_inbound_read(
+    db: Session,
+    client_id: int,
+    *,
+    email_id: int | None = None,
+) -> int:
     now = datetime.now(timezone.utc)
-    result = db.execute(
-        update(SentEmail)
-        .where(
-            SentEmail.client_id == client_id,
-            SentEmail.direction == EMAIL_DIRECTION_INBOUND,
-            SentEmail.read_at.is_(None),
-        )
-        .values(read_at=now)
-    )
+    filters = [
+        SentEmail.client_id == client_id,
+        SentEmail.direction == EMAIL_DIRECTION_INBOUND,
+        SentEmail.read_at.is_(None),
+    ]
+    if email_id is not None:
+        filters.append(SentEmail.id == email_id)
+    result = db.execute(update(SentEmail).where(*filters).values(read_at=now))
     db.commit()
     return int(result.rowcount or 0)
 

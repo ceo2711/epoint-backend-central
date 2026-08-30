@@ -375,12 +375,13 @@ def mark_client_emails_read(
     db: DbSession,
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
     merchant_id: ActiveMerchantId,
+    email_id: int | None = Query(None),
 ) -> MessageResponse:
     service = ClientService(db)
     client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    marked = mark_client_inbound_read(db, client.id)
+    marked = mark_client_inbound_read(db, client.id, email_id=email_id)
     return MessageResponse(message=f"{marked} mensajes marcados como leídos")
 
 
