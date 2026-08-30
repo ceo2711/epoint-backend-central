@@ -34,6 +34,12 @@ from app.schemas.common import (
 from app.services.email import CustomMessageEmailPayload, send_custom_message_email
 from app.services.email.custom_message import sanitize_message_html
 from app.serializers.client import client_to_response
+from app.services.client_email_inbox import (
+    list_client_thread,
+    mark_client_inbound_read,
+    unread_inbound_client_ids,
+)
+from app.services.email.resend_inbound import sync_receiving_inbox
 from app.services.clients import ClientService
 from app.services.merchant_context import MerchantContextService
 from app.services.prospects import ProspectService
@@ -92,8 +98,12 @@ def list_clients(
         onboarding_only=onboarding_only,
         sales_rep_id=sales_rep_id,
     )
+    unread_ids = unread_inbound_client_ids(db, [c.id for c in clients])
     return PaginatedResponse(
-        items=[_to_response(c) for c in clients],
+        items=[
+            client_to_response(c, has_unread_inbound_email=c.id in unread_ids)
+            for c in clients
+        ],
         total=total,
         page=page,
         page_size=page_size,
@@ -331,33 +341,27 @@ def list_client_emails(
     current_user: Annotated[User, Depends(require_permissions("clients:read"))],
     merchant_id: ActiveMerchantId,
 ) -> list[SentEmailResponse]:
-    from sqlalchemy.orm import joinedload
-
     service = ClientService(db)
     client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    rows = (
-        db.execute(
-            select(SentEmail)
-            .options(joinedload(SentEmail.sent_by))
-            .where(SentEmail.client_id == client.id)
-            .order_by(SentEmail.created_at.desc())
-        )
-        .scalars()
-        .all()
-    )
-    return [
-        SentEmailResponse(
-            id=row.id,
-            subject=row.subject,
-            message_html=row.message_html,
-            recipient_email=row.recipient_email,
-            sent_by_name=f"{row.sent_by.first_name} {row.sent_by.last_name}".strip(),
-            created_at=row.created_at,
-        )
-        for row in rows
-    ]
+    sync_receiving_inbox(db)
+    return list_client_thread(db, client)
+
+
+@router.post("/{client_id}/emails/mark-read", response_model=MessageResponse)
+def mark_client_emails_read(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> MessageResponse:
+    service = ClientService(db)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    marked = mark_client_inbound_read(db, client.id)
+    return MessageResponse(message=f"{marked} mensajes marcados como leídos")
 
 
 @router.post("/{client_id}/resubmit", response_model=ClientResponse)

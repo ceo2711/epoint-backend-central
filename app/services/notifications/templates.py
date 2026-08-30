@@ -55,7 +55,7 @@ Contraseña temporal: {temp_password}
 
 En tu primer ingreso deberás cambiar la contraseña temporal.
 {app_block}
-Si tienes alguna consulta, responde a este correo o contacta a tu asesor Epoint.
+Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
 
 Saludos,
 Equipo Epoint
@@ -116,7 +116,7 @@ Client portal: {portal_login_url}
 
 If you already uploaded a document, it may be under review. If it was rejected, please upload it again from the documents section.
 
-If you have any questions, reply to this email or contact your Epoint advisor.
+If you have platform questions, visit https://epointsolution.com/ or reply to this email: your message reaches the Epoint team in the app.
 
 Best regards,
 Epoint Team
@@ -133,7 +133,7 @@ Portal del cliente: {portal_login_url}
 
 Si ya subiste algún documento, puede estar en revisión. Si fue rechazado, vuelve a subirlo desde la sección de documentos.
 
-Ante cualquier duda, responde a este correo o contacta a tu asesor Epoint.
+Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
 
 Saludos,
 Equipo Epoint
@@ -188,7 +188,7 @@ Monto a pagar: {amount_formatted}
 Completa tu pago en el siguiente enlace:
 {payment_url}
 
-Si tienes alguna consulta sobre este pago, responde a este correo o contacta a tu asesor Epoint.
+Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
 
 Saludos,
 Equipo Epoint
@@ -213,6 +213,9 @@ Confirmamos que tu pago de {amount_formatted} se procesó exitosamente y que com
 Tu perfil pasará ahora a revisión por parte de nuestro equipo de Onboarding. Una vez que sea aprobado, nos contactaremos con vos por este mismo medio para informarte los próximos pasos.
 
 Gracias por elegirnos.
+
+Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
+
 Equipo Epoint
 """
 

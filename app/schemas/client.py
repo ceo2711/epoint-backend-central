@@ -120,6 +120,7 @@ class ClientResponse(ORMBase):
         default=False,
         description="True cuando el cliente ya puede ver/usar el tablero del portal",
     )
+    has_unread_inbound_email: bool = False
 
 class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False

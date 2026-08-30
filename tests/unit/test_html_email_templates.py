@@ -52,6 +52,8 @@ def test_render_payment_link_template_substitutes_placeholders():
     assert "PayPal" in html
     assert "Completar pago" in html
     assert "{{PAYMENT_URL}}" not in html
+    assert "soporte técnico" in html
+    assert "https://epointsolution.com/" in html
 
 
 def test_render_client_conversion_welcome_template_substitutes_placeholders():

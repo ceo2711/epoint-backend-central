@@ -26,6 +26,9 @@ class SentEmailResponse(BaseModel):
     recipient_email: str
     sent_by_name: str
     created_at: datetime
+    direction: str = "OUTBOUND"
+    read_at: datetime | None = None
+    from_email: str | None = None
 
 
 class PaginatedResponse(BaseModel, Generic[T]):

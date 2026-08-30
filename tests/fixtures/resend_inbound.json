@@ -1,0 +1,8 @@
+{
+  "from": "Alex Rivera <demo.client@epoint.com>",
+  "to": ["soporte@epointsolution.com"],
+  "subject": "Re: Bienvenida a Epoint",
+  "text": "Hola, necesito ayuda con el portal.\n\nOn Mon, Epoint wrote:\n> Bienvenido",
+  "html": "<p>Hola, necesito ayuda con el portal.</p>",
+  "email_id": "re_local_fixture_1"
+}

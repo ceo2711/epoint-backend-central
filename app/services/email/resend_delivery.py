@@ -91,6 +91,15 @@ def send_resend_text_email(
         }
         if html:
             payload["html"] = body_prefix + html
+        reply_to = settings.email_reply_to.strip()
+        if reply_to:
+            payload["reply_to"] = reply_to
+        else:
+            logger.warning(
+                "EMAIL_REPLY_TO vacío: la respuesta del cliente irá a %s "
+                "(dominio de envío, sin MX). El hilo inbound no va a recibirla.",
+                settings.email_from,
+            )
 
         response: Any = resend.Emails.send(payload)
         logger.info(

@@ -54,6 +54,24 @@ def test_send_resend_text_email_redirects_recipient(mock_send: MagicMock, monkey
 
 
 @patch("resend.Emails.send")
+def test_send_resend_text_email_includes_reply_to(mock_send: MagicMock, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "false")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("EMAIL_REPLY_TO", "soporte@epointsolution.com")
+    monkeypatch.delenv("EMAIL_DEV_REDIRECT_TO", raising=False)
+    mock_send.return_value = {"id": "email_123"}
+
+    assert send_resend_text_email(
+        intended_recipient="cliente@ejemplo.com",
+        subject="Test",
+        text="Hola",
+    ) is True
+
+    call_args = mock_send.call_args[0][0]
+    assert call_args["reply_to"] == "soporte@epointsolution.com"
+
+
+@patch("resend.Emails.send")
 def test_send_resend_text_email_sandbox_error_is_warning_not_exception(
     mock_send: MagicMock,
     monkeypatch,

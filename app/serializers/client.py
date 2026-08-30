@@ -24,7 +24,11 @@ def client_signed_contract_brief(client: Client) -> ClientSignedContractBrief | 
     )
 
 
-def client_to_response(client: Client) -> ClientResponse:
+def client_to_response(
+    client: Client,
+    *,
+    has_unread_inbound_email: bool = False,
+) -> ClientResponse:
     merchant = None
     if client.merchant:
         merchant = MerchantBrief.model_validate(client.merchant)
@@ -73,6 +77,7 @@ def client_to_response(client: Client) -> ClientResponse:
         docusign_contract_signed_at=client.docusign_contract_signed_at,
         signed_contract=client_signed_contract_brief(client),
         board_unlocked=_compute_board_unlocked(client),
+        has_unread_inbound_email=has_unread_inbound_email,
     )
 
 

@@ -94,6 +94,24 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
     email_from_name: str = "Epoint Corporation"
+    email_reply_to: str = Field(
+        default="",
+        validation_alias=AliasChoices("EMAIL_REPLY_TO"),
+    )
+    email_support_url: str = Field(
+        default="https://epointsolution.com/",
+        validation_alias=AliasChoices("EMAIL_SUPPORT_URL"),
+    )
+    resend_webhook_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("RESEND_WEBHOOK_SECRET"),
+    )
+    # Local/dev: al abrir el hilo, lee Receiving en Resend (no hace falta túnel).
+    # Requiere API key con acceso completo, no "Sending access".
+    resend_inbound_sync: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("RESEND_INBOUND_SYNC"),
+    )
     # URL absoluta del logo en emails. Si está vacía, se usa el endpoint público del backend
     # o, en su defecto, {FRONTEND_URL}/epoint-logo.png (debe ser accesible desde internet).
     email_logo_url: str = Field(

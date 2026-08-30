@@ -25,8 +25,13 @@ def _load_template(name: str) -> str:
 
 def render_html_template(name: str, **variables: str) -> str:
     """Sustituye placeholders {{KEY}} en la plantilla HTML."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    support = (settings.email_support_url or "https://epointsolution.com/").strip()
+    merged = {"SUPPORT_URL": support or "https://epointsolution.com/", **variables}
     content = _load_template(name)
-    for key, value in variables.items():
+    for key, value in merged.items():
         token = f"{{{{{key}}}}}"
         content = content.replace(token, str(value))
     return content
