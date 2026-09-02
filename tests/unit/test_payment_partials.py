@@ -1,11 +1,14 @@
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.models.payment_link import PaymentLinkStatus
+from app.schemas.payment import PaymentLinkCreate
 from app.services.payment_reminders import run_payment_reminders
 from app.services.payments.amounts import (
     STANDARD_INITIAL_PAYMENT,
@@ -24,6 +27,7 @@ def _link(**kwargs):
         "status": PaymentLinkStatus.PENDING.value,
         "allow_partial": True,
         "currency": "USD",
+        "remainder_due_on": None,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -77,8 +81,6 @@ def test_status_from_payments_is_completed_at_standard():
 
 
 def test_payment_reminders_skip_within_cooldown():
-    from datetime import datetime, timedelta, timezone
-
     recent = datetime.now(timezone.utc) - timedelta(hours=1)
     link = _link(
         customer_email="ana@example.com",
@@ -90,6 +92,7 @@ def test_payment_reminders_skip_within_cooldown():
         id=7,
         status=PaymentLinkStatus.PARTIAL.value,
         amount_paid=Decimal("1000"),
+        remainder_due_on=date.today() - timedelta(days=1),
     )
     db = MagicMock()
     db.execute.return_value.scalars.return_value.all.return_value = [link]
@@ -103,8 +106,6 @@ def test_payment_reminders_skip_within_cooldown():
 
 
 def test_payment_reminders_skip_recently_created_link():
-    from datetime import datetime, timedelta, timezone
-
     recent = datetime.now(timezone.utc) - timedelta(minutes=5)
     link = _link(
         customer_email="ana@example.com",
@@ -117,6 +118,7 @@ def test_payment_reminders_skip_recently_created_link():
         id=8,
         status=PaymentLinkStatus.PENDING.value,
         amount_paid=Decimal("0"),
+        remainder_due_on=None,
     )
     db = MagicMock()
     db.execute.return_value.scalars.return_value.all.return_value = [link]
@@ -127,6 +129,143 @@ def test_payment_reminders_skip_recently_created_link():
     send.assert_not_called()
     assert summary["skipped"] == 1
     assert summary["sent"] == 0
+
+
+def _remindable_partial(**kwargs):
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    defaults = {
+        "customer_email": "ana@example.com",
+        "customer_first_name": "Ana",
+        "payment_url": "https://example.com/pay",
+        "last_payment_reminder_at": old,
+        "created_at": old,
+        "description": None,
+        "provider": "authorize",
+        "id": 11,
+        "status": PaymentLinkStatus.PARTIAL.value,
+        "amount_paid": Decimal("1000"),
+        "remainder_due_on": None,
+    }
+    defaults.update(kwargs)
+    return _link(**defaults)
+
+
+def test_payment_reminders_skip_partial_without_due_date():
+    link = _remindable_partial()
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email") as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+    assert summary["sent"] == 0
+
+
+def test_payment_reminders_skip_partial_before_due_date():
+    link = _remindable_partial(remainder_due_on=date.today() + timedelta(days=20))
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email") as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+    assert summary["sent"] == 0
+
+
+def test_payment_reminders_send_partial_after_due_date():
+    link = _remindable_partial(remainder_due_on=date.today() - timedelta(days=1))
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email", return_value=True) as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_called_once()
+    assert summary["sent"] == 1
+
+
+def test_payment_reminders_skip_balance_link_before_due_date():
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    link = _link(
+        customer_email="ana@example.com",
+        customer_first_name="Ana",
+        payment_url="https://example.com/pay",
+        last_payment_reminder_at=None,
+        created_at=old,
+        description=None,
+        provider="authorize",
+        id=12,
+        status=PaymentLinkStatus.PENDING.value,
+        amount_paid=Decimal("0"),
+        allow_partial=False,
+        remainder_due_on=date.today() + timedelta(days=10),
+        amount=Decimal("2000.00"),
+    )
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email") as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+
+
+def test_payment_reminders_send_first_pending_after_cooldown():
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    link = _link(
+        customer_email="ana@example.com",
+        customer_first_name="Ana",
+        payment_url="https://example.com/pay",
+        last_payment_reminder_at=None,
+        created_at=old,
+        description=None,
+        provider="authorize",
+        id=13,
+        status=PaymentLinkStatus.PENDING.value,
+        amount_paid=Decimal("0"),
+        remainder_due_on=date.today() + timedelta(days=20),
+        allow_partial=True,
+    )
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email", return_value=True) as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_called_once()
+    assert summary["sent"] == 1
+
+
+def test_partial_create_requires_remainder_due_on():
+    with pytest.raises(ValidationError):
+        PaymentLinkCreate(
+            customer_first_name="Ana",
+            customer_last_name="Lopez",
+            customer_email="ana@example.com",
+            customer_phone="5551234567",
+            amount=Decimal("1000.00"),
+            provider="authorize",
+            allow_partial=True,
+        )
+
+
+def test_partial_create_rejects_past_remainder_due_on():
+    with pytest.raises(ValidationError):
+        PaymentLinkCreate(
+            customer_first_name="Ana",
+            customer_last_name="Lopez",
+            customer_email="ana@example.com",
+            customer_phone="5551234567",
+            amount=Decimal("1000.00"),
+            provider="authorize",
+            allow_partial=True,
+            remainder_due_on=date.today() - timedelta(days=3),
+        )
 
 
 def test_normalize_full_payment_is_always_3000():

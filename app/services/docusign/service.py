@@ -1174,10 +1174,10 @@ class DocusignService:
 
         self.ensure_access(actor)
         row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
-        if (row.status or "").lower() not in UNSIGNED_ENVELOPE_STATUSES:
+        if (row.status or "").lower() not in UNSIGNED_ENVELOPE_STATUSES or row.sent_at is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Solo se puede recordar un contrato pendiente de firma",
+                detail="Solo se puede recordar un contrato que ya fue enviado y aún no está firmado",
             )
         email_sent, docusign_resent = send_unsigned_contract_reminder(row)
         if email_sent:

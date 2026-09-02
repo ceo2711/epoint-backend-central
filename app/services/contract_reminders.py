@@ -15,7 +15,7 @@ from app.services.email.contract_reminder import ContractReminderEmailPayload, s
 
 logger = logging.getLogger(__name__)
 
-UNSIGNED_ENVELOPE_STATUSES = frozenset({"sent", "delivered", "created"})
+UNSIGNED_ENVELOPE_STATUSES = frozenset({"sent", "delivered"})
 
 
 def signer_first_name(signer_name: str) -> str:
@@ -26,7 +26,10 @@ def signer_first_name(signer_name: str) -> str:
 def fetch_unsigned_envelopes(db: Session) -> list[DocusignEnvelope]:
     return list(
         db.execute(
-            select(DocusignEnvelope).where(DocusignEnvelope.status.in_(UNSIGNED_ENVELOPE_STATUSES))
+            select(DocusignEnvelope).where(
+                DocusignEnvelope.status.in_(UNSIGNED_ENVELOPE_STATUSES),
+                DocusignEnvelope.sent_at.isnot(None),
+            )
         )
         .scalars()
         .all()
@@ -86,15 +89,21 @@ def run_contract_reminders(db: Session) -> dict:
 
     for envelope in fetch_unsigned_envelopes(db):
         processed += 1
+        status = (envelope.status or "").lower()
+        if status not in UNSIGNED_ENVELOPE_STATUSES or envelope.sent_at is None:
+            skipped += 1
+            continue
         if not envelope.signer_email:
             skipped += 1
             continue
         last = envelope.last_contract_reminder_at or envelope.sent_at
-        if last is not None:
-            last_aware = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
-            if now - last_aware < cooldown:
-                skipped += 1
-                continue
+        if last is None:
+            skipped += 1
+            continue
+        last_aware = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        if now - last_aware < cooldown:
+            skipped += 1
+            continue
 
         email_sent, _docusign_resent = send_unsigned_contract_reminder(envelope)
         if email_sent:

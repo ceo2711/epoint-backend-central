@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +23,27 @@ REMINDABLE_STATUSES = (
 )
 
 
+def is_waiting_on_agreed_remainder(link: PaymentLink) -> bool:
+    """True si ya hubo un primer pago y falta el saldo acordado.
+
+    El primer cobro pendiente (aunque el link permita parcial) se recuerda
+    con el cooldown habitual. El saldo restante espera `remainder_due_on`.
+    """
+    paid = Decimal(str(link.amount_paid or 0))
+    if paid > 0:
+        return True
+    if getattr(link, "remainder_due_on", None) is not None and not bool(link.allow_partial):
+        return True
+    return False
+
+
+def remainder_due_reached(link: PaymentLink, today: date | None = None) -> bool:
+    due = getattr(link, "remainder_due_on", None)
+    if due is None:
+        return False
+    return due <= (today or datetime.now(timezone.utc).date())
+
+
 def fetch_remindable_payment_links(db: Session) -> list[PaymentLink]:
     return list(
         db.execute(
@@ -36,6 +58,7 @@ def run_payment_reminders(db: Session) -> dict:
     settings = get_settings()
     cooldown = timedelta(hours=max(1, settings.payment_reminder_cooldown_hours))
     now = datetime.now(timezone.utc)
+    today = now.date()
 
     processed = 0
     sent = 0
@@ -46,6 +69,9 @@ def run_payment_reminders(db: Session) -> dict:
         processed += 1
         leftover = remaining_amount(link)
         if leftover <= 0 or not link.customer_email:
+            skipped += 1
+            continue
+        if is_waiting_on_agreed_remainder(link) and not remainder_due_reached(link, today):
             skipped += 1
             continue
         last = link.last_payment_reminder_at or link.created_at

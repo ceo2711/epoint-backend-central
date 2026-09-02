@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -134,6 +134,7 @@ class PaymentService:
             payment_url=link.payment_url,
             external_checkout_url=link.external_checkout_url,
             paid_at=link.paid_at,
+            remainder_due_on=getattr(link, "remainder_due_on", None),
             client_registered_at=link.client_registered_at,
             created_at=link.created_at,
             created_by_name=created_by_name,
@@ -288,6 +289,7 @@ class PaymentService:
             amount=amount,
             amount_paid=Decimal("0.00"),
             allow_partial=bool(payload.allow_partial),
+            remainder_due_on=payload.remainder_due_on,
             currency=payload.currency.upper(),
             provider=payload.provider,
             status=PaymentLinkStatus.PENDING.value,
@@ -424,6 +426,10 @@ class PaymentService:
         provider = last.provider if last else self.settings.payments_default_provider_normalized
         if provider not in ACTIVE_PROVIDERS:
             provider = PaymentProvider.AUTHORIZE.value
+        remainder_due_on = next(
+            (link.remainder_due_on for link in links if getattr(link, "remainder_due_on", None) is not None),
+            None,
+        )
         payload = PaymentLinkCreate(
             customer_first_name=prospect.first_name,
             customer_last_name=prospect.last_name,
@@ -434,6 +440,7 @@ class PaymentService:
             prospect_id=prospect.id,
             send_email=True,
             allow_partial=False,
+            remainder_due_on=remainder_due_on,
             description="Saldo para completar el pago inicial de USD 3000",
         )
         return self.create_link(user, payload, merchant_id=merchant_id, standardize_amount=False)

@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.services.payments.amounts import STANDARD_INITIAL_PAYMENT
 
@@ -44,6 +44,16 @@ class PaymentLinkCreate(BaseModel):
     prospect_id: int | None = None
     send_email: bool = True
     allow_partial: bool = False
+    remainder_due_on: date | None = None
+
+    @model_validator(mode="after")
+    def remainder_due_required_for_partial(self):
+        if self.allow_partial:
+            if self.remainder_due_on is None:
+                raise ValueError("Indicá la fecha acordada para completar el saldo")
+            if self.remainder_due_on < datetime.now(timezone.utc).date() - timedelta(days=1):
+                raise ValueError("La fecha para completar el saldo no puede ser anterior a hoy")
+        return self
 
 
 class PaymentLinkResponse(BaseModel):
@@ -67,6 +77,7 @@ class PaymentLinkResponse(BaseModel):
     payment_url: str
     external_checkout_url: str | None
     paid_at: datetime | None
+    remainder_due_on: date | None = None
     client_registered_at: datetime | None
     created_at: datetime
     created_by_name: str | None = None

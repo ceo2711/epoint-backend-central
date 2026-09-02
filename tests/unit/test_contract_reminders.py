@@ -80,3 +80,47 @@ def test_contract_reminders_send_after_cooldown():
     send.assert_called_once()
     assert summary["sent"] == 1
     assert envelope.last_contract_reminder_at is not None
+
+
+def test_contract_reminders_skip_created_draft_envelope():
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    envelope = SimpleNamespace(
+        id=9,
+        signer_email="ana@example.com",
+        signer_name="Ana López",
+        subject="Contrato Epoint",
+        status="created",
+        sent_at=old,
+        last_contract_reminder_at=None,
+    )
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [envelope]
+
+    with patch("app.services.contract_reminders.send_unsigned_contract_reminder") as send:
+        summary = run_contract_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+    assert summary["sent"] == 0
+
+
+def test_contract_reminders_skip_without_sent_at():
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    envelope = SimpleNamespace(
+        id=9,
+        signer_email="ana@example.com",
+        signer_name="Ana López",
+        subject="Contrato Epoint",
+        status="sent",
+        sent_at=None,
+        last_contract_reminder_at=None,
+    )
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [envelope]
+
+    with patch("app.services.contract_reminders.send_unsigned_contract_reminder") as send:
+        summary = run_contract_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+    assert summary["sent"] == 0

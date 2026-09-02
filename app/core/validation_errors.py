@@ -18,6 +18,7 @@ FIELD_LABELS: dict[str, str] = {
     "year": "Año",
     "color": "Color",
     "reason": "Motivo",
+    "remainder_due_on": "Fecha acordada para completar el saldo",
 }
 
 EXPLICIT_MESSAGES: dict[tuple[str, str], str] = {

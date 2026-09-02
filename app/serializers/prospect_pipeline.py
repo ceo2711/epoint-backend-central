@@ -38,6 +38,7 @@ def payment_brief(link) -> ProspectPaymentBrief:
         status=link.status,
         payment_url=link.payment_url,
         paid_at=link.paid_at,
+        remainder_due_on=getattr(link, "remainder_due_on", None),
         created_at=link.created_at,
     )
 

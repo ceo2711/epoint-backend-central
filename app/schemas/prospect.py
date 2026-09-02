@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -112,6 +112,7 @@ class ProspectPaymentBrief(ORMBase):
     status: str
     payment_url: str
     paid_at: datetime | None = None
+    remainder_due_on: date | None = None
     created_at: datetime
 
 
