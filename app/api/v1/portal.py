@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -20,6 +20,7 @@ from app.schemas.client import (
     ClientResponse,
     ClientSsnResponse,
     DocumentBrief,
+    OnboardingGapsResponse,
     ProfileUpdate,
     VehicleCreate,
     VehicleResponse,
@@ -30,6 +31,8 @@ from app.services.address import AddressProviderError, get_address_provider
 from app.services.client_onboarding_status import sync_client_onboarding_status
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
+from app.services.onboarding_completeness import analyze_onboarding_gaps
+from app.services.sensitive_documents import assert_sensitive_ssn_access
 
 router = APIRouter(prefix="/portal", tags=["Portal del cliente"])
 
@@ -80,6 +83,7 @@ def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
     client = _load_client(db, client_id) or client
     doc_service = DocumentService(db)
     base = client_to_response(client)
+    gaps = analyze_onboarding_gaps(db, client)
     return ClientDetailResponse(
         **base.model_dump(),
         addresses=[AddressResponse.model_validate(a) for a in client.addresses],
@@ -87,6 +91,12 @@ def portal_me(current_user: CurrentUser, db: DbSession) -> ClientDetailResponse:
         documents=[
             doc_service.to_brief(d, include_download_url=False) for d in client.documents
         ],
+        onboarding_gaps=OnboardingGapsResponse(
+            profile_fields=gaps.profile_keys,
+            missing_documents=gaps.missing_document_keys,
+            rejected_documents=gaps.rejected_document_keys,
+            expiring_documents=gaps.expiring_document_keys,
+        ),
     )
 
 
@@ -106,8 +116,13 @@ def portal_documents(current_user: CurrentUser, db: DbSession) -> list[DocumentB
 
 
 @router.get("/ssn", response_model=ClientSsnResponse)
-def portal_ssn(current_user: CurrentUser, db: DbSession) -> ClientSsnResponse:
+def portal_ssn(
+    current_user: CurrentUser,
+    db: DbSession,
+    x_sensitive_access: str | None = Header(default=None, alias="X-Sensitive-Access"),
+) -> ClientSsnResponse:
     client_id = _require_client_user(current_user)
+    assert_sensitive_ssn_access(user=current_user, step_up_token=x_sensitive_access)
     client = db.get(Client, client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")

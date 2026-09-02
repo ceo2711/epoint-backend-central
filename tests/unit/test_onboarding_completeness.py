@@ -78,6 +78,7 @@ def test_analyze_gaps_all_profile_and_documents_missing(db_session):
     gaps = analyze_onboarding_gaps(db_session, client)
 
     assert "SSN / Seguro Social" in gaps.profile_items
+    assert gaps.profile_keys == ["ssn", "date_of_birth", "address", "vehicle"]
     assert "Fecha de nacimiento" in gaps.profile_items
     assert "Dirección actual" in gaps.profile_items
     assert "Datos del vehículo" in gaps.profile_items

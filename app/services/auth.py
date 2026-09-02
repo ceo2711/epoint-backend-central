@@ -10,9 +10,11 @@ from app.core.app_review import is_app_review_email
 from app.core.config import get_settings
 from app.core.encryption import encrypt_value
 from app.core.security import (
+    SENSITIVE_STEP_UP_TOKEN_MINUTES,
     create_2fa_pending_token,
     create_access_token,
     create_refresh_token,
+    create_sensitive_step_up_token,
     generate_password_reset_token,
     hash_password,
     hash_password_reset_token,
@@ -29,6 +31,8 @@ from app.schemas.auth import (
     LoginResponse,
     RefreshTokenRequest,
     ResetPasswordRequest,
+    SensitiveStepUpRequest,
+    SensitiveStepUpResponse,
     TokenResponse,
     TotpConfirmRequest,
     TotpSetupResponse,
@@ -291,6 +295,22 @@ class AuthService:
         user.totp_confirmed_at = datetime.now(timezone.utc)
         self.db.commit()
         return MessageResponse(message="Doble factor activado correctamente")
+
+    def verify_sensitive_step_up(self, user: User, payload: SensitiveStepUpRequest) -> SensitiveStepUpResponse:
+        if not user.totp_enabled or not user.totp_secret_encrypted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Activá el doble factor de autenticación para ver este documento",
+            )
+
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        if not verify_totp_code(secret=secret, code=payload.code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación inválido")
+
+        return SensitiveStepUpResponse(
+            token=create_sensitive_step_up_token(str(user.id)),
+            expires_in=SENSITIVE_STEP_UP_TOKEN_MINUTES * 60,
+        )
 
     def refresh_token(self, payload: RefreshTokenRequest) -> TokenResponse:
         token_payload = safe_decode_token(payload.refresh_token)

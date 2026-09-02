@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants.default_board_cards import is_optional_onboarding_card
-from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
+from app.constants.kanban_columns import COMPLETED_LIST_TITLE
 from app.core.config import get_settings
 from app.models.board import Board
 from app.models.board_card import BoardCard
@@ -21,7 +21,6 @@ from app.services.email.board_reminder import BoardReminderEmailPayload, send_bo
 
 logger = logging.getLogger(__name__)
 
-COMPLETED_LIST_TITLE = KANBAN_COLUMN_TITLES[-1]
 CLIENT_PENDING_TASK_STATUSES = frozenset(
     {
         TaskStatus.PENDIENTE.value,

@@ -102,6 +102,14 @@ class ClientResponse(ORMBase):
     has_unread_inbound_email: bool = False
     source_prospect_status: str | None = None
 
+
+class OnboardingGapsResponse(BaseModel):
+    profile_fields: list[str] = Field(default_factory=list)
+    missing_documents: list[str] = Field(default_factory=list)
+    rejected_documents: list[str] = Field(default_factory=list)
+    expiring_documents: list[str] = Field(default_factory=list)
+
+
 class ClientDetailResponse(ClientResponse):
     has_portal_access: bool = False
     portal_email: str | None = None
@@ -111,6 +119,7 @@ class ClientDetailResponse(ClientResponse):
     vehicles: list["VehicleResponse"] = []
     documents: list["DocumentBrief"] = []
     source_prospect: ProspectPipelineSummary | None = None
+    onboarding_gaps: OnboardingGapsResponse | None = None
 
 
 class ClientPortalPasswordResponse(BaseModel):

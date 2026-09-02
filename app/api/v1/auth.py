@@ -18,6 +18,8 @@ from app.schemas.auth import (
     TotpConfirmRequest,
     TotpSetupResponse,
     TwoFactorVerifyRequest,
+    SensitiveStepUpRequest,
+    SensitiveStepUpResponse,
 )
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
@@ -111,6 +113,15 @@ def confirm_2fa(
     db: DbSession,
 ) -> MessageResponse:
     return AuthService(db).confirm_totp(current_user, payload)
+
+
+@router.post("/2fa/step-up", response_model=SensitiveStepUpResponse)
+def step_up_2fa(
+    payload: SensitiveStepUpRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> SensitiveStepUpResponse:
+    return AuthService(db).verify_sensitive_step_up(current_user, payload)
 
 
 @router.post("/refresh", response_model=TokenResponse)

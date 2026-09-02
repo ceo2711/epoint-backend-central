@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants.default_board_cards import is_optional_onboarding_card
-from app.constants.kanban_columns import KANBAN_COLUMN_TITLES
+from app.constants.kanban_columns import COMPLETED_LIST_TITLE
 from app.models.board import Board
 from app.models.board_list import BoardList
 from app.models.client import Client
@@ -18,7 +18,6 @@ from app.services.document_requirements import all_required_documents_approved
 
 logger = logging.getLogger(__name__)
 
-COMPLETED_LIST_TITLE = KANBAN_COLUMN_TITLES[-1]
 
 READY_TO_WORK_STATUSES = frozenset(
     {

@@ -175,7 +175,8 @@ Uso:
 
 Notas:"""
 
-_PERSONAL_FUNDING_SEQUENCE_2_CARD_TITLES: tuple[str, ...] = (
+# Secuencia de referencia para el Funder (ya no se siembra en tableros nuevos).
+FUNDER_PERSONAL_SEQUENCE_TITLES: tuple[str, ...] = (
     "JP Morgan Chase",
     "Sofi Bank",
     "Navy Federal Credit Union",
@@ -191,7 +192,7 @@ _PERSONAL_FUNDING_SEQUENCE_2_CARD_TITLES: tuple[str, ...] = (
     "One Key",
 )
 
-_BUSINESS_FUNDING_SEQUENCE_CARD_TITLES: tuple[str, ...] = (
+FUNDER_BUSINESS_SEQUENCE_TITLES: tuple[str, ...] = (
     "JP Morgan Chase",
     "Truist Bank",
     "FNBO - OZK",
@@ -239,13 +240,6 @@ SOUTHEAST TOYOTA FIN — Jul 11, 2025 (Auto Financing)"""
 _COMPLETED_INQUIRIES_3_DESCRIPTION = """**Descripción**
 
 ALLY FINANCIAL — Jul 11, 2025"""
-
-
-def _title_only_cards(titles: tuple[str, ...]) -> tuple[DefaultBoardCard, ...]:
-    return tuple(
-        DefaultBoardCard(title=title, description_md="", position=index)
-        for index, title in enumerate(titles)
-    )
 
 
 DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
@@ -361,8 +355,6 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             position=1,
         ),
     ),
-    "Personal Fonding Sequence (2)": _title_only_cards(_PERSONAL_FUNDING_SEQUENCE_2_CARD_TITLES),
-    "Business Founding Sequence": _title_only_cards(_BUSINESS_FUNDING_SEQUENCE_CARD_TITLES),
     "Completed": (
         DefaultBoardCard(
             title="Inquiries",

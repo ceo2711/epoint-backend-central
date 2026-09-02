@@ -91,9 +91,13 @@ EXPIRING_SUFFIX_EN = " (expiring soon — please upload a valid one)"
 
 @dataclass(slots=True)
 class OnboardingReminderGaps:
+    profile_keys: list[str] = field(default_factory=list)
     profile_items: list[str] = field(default_factory=list)
+    missing_document_keys: list[str] = field(default_factory=list)
     missing_documents: list[str] = field(default_factory=list)
+    rejected_document_keys: list[str] = field(default_factory=list)
     rejected_documents: list[str] = field(default_factory=list)
+    expiring_document_keys: list[str] = field(default_factory=list)
     expiring_documents: list[str] = field(default_factory=list)
 
     @property
@@ -152,15 +156,15 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
     gaps = OnboardingReminderGaps()
 
     if not client.ssn_encrypted:
-        gaps.profile_items.append(profile_labels["ssn"])
+        gaps.profile_keys.append("ssn")
     if not client.date_of_birth:
-        gaps.profile_items.append(profile_labels["date_of_birth"])
+        gaps.profile_keys.append("date_of_birth")
 
     current_addr = db.execute(
         select(Address).where(Address.client_id == client.id, Address.type == "CURRENT")
     ).scalar_one_or_none()
     if current_addr is None:
-        gaps.profile_items.append(profile_labels["address"])
+        gaps.profile_keys.append("address")
     else:
         from app.services.residence import residence_less_than_two_years
 
@@ -172,13 +176,15 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
                 select(Address).where(Address.client_id == client.id, Address.type == "PREVIOUS")
             ).scalar_one_or_none()
             if previous_addr is None or not (previous_addr.street and previous_addr.city):
-                gaps.profile_items.append(profile_labels["previous_address"])
+                gaps.profile_keys.append("previous_address")
 
     vehicle = db.execute(
         select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
     ).scalar_one_or_none()
     if vehicle is None:
-        gaps.profile_items.append(profile_labels["vehicle"])
+        gaps.profile_keys.append("vehicle")
+
+    gaps.profile_items = [profile_labels[key] for key in gaps.profile_keys]
 
     documents = list(
         db.execute(select(Document).where(Document.client_id == client.id)).scalars().all()
@@ -186,12 +192,15 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
     missing_types, rejected_types, expiring_types = document_reminder_gaps(documents)
 
     for gap_type in missing_types:
+        gaps.missing_document_keys.append(gap_type)
         gaps.missing_documents.append(_document_label(gap_type, locale))
 
     for doc_type in rejected_types:
+        gaps.rejected_document_keys.append(doc_type)
         gaps.rejected_documents.append(_rejected_label(doc_type, locale))
 
     for doc_type in expiring_types:
+        gaps.expiring_document_keys.append(doc_type)
         gaps.expiring_documents.append(_expiring_label(doc_type, locale))
 
     return gaps

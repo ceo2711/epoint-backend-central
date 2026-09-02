@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.constants.kanban_columns import is_completed_column, is_funding_sequence_column
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
@@ -71,6 +72,9 @@ class BoardService:
             bl = BoardList(board_id=board.id, title=t_list.title, position=t_list.position)
             self.db.add(bl)
             self.db.flush()
+            # El cliente tiene estas columnas, pero vacías: el Funder carga las cards.
+            if is_funding_sequence_column(t_list.title):
+                continue
             template_cards = sorted(t_list.template_cards, key=lambda x: x.position)
             if template_cards:
                 for t_card in template_cards:
@@ -139,6 +143,8 @@ class BoardService:
         client: Client,
     ) -> BoardCard:
         card.status = status
+        if status == TaskStatus.COMPLETADA.value and card.label == BoardCardLabel.PENDIENTE.value:
+            card.label = None
 
         from app.services.client_onboarding_status import sync_client_onboarding_status
 
@@ -357,6 +363,10 @@ class BoardService:
         ]
 
         card.list_id = target_list_id
+        if is_completed_column(target_list.title) and card.label == BoardCardLabel.PENDIENTE.value:
+            card.label = None
+            if card.status != TaskStatus.COMPLETADA.value:
+                card.status = TaskStatus.COMPLETADA.value
         insert_at = max(0, min(target_position, len(target_cards)))
         target_cards.insert(insert_at, card)
 

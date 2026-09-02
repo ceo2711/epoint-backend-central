@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
@@ -12,6 +12,7 @@ from app.schemas.client import DocumentBrief
 from app.schemas.document import ConfirmUploadRequest, DocumentResponse, UploadUrlRequest, UploadUrlResponse
 from app.services.clients import ClientService
 from app.services.documents import DocumentService
+from app.services.sensitive_documents import assert_sensitive_document_access
 from app.services.storage import get_storage_provider
 
 router = APIRouter(prefix="/documents", tags=["Documentos"])
@@ -143,8 +144,14 @@ def get_document_content(
     current_user: CurrentUser,
     merchant_id: OptionalActiveMerchantId,
     download: bool = Query(False),
+    x_sensitive_access: str | None = Header(default=None, alias="X-Sensitive-Access"),
 ) -> StreamingResponse:
     doc = _get_document_for_user(db, current_user, document_id, merchant_id=merchant_id)
+    assert_sensitive_document_access(
+        user=current_user,
+        document_type=doc.type,
+        step_up_token=x_sensitive_access,
+    )
     if download:
         from app.services.role_access import can_download_client_documents
 

@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    create_sensitive_step_up_token,
     hash_password,
     safe_decode_token,
     verify_password,
@@ -45,6 +46,13 @@ class TestJwtTokens:
 
     def test_safe_decode_invalid_token_returns_none(self):
         assert safe_decode_token("not-a-valid-jwt") is None
+
+    def test_sensitive_step_up_token_type(self):
+        token = create_sensitive_step_up_token("7")
+        payload = safe_decode_token(token)
+        assert payload is not None
+        assert payload["type"] == "sensitive_step_up"
+        assert payload["sub"] == "7"
 
 
 class TestAuthServiceLogin:

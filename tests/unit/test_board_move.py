@@ -40,7 +40,7 @@ def db_session():
     right = BoardList(board_id=board.id, title="Completed", position=1)
     session.add_all([left, right])
     session.flush()
-    card_a = BoardCard(list_id=left.id, title="Task A", position=0)
+    card_a = BoardCard(list_id=left.id, title="Task A", position=0, label="PENDIENTE", status="PENDIENTE")
     card_b = BoardCard(list_id=left.id, title="Task B", position=1)
     session.add_all([card_a, card_b])
     session.commit()
@@ -56,5 +56,7 @@ def test_move_card_to_another_list(db_session):
     session.refresh(card_b)
     assert card_a.list_id == right.id
     assert card_a.position == 0
+    assert card_a.label is None
+    assert card_a.status == "COMPLETADA"
     assert card_b.list_id == left.id
     assert card_b.position == 0

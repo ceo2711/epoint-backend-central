@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
+from app.constants.kanban_columns import canonical_column_title, is_funding_sequence_column
 from app.api.deps import CurrentUser, DbSession, OptionalActiveMerchantId, require_permissions
 from app.core.encryption import encrypt_value
 from app.models.board_card import BoardCard
@@ -36,6 +37,11 @@ from app.services.clients import ClientService
 from app.services.storage import get_storage_provider
 
 router = APIRouter(prefix="/boards", tags=["Tableros"])
+
+
+def _deny_client_funding_cards(user: User, title: str | None) -> None:
+    if user.role.code == "CLIENT" and is_funding_sequence_column(title):
+        raise HTTPException(status_code=404, detail="Columna no encontrada")
 
 
 def _require_staff_client_workspace(
@@ -191,6 +197,7 @@ def _get_card_client(
         raise HTTPException(status_code=404)
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
+    _deny_client_funding_cards(current_user, card.board_list.title)
     if current_user.role.code != "CLIENT":
         return _require_staff_client_workspace(db, current_user, client.id, merchant_id)
     return client
@@ -222,7 +229,12 @@ def _build_board_response(board, storage, user: User, board_service: BoardServic
     lists = []
     for bl in sorted(board.lists, key=lambda x: x.position):
         cards = []
-        for card in sorted(bl.cards, key=lambda x: x.position):
+        visible_cards = (
+            []
+            if user.role.code == "CLIENT" and is_funding_sequence_column(bl.title)
+            else sorted(bl.cards, key=lambda x: x.position)
+        )
+        for card in visible_cards:
             comments = [
                 CardCommentResponse(
                     id=c.id,
@@ -261,7 +273,14 @@ def _build_board_response(board, storage, user: User, board_service: BoardServic
                     has_credentials=len(card.credential_submissions) > 0,
                 )
             )
-        lists.append(BoardListResponse(id=bl.id, title=bl.title, position=bl.position, cards=cards))
+        lists.append(
+            BoardListResponse(
+                id=bl.id,
+                title=canonical_column_title(bl.title),
+                position=bl.position,
+                cards=cards,
+            )
+        )
     return BoardResponse(id=board.id, client_id=board.client_id, template_code=board.template_code, lists=lists)
 
 
@@ -363,6 +382,7 @@ def create_card(
         raise HTTPException(status_code=404)
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
+    _deny_client_funding_cards(current_user, board_list.title)
     if current_user.role.code != "CLIENT":
         _require_staff_client_workspace(db, current_user, client.id, merchant_id)
         _require_board_staff(current_user)
@@ -396,6 +416,7 @@ def update_card_status(
         raise HTTPException(status_code=404)
     if current_user.role.code == "CLIENT" and current_user.client_id != client.id:
         raise HTTPException(status_code=403)
+    _deny_client_funding_cards(current_user, card.board_list.title)
     board_service = BoardService(db)
     card = board_service.update_card_status(card=card, status=payload.status, actor=current_user, client=client)
     return _lite_card_response(card)

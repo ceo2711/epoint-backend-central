@@ -1,7 +1,15 @@
 from unittest.mock import MagicMock, patch
 
+from app.constants.kanban_columns import (
+    BUSINESS_FUNDING_SEQUENCE,
+    BUSINESS_FUNDING_SEQUENCE_2,
+    PERSONAL_FUNDING_SEQUENCE,
+    PERSONAL_FUNDING_SEQUENCE_2,
+)
 from app.constants.default_board_cards import (
     EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL,
+    FUNDER_BUSINESS_SEQUENCE_TITLES,
+    FUNDER_PERSONAL_SEQUENCE_TITLES,
     TAXES_CARD_COLUMN,
     TAXES_CARD_TITLE,
     default_cards_for_column,
@@ -94,37 +102,16 @@ def test_equifax_default_cards():
     assert "**Envíos**" not in cards[0].description_md
 
 
-def test_personal_funding_sequence_2_default_cards():
-    cards = default_cards_for_column("Personal Fonding Sequence (2)")
-
-    assert len(cards) == 13
-    assert [card.title for card in cards] == [
-        "JP Morgan Chase",
-        "Sofi Bank",
-        "Navy Federal Credit Union",
-        "Lightstream By Truist",
-        "CAPITAL ONE",
-        "DISCOVER CARD",
-        "Citi Bank",
-        "Upgrade",
-        "Citizens Bank",
-        "Truist Bank",
-        "Navy Federal Credit Union",
-        "Upstart",
-        "One Key",
-    ]
-    assert all(card.description_md == "" for card in cards)
-    assert cards[-1].title == "One Key"
-
-
-def test_business_funding_sequence_default_cards():
-    cards = default_cards_for_column("Business Founding Sequence")
-
-    assert len(cards) == 14
-    assert cards[0].title == "JP Morgan Chase"
-    assert cards[-2].title == "Citi Bank Business"
-    assert cards[-1].title == "Paypal Business Loan"
-    assert all(card.description_md == "" for card in cards)
+def test_funding_sequences_have_no_default_cards():
+    assert default_cards_for_column(PERSONAL_FUNDING_SEQUENCE) == ()
+    assert default_cards_for_column(PERSONAL_FUNDING_SEQUENCE_2) == ()
+    assert default_cards_for_column(BUSINESS_FUNDING_SEQUENCE) == ()
+    assert default_cards_for_column(BUSINESS_FUNDING_SEQUENCE_2) == ()
+    assert default_cards_for_column("Personal Fonding Sequence (2)") == ()
+    assert default_cards_for_column("Business Founding Sequence") == ()
+    assert default_cards_for_column("Business Founding Sequence (2)") == ()
+    assert len(FUNDER_PERSONAL_SEQUENCE_TITLES) > 0
+    assert len(FUNDER_BUSINESS_SEQUENCE_TITLES) > 0
 
 
 def test_completed_default_cards():

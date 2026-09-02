@@ -1,9 +1,13 @@
 """Sincroniza listas del tablero con las columnas Kanban estándar."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants.kanban_columns import KANBAN_COLUMN_TITLE_ALIASES, KANBAN_COLUMN_TITLES
+from app.constants.kanban_columns import (
+    KANBAN_COLUMN_TITLE_ALIASES,
+    KANBAN_COLUMN_TITLES,
+    is_funding_sequence_column,
+)
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
@@ -25,6 +29,8 @@ def sync_template_lists(db: Session, template: BoardTemplate) -> None:
         template_list = BoardTemplateList(template_id=template.id, title=title, position=position)
         db.add(template_list)
         db.flush()
+        if is_funding_sequence_column(title):
+            continue
         seed_default_template_cards_for_list(db, template_list=template_list)
 
 
@@ -74,9 +80,30 @@ def sync_board_lists(db: Session, board: Board) -> None:
             card.position = index
 
 
+def clear_funding_sequence_cards(db: Session, *, board: Board | None = None) -> int:
+    """Deja vacías las columnas de funding. El Funder carga las cards después."""
+    list_query = select(BoardList.id, BoardList.title)
+    if board is not None:
+        list_query = list_query.where(BoardList.board_id == board.id)
+    list_ids = [
+        row.id
+        for row in db.execute(list_query).all()
+        if is_funding_sequence_column(row.title)
+    ]
+    if not list_ids:
+        return 0
+    result = db.execute(delete(BoardCard).where(BoardCard.list_id.in_(list_ids)))
+    deleted = result.rowcount or 0
+    if deleted:
+        db.flush()
+    return deleted
+
+
 def sync_board_default_cards(db: Session, board: Board) -> None:
     client = db.get(Client, board.client_id)
     for board_list in board.lists:
+        if is_funding_sequence_column(board_list.title):
+            continue
         merge_missing_default_cards_to_board_list(
             db, board_list=board_list, client=client
         )

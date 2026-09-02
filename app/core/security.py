@@ -85,3 +85,16 @@ def create_2fa_pending_token(subject: str, extra_claims: dict[str, Any] | None =
     if extra_claims:
         payload.update(extra_claims)
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+SENSITIVE_STEP_UP_TOKEN_MINUTES = 15
+
+
+def create_sensitive_step_up_token(subject: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=SENSITIVE_STEP_UP_TOKEN_MINUTES)
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "exp": expire,
+        "type": "sensitive_step_up",
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
