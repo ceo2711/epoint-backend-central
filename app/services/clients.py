@@ -1185,7 +1185,6 @@ class ClientService:
     def check_data_complete(self, client: Client) -> bool:
         from app.models.address import Address
         from app.models.document import Document
-        from app.models.vehicle import Vehicle
 
         if not client.ssn_encrypted or not client.date_of_birth:
             return False
@@ -1196,11 +1195,7 @@ class ClientService:
             return False
         # Dirección anterior: la pide el portal web. No bloquear check_data_complete
         # (mobile 1.0.0 solo envía CURRENT y no podría desbloquear el tablero).
-        vehicle = self.db.execute(
-            select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
-        ).scalar_one_or_none()
-        if not vehicle:
-            return False
+        # Vehículo: opcional. Se puede migrar o avanzar el onboarding sin él.
 
         from app.services.document_requirements import is_upload_requirement_met
 
@@ -1211,6 +1206,41 @@ class ClientService:
         if not is_upload_requirement_met(uploaded_types):
             return False
         return True
+
+    def upsert_vehicle(
+        self,
+        client: Client,
+        *,
+        order: int,
+        model: str,
+        year: int,
+        color: str,
+        license_plate: str | None = None,
+    ):
+        from app.models.vehicle import Vehicle
+
+        existing = self.db.execute(
+            select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == order)
+        ).scalar_one_or_none()
+        if existing:
+            existing.model = model
+            existing.year = year
+            existing.color = color
+            existing.license_plate = license_plate
+            vehicle = existing
+        else:
+            vehicle = Vehicle(
+                client_id=client.id,
+                order=order,
+                model=model,
+                year=year,
+                color=color,
+                license_plate=license_plate,
+            )
+            self.db.add(vehicle)
+        self.db.commit()
+        self.db.refresh(vehicle)
+        return vehicle
 
     def on_documents_complete(self, *, client: Client) -> None:
         onboarding = self._get_onboarding_team()

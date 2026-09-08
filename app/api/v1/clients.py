@@ -24,6 +24,8 @@ from app.schemas.client import (
     ClientStatsResponse,
     ClientUpdate,
     AdvisorBrief,
+    VehicleCreate,
+    VehicleResponse,
 )
 from app.models.sent_email import SentEmail
 from app.schemas.common import (
@@ -313,6 +315,39 @@ def update_client(
     client = service.update_client(actor=current_user, client=client, **fields)
     db.refresh(client, attribute_names=["merchant"])
     return _to_response(client)
+
+
+@router.post("/{client_id}/vehicles", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
+def upsert_client_vehicle(
+    client_id: int,
+    payload: VehicleCreate,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:update"))],
+    merchant_id: ActiveMerchantId,
+) -> VehicleResponse:
+    from app.services.client_onboarding_status import sync_client_onboarding_status
+    from app.services.role_access import can_manage_onboarding, is_advisor
+
+    if not can_manage_onboarding(current_user) or is_advisor(current_user):
+        raise HTTPException(status_code=403, detail="Solo onboarding puede cargar el vehículo")
+
+    service = ClientService(db)
+    client = service.get_client_for_user(current_user, client_id, merchant_id=merchant_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    vehicle = service.upsert_vehicle(
+        client,
+        order=payload.order,
+        model=payload.model,
+        year=payload.year,
+        color=payload.color,
+        license_plate=payload.license_plate,
+    )
+    db.refresh(client)
+    if sync_client_onboarding_status(db, client):
+        db.commit()
+    return VehicleResponse.model_validate(vehicle)
 
 
 @router.post("/{client_id}/send-email", response_model=MessageResponse)

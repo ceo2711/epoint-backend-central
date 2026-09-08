@@ -13,7 +13,6 @@ from app.models.document import Document
 from app.models.enums import ClientStatus
 from app.models.role import Role
 from app.models.user import User
-from app.models.vehicle import Vehicle
 from app.services.document_requirements import (
     ADDRESS_GAP_KEY,
     IDENTITY_GAP_KEY,
@@ -71,7 +70,6 @@ PROFILE_FIELD_LABELS_ES: dict[str, str] = {
     "date_of_birth": "Fecha de nacimiento",
     "address": "Dirección actual",
     "previous_address": "Dirección anterior",
-    "vehicle": "Datos del vehículo",
 }
 
 PROFILE_FIELD_LABELS_EN: dict[str, str] = {
@@ -79,7 +77,6 @@ PROFILE_FIELD_LABELS_EN: dict[str, str] = {
     "date_of_birth": "Date of birth",
     "address": "Current address",
     "previous_address": "Previous address",
-    "vehicle": "Vehicle information",
 }
 
 REJECTED_SUFFIX_ES = " (rechazado — volver a subir)"
@@ -178,12 +175,7 @@ def analyze_onboarding_gaps(db: Session, client: Client, *, locale: str = "es") 
             if previous_addr is None or not (previous_addr.street and previous_addr.city):
                 gaps.profile_keys.append("previous_address")
 
-    vehicle = db.execute(
-        select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
-    ).scalar_one_or_none()
-    if vehicle is None:
-        gaps.profile_keys.append("vehicle")
-
+    # El vehículo es opcional: onboarding puede cargarlo después a mano.
     gaps.profile_items = [profile_labels[key] for key in gaps.profile_keys]
 
     documents = list(

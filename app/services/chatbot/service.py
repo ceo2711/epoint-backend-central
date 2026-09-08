@@ -75,7 +75,7 @@ Usa el contexto JSON para informes y seguimiento.
 
 REGLAS DE APROBACIÓN (muy importante):
 - Para APROBAR un cliente solo se requieren: nombre completo válido, email válido, teléfono, fuente y comercio.
-- Documentos (SSN, licencia, utility bill), datos de perfil (SSN, fecha de nacimiento, dirección, vehículo) y tablero son POST-aprobación.
+- Documentos (SSN, licencia, utility bill), datos de perfil (SSN, fecha de nacimiento, dirección) y tablero son POST-aprobación. El vehículo es opcional.
 - Si preguntan por clientes pendientes de aprobación, usa `clientes_pendientes_revision` y `listo_para_aprobar`. NO menciones documentos ni datos de perfil como requisitos para aprobar.
 - Si un cliente pendiente tiene `listo_para_aprobar: true`, di que ya se puede aprobar.
 

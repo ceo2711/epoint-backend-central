@@ -44,7 +44,7 @@ def platform_sections_for_role(role: str, base_url: str) -> list[dict[str, str]]
             {
                 "nombre": "Mis datos",
                 "url": _url(base, "/portal/datos"),
-                "para_que": "Completar SSN, fecha de nacimiento, dirección y vehículo.",
+                "para_que": "Completar SSN, fecha de nacimiento y dirección. El vehículo es opcional.",
             },
             {
                 "nombre": "Documentos",
@@ -194,7 +194,7 @@ GUIDES: list[dict[str, Any]] = [
         "keywords": ("portal", "datos", "documentos", "tablero", "onboarding del cliente"),
         "pasos": [
             "Tras la aprobación, el cliente recibe acceso al portal (email + contraseña temporal).",
-            "En Mis datos completa SSN, fecha de nacimiento, dirección (con autocompletado) y vehículo.",
+            "En Mis datos completa SSN, fecha de nacimiento y dirección (con autocompletado). El vehículo es opcional.",
             "En Documentos sube SSN, identidad y comprobante de domicilio.",
             "En Tablero avanza las tareas Client TO DO (con adjuntos si la tarjeta lo pide).",
             "Podés ver el progreso y regenerar la contraseña del portal desde el detalle del cliente.",

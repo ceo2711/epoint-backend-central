@@ -78,12 +78,75 @@ def test_analyze_gaps_all_profile_and_documents_missing(db_session):
     gaps = analyze_onboarding_gaps(db_session, client)
 
     assert "SSN / Seguro Social" in gaps.profile_items
-    assert gaps.profile_keys == ["ssn", "date_of_birth", "address", "vehicle"]
+    assert gaps.profile_keys == ["ssn", "date_of_birth", "address"]
     assert "Fecha de nacimiento" in gaps.profile_items
     assert "Dirección actual" in gaps.profile_items
-    assert "Datos del vehículo" in gaps.profile_items
+    assert "Datos del vehículo" not in gaps.profile_items
     assert any("Tarjeta SSN" in item for item in gaps.missing_documents)
     assert gaps.needs_reminder is True
+
+
+def test_analyze_gaps_vehicle_is_optional(db_session):
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    db_session.add(
+        Address(
+            client_id=client.id,
+            type="CURRENT",
+            street="123 Main",
+            city="Orlando",
+            state="FL",
+            zip_code="32801",
+        )
+    )
+    for doc_type in (
+        "SSN_CARD",
+        "DRIVERS_LICENSE_FRONT",
+        "DRIVERS_LICENSE_BACK",
+        "UTILITY_BILL",
+    ):
+        _add_document(db_session, client, doc_type, DocumentVerificationStatus.APROBADO.value)
+    db_session.commit()
+
+    gaps = analyze_onboarding_gaps(db_session, client)
+
+    assert "vehicle" not in gaps.profile_keys
+    assert gaps.needs_reminder is False
+
+
+def test_check_data_complete_does_not_require_vehicle(db_session):
+    from app.services.clients import ClientService
+
+    client = _make_client(
+        ssn_encrypted="enc",
+        date_of_birth=date(1990, 5, 10),
+    )
+    db_session.add(client)
+    db_session.flush()
+    db_session.add(
+        Address(
+            client_id=client.id,
+            type="CURRENT",
+            street="123 Main",
+            city="Orlando",
+            state="FL",
+            zip_code="32801",
+        )
+    )
+    for doc_type in (
+        "SSN_CARD",
+        "DRIVERS_LICENSE_FRONT",
+        "DRIVERS_LICENSE_BACK",
+        "UTILITY_BILL",
+    ):
+        _add_document(db_session, client, doc_type, DocumentVerificationStatus.APROBADO.value)
+    db_session.commit()
+
+    assert ClientService(db_session).check_data_complete(client) is True
 
 
 def _seed_complete_profile(db_session, client: Client) -> None:

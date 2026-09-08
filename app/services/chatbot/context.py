@@ -10,7 +10,6 @@ from app.models.client import Client
 from app.models.document import Document
 from app.models.enums import ClientStatus, DocumentType, TaskStatus
 from app.models.user import User
-from app.models.vehicle import Vehicle
 from app.services.chatbot.approval_rules import validate_approval_requirements
 from app.services.chatbot.guides import build_platform_guide_context
 from app.services.chatbot.registration_options import source_label
@@ -244,7 +243,7 @@ class ChatbotContextBuilder:
             "estadisticas_generales": stats,
             "reglas_aprobacion": {
                 "campos_requeridos": ["nombre completo", "email", "teléfono", "fuente", "comercio"],
-                "nota": "Documentos, SSN, dirección y vehículo son POST-aprobación y NO bloquean la aprobación inicial.",
+                "nota": "Documentos, SSN y dirección son POST-aprobación y NO bloquean la aprobación inicial. El vehículo es opcional.",
             },
             "resumen_onboarding_post_aprobacion": {
                 "clientes_con_onboarding_completo": complete_count,
@@ -321,7 +320,7 @@ class ChatbotContextBuilder:
                     {
                         "nombre": "Mis datos",
                         "url": f"{base}/portal/datos",
-                        "para_que": "Completar SSN, fecha de nacimiento, dirección y vehículo.",
+                        "para_que": "Completar SSN, fecha de nacimiento y dirección. El vehículo es opcional.",
                     },
                     {
                         "nombre": "Documentos",
@@ -392,12 +391,6 @@ class ChatbotContextBuilder:
         ).scalar_one_or_none()
         if not current_addr:
             gaps.append("Dirección actual")
-
-        vehicle = self.db.execute(
-            select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.order == 1)
-        ).scalar_one_or_none()
-        if not vehicle:
-            gaps.append("Vehículo principal")
 
         uploaded_types = {
             doc.type
