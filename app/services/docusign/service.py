@@ -1328,13 +1328,14 @@ class DocusignService:
     ) -> tuple[DocusignEnvelopeResponse, bool, bool]:
         """Reenvía el recordatorio de firma (email Epoint + correo DocuSign)."""
         from app.services.contract_reminders import (
-            UNSIGNED_ENVELOPE_STATUSES,
+            envelope_is_remindable,
+            fetch_completed_envelopes,
             send_unsigned_contract_reminder,
         )
 
         self.ensure_access(actor)
         row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
-        if (row.status or "").lower() not in UNSIGNED_ENVELOPE_STATUSES or row.sent_at is None:
+        if not envelope_is_remindable(row, fetch_completed_envelopes(self.db)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Solo se puede recordar un contrato que ya fue enviado y aún no está firmado",

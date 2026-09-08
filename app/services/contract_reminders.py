@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -16,6 +16,7 @@ from app.services.email.contract_reminder import ContractReminderEmailPayload, s
 logger = logging.getLogger(__name__)
 
 UNSIGNED_ENVELOPE_STATUSES = frozenset({"sent", "delivered"})
+MANUAL_ORIGIN = "manual"
 
 
 def signer_first_name(signer_name: str) -> str:
@@ -29,11 +30,72 @@ def fetch_unsigned_envelopes(db: Session) -> list[DocusignEnvelope]:
             select(DocusignEnvelope).where(
                 DocusignEnvelope.status.in_(UNSIGNED_ENVELOPE_STATUSES),
                 DocusignEnvelope.sent_at.isnot(None),
+                DocusignEnvelope.origin != MANUAL_ORIGIN,
+                or_(
+                    DocusignEnvelope.client_id.isnot(None),
+                    DocusignEnvelope.prospect_id.isnot(None),
+                ),
             )
         )
         .scalars()
         .all()
     )
+
+
+def fetch_completed_envelopes(db: Session) -> list[DocusignEnvelope]:
+    return list(
+        db.execute(
+            select(DocusignEnvelope).where(DocusignEnvelope.status == "completed")
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _same_email(left: str | None, right: str | None) -> bool:
+    return bool(left) and bool(right) and left.strip().lower() == right.strip().lower()
+
+
+def has_later_completed_signature(
+    envelope: DocusignEnvelope,
+    completed: list[DocusignEnvelope],
+) -> bool:
+    """True si el mismo firmante, prospecto o cliente ya firmó un contrato posterior."""
+    for row in completed:
+        if row.id == envelope.id:
+            continue
+        if envelope.client_id and row.client_id == envelope.client_id:
+            return True
+        if envelope.prospect_id and row.prospect_id == envelope.prospect_id:
+            return True
+        if not _same_email(envelope.signer_email, row.signer_email):
+            continue
+        if row.id > envelope.id:
+            return True
+        envelope_sent = envelope.sent_at
+        row_sent = row.sent_at
+        if envelope_sent and row_sent and row_sent >= envelope_sent:
+            return True
+    return False
+
+
+def envelope_is_remindable(
+    envelope: DocusignEnvelope,
+    completed: list[DocusignEnvelope] | None = None,
+) -> bool:
+    status = (envelope.status or "").lower()
+    if status not in UNSIGNED_ENVELOPE_STATUSES or envelope.sent_at is None:
+        return False
+    if (getattr(envelope, "origin", None) or "docusign") == MANUAL_ORIGIN:
+        return False
+    if not envelope.signer_email:
+        return False
+    if not envelope.client_id and not envelope.prospect_id:
+        return False
+    client = getattr(envelope, "client", None)
+    if client is not None and getattr(client, "docusign_contract_signed_at", None):
+        return False
+    return not has_later_completed_signature(envelope, completed or [])
 
 
 def resend_docusign_signing_email(envelope: DocusignEnvelope) -> bool:
@@ -87,13 +149,12 @@ def run_contract_reminders(db: Session) -> dict:
     skipped = 0
     failed = 0
 
-    for envelope in fetch_unsigned_envelopes(db):
+    unsigned = fetch_unsigned_envelopes(db)
+    completed = fetch_completed_envelopes(db) if unsigned else []
+
+    for envelope in unsigned:
         processed += 1
-        status = (envelope.status or "").lower()
-        if status not in UNSIGNED_ENVELOPE_STATUSES or envelope.sent_at is None:
-            skipped += 1
-            continue
-        if not envelope.signer_email:
+        if not envelope_is_remindable(envelope, completed):
             skipped += 1
             continue
         last = envelope.last_contract_reminder_at or envelope.sent_at
