@@ -1,5 +1,22 @@
-from app.services.prospects import ALLOWED_TRANSITIONS, INITIAL_STATUS
 from app.models.enums import ProspectStatus
+from app.schemas.prospect import ProspectCreate, ProspectUpdate
+from app.services.prospects import ALLOWED_TRANSITIONS, INITIAL_STATUS
+
+
+def test_prospect_create_qualification_is_optional():
+    payload = ProspectCreate(
+        first_name="Ana",
+        last_name="Perez",
+        email="ana@test.com",
+        phone="1234567890",
+        merchant_id=1,
+    )
+    assert payload.is_qualified is None
+
+
+def test_prospect_update_can_clear_qualification():
+    payload = ProspectUpdate(is_qualified=None)
+    assert payload.model_dump(exclude_unset=True) == {"is_qualified": None}
 
 
 class TestProspectTransitions:

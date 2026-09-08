@@ -9,6 +9,21 @@ from app.services.email.html_templates import (
 )
 
 
+def test_render_password_reset_template_includes_reset_link():
+    html = render_html_template(
+        "password_reset",
+        FIRST_NAME="Ana",
+        RESET_URL="https://app.example.com/recuperar-contrasena/confirmar?token=abc123tokenvalue",
+        EXPIRE_MINUTES="60",
+        LOGO_URL="https://app.example.com/epoint-logo.png",
+    )
+    assert "Ana" in html
+    assert "https://app.example.com/recuperar-contrasena/confirmar?token=abc123tokenvalue" in html
+    assert "Restablecer contraseña" in html
+    assert "{{RESET_URL}}" not in html
+    assert "{{FIRST_NAME}}" not in html
+
+
 def test_render_welcome_template_substitutes_placeholders():
     html = render_html_template(
         "welcome",

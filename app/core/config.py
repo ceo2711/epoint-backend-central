@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     api_prefix: str = "/api/v1"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     frontend_url: str = Field(
         default="",
         validation_alias=AliasChoices("FRONTEND_URL", "PORTAL_URL"),
@@ -266,6 +266,17 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_allow_origin_regex(self) -> str | None:
+        """En local, Next también sirve 127.0.0.1 y la IP de LAN/Tailscale."""
+        if not self.is_development:
+            return None
+        return (
+            r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+            r"|https?://\[::1\]:\d+"
+            r"|https?://(10|100|192\.168)\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+"
+        )
 
     @property
     def is_development(self) -> bool:

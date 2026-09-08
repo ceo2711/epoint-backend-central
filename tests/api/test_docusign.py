@@ -73,3 +73,7 @@ class TestDocusignRoutes:
                     headers={"Authorization": "Bearer fake"},
                 )
         assert response.status_code in (200, 401)
+
+    def test_manual_envelope_requires_auth(self, client):
+        response = client.post("/api/v1/docusign/envelopes/manual")
+        assert response.status_code == 401

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -48,12 +49,16 @@ from app.services.role_access import (
     is_sales_staff,
 )
 from app.services.storage import get_storage_provider
+from app.utils.mime import ALLOWED_MIME_TYPES, resolve_content_type
 
 logger = logging.getLogger(__name__)
 
 DOCUSIGN_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
 DOCUSIGN_TERMINAL_STATUSES = frozenset({"completed", "declined", "voided"})
 DOCUSIGN_SENT_DOCUMENT_STATUSES = frozenset({"sent", "delivered", "completed"})
+MANUAL_CONTRACT_ORIGIN = "manual"
+DOCUSIGN_CONTRACT_ORIGIN = "docusign"
+MAX_MANUAL_CONTRACT_BYTES = 20 * 1024 * 1024
 PREFERRED_TEMPLATE_ROLE_NAMES = ("Cliente", "Client", "Signer", "Firmante")
 
 
@@ -219,6 +224,8 @@ class DocusignService:
 
     def _ensure_client_for_completed_envelope(self, row: DocusignEnvelope) -> bool:
         """Elimina vínculos incorrectos; el alta en CRM es manual desde la UI."""
+        if self._is_manual(row):
+            return False
         if row.status.lower() != "completed":
             return False
 
@@ -343,6 +350,12 @@ class DocusignService:
             filename = row.signed_document_filename or self._signed_filename(row)
             return content, filename
 
+        if self._is_manual(row):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Este cliente no tiene contrato firmado vinculado",
+            )
+
         api_client = self._client_from_settings()
         try:
             content = api_client.download_combined_document(row.docusign_envelope_id)
@@ -376,6 +389,8 @@ class DocusignService:
         stats["linked"] = self.repair_envelope_client_links()
 
         for row in rows:
+            if self._is_manual(row):
+                continue
             try:
                 remote = api_client.get_envelope(row.docusign_envelope_id)
             except DocusignApiError:
@@ -510,6 +525,7 @@ class DocusignService:
             signer_email=row.signer_email,
             template_id=row.template_id,
             template_role_name=row.template_role_name,
+            origin=row.origin or DOCUSIGN_CONTRACT_ORIGIN,
             subject=row.subject,
             status=row.status,
             client_id=client_id,
@@ -634,11 +650,18 @@ class DocusignService:
 
     def _signed_filename(self, row: DocusignEnvelope) -> str:
         safe_name = self._safe_signer_slug(row)
-        return f"contrato-{safe_name}-{row.id}.pdf"
+        ext = "pdf"
+        if row.signed_document_filename and "." in row.signed_document_filename:
+            ext = row.signed_document_filename.rsplit(".", 1)[-1].lower() or "pdf"
+        return f"contrato-{safe_name}-{row.id}.{ext}"
 
     def _sent_filename(self, row: DocusignEnvelope) -> str:
         safe_name = self._safe_signer_slug(row)
         return f"contrato-enviado-{safe_name}-{row.id}.pdf"
+
+    @staticmethod
+    def _is_manual(row: DocusignEnvelope) -> bool:
+        return (row.origin or DOCUSIGN_CONTRACT_ORIGIN) == MANUAL_CONTRACT_ORIGIN
 
     @staticmethod
     def _safe_signer_slug(row: DocusignEnvelope) -> str:
@@ -647,20 +670,25 @@ class DocusignService:
             for char in row.signer_name.strip().lower().replace(" ", "-")
         ) or "firmante"
 
-    def _signed_storage_key(self, row: DocusignEnvelope) -> str:
+    def _signed_storage_key(self, row: DocusignEnvelope, *, filename: str | None = None) -> str:
         storage = get_storage_provider()
+        ext = "pdf"
+        source_name = filename or row.signed_document_filename or ""
+        if "." in source_name:
+            ext = source_name.rsplit(".", 1)[-1].lower() or "pdf"
+        object_name = f"signed.{ext}"
         if row.client_id:
             return storage.build_key(
                 "clients",
                 str(row.client_id),
                 "contracts",
                 str(row.id),
-                "signed.pdf",
+                object_name,
             )
-        return storage.build_key("docusign", "envelopes", str(row.id), "signed.pdf")
+        return storage.build_key("docusign", "envelopes", str(row.id), object_name)
 
     def _persist_signed_pdf(self, row: DocusignEnvelope) -> None:
-        if row.signed_storage_key:
+        if row.signed_storage_key or self._is_manual(row):
             return
         api_client = self._client_from_settings()
         try:
@@ -949,6 +977,8 @@ class DocusignService:
         api_client = self._client_from_settings()
         changed = False
         for row in rows:
+            if self._is_manual(row):
+                continue
             if row.status.lower() not in DOCUSIGN_TERMINAL_STATUSES:
                 try:
                     remote = api_client.get_envelope(row.docusign_envelope_id)
@@ -984,6 +1014,16 @@ class DocusignService:
                 detail="El contrato enviado no está disponible en este estado",
             )
 
+        if self._is_manual(row):
+            if not row.signed_storage_key:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="El archivo del contrato no está disponible",
+                )
+            storage = get_storage_provider()
+            content, _ = storage.get_object_bytes(row.signed_storage_key)
+            return content, row.signed_document_filename or self._signed_filename(row)
+
         api_client = self._client_from_settings()
         try:
             content = api_client.download_primary_document(row.docusign_envelope_id)
@@ -994,8 +1034,10 @@ class DocusignService:
 
     def get_signed_document(self, actor: User, envelope_id: int, *, merchant_id: int) -> tuple[bytes, str]:
         row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
-        api_client = self._client_from_settings()
-        is_completed = row.status.lower() == "completed" or self._signer_has_completed(api_client, row)
+        is_completed = row.status.lower() == "completed"
+        if not is_completed and not self._is_manual(row):
+            api_client = self._client_from_settings()
+            is_completed = self._signer_has_completed(api_client, row)
         if not is_completed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1007,6 +1049,12 @@ class DocusignService:
             content, _ = storage.get_object_bytes(row.signed_storage_key)
             filename = row.signed_document_filename or self._signed_filename(row)
             return content, filename
+
+        if self._is_manual(row):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="El archivo del contrato no está disponible",
+            )
 
         api_client = self._client_from_settings()
         try:
@@ -1022,6 +1070,118 @@ class DocusignService:
 
         filename = row.signed_document_filename or self._signed_filename(row)
         return content, filename
+
+    def upload_manual_contract(
+        self,
+        actor: User,
+        *,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+        merchant_id: int,
+        prospect_id: int | None = None,
+        client_id: int | None = None,
+        subject: str | None = None,
+    ) -> DocusignEnvelopeResponse:
+        """Carga un contrato físico firmado y lo marca como completed."""
+        self.ensure_access(actor)
+        if prospect_id is None and client_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indicá un prospecto o un cliente para vincular el contrato",
+            )
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío")
+        if len(file_bytes) > MAX_MANUAL_CONTRACT_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo supera el máximo de 20 MB",
+            )
+        mime_type = resolve_content_type(content_type, filename)
+        if mime_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subí un PDF o una foto (JPG, PNG o WebP)",
+            )
+
+        from app.models.prospect import Prospect
+        from app.services.prospects import ProspectService
+
+        prospect_row: Prospect | None = None
+        client_row: Client | None = None
+        prospect_service: ProspectService | None = None
+        if prospect_id is not None:
+            prospect_service = ProspectService(self.db)
+            prospect_row = prospect_service._get_prospect_for_user(
+                actor, prospect_id, merchant_id=merchant_id
+            )
+            if prospect_row.converted_client_id and client_id is None:
+                client_id = prospect_row.converted_client_id
+
+        if client_id is not None:
+            client_service = ClientService(self.db)
+            client_row = client_service.get_client_for_user(actor, client_id, merchant_id=merchant_id)
+            if client_row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Cliente no encontrado",
+                )
+
+        if prospect_row is not None:
+            signer_name = f"{prospect_row.first_name} {prospect_row.last_name}".strip()
+            signer_email = prospect_row.email
+            resolved_merchant_id = prospect_row.merchant_id
+        else:
+            assert client_row is not None
+            signer_name = client_row.full_name
+            signer_email = client_row.email
+            resolved_merchant_id = client_row.merchant_id or merchant_id
+
+        now = datetime.now(timezone.utc)
+        safe_filename = (filename or "contrato.pdf").strip() or "contrato.pdf"
+        label = (subject or "").strip() or "Contrato físico firmado"
+        row = DocusignEnvelope(
+            docusign_envelope_id=f"manual-{uuid.uuid4()}",
+            origin=MANUAL_CONTRACT_ORIGIN,
+            sent_by_user_id=actor.id,
+            merchant_id=resolved_merchant_id,
+            client_id=client_row.id if client_row is not None else None,
+            prospect_id=prospect_row.id if prospect_row is not None else None,
+            signer_name=signer_name,
+            signer_email=signer_email.strip().lower(),
+            template_id="manual",
+            template_role_name="manual",
+            subject=label[:255],
+            status="completed",
+            sent_at=now,
+            completed_at=now,
+            completion_notified_at=now,
+        )
+        self.db.add(row)
+        self.db.flush()
+
+        storage_key = self._signed_storage_key(row, filename=safe_filename)
+        get_storage_provider().put_object(storage_key, file_bytes, mime_type)
+        row.signed_storage_key = storage_key
+        row.signed_document_filename = safe_filename[:255]
+        row.sent_by = actor
+
+        if prospect_row is not None and prospect_service is not None:
+            prospect_service.attach_envelope(actor=actor, prospect=prospect_row, envelope=row)
+            prospect_service.on_envelope_completed(row)
+        if client_row is not None:
+            row.client_id = client_row.id
+            if not client_row.docusign_envelope_id:
+                client_row.docusign_envelope_id = row.id
+                client_row.docusign_contract_signed_at = now
+
+        self.db.commit()
+        row = self.db.execute(
+            select(DocusignEnvelope)
+            .options(joinedload(DocusignEnvelope.client), joinedload(DocusignEnvelope.sent_by))
+            .where(DocusignEnvelope.id == row.id)
+        ).unique().scalar_one()
+        return self._map_envelope(row)
 
     def send_envelope(
         self,
@@ -1195,6 +1355,8 @@ class DocusignService:
     ) -> DocusignEnvelopeResponse:
         self.ensure_access(actor)
         row = self._get_envelope_row(actor, envelope_id, merchant_id=merchant_id)
+        if self._is_manual(row):
+            return self._map_envelope(row)
 
         api_client = self._client_from_settings()
         try:

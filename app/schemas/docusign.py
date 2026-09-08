@@ -55,6 +55,7 @@ class DocusignEnvelopeResponse(BaseModel):
     signer_email: str
     template_id: str
     template_role_name: str
+    origin: str = "docusign"
     subject: str
     status: str
     client_id: int | None = None

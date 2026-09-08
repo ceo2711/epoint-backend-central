@@ -31,7 +31,7 @@ class Prospect(Base):
         default=ProspectStatus.PENDIENTE_CONTACTAR.value,
         index=True,
     )
-    is_qualified: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_qualified: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), index=True)

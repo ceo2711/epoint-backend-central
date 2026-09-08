@@ -27,7 +27,7 @@ class ProspectCreate(BaseModel):
     source: str | None = Field(default=None, max_length=40)
     influencer_id: int | None = None
     merchant_id: int
-    is_qualified: bool = True
+    is_qualified: bool | None = None
     notes: str | None = None
     assigned_to_user_id: int | None = None
     sede_id: int | None = None
@@ -96,6 +96,7 @@ class ProspectEnvelopeBrief(ORMBase):
     id: int
     subject: str
     status: str
+    origin: str = "docusign"
     signer_name: str
     signer_email: str
     sent_at: datetime
@@ -132,7 +133,7 @@ class ProspectResponse(ORMBase):
     merchant_id: int
     assigned_to_user_id: int
     status: str
-    is_qualified: bool
+    is_qualified: bool | None = None
     first_name: str
     last_name: str
     full_name: str
@@ -166,7 +167,7 @@ class ProspectPipelineSummary(BaseModel):
 
     prospect_id: int
     status: str
-    is_qualified: bool
+    is_qualified: bool | None = None
     history: list[ProspectHistoryResponse] = Field(default_factory=list)
     calendly_event: ProspectCalendlyBrief | None = None
     docusign_envelopes: list[ProspectEnvelopeBrief] = Field(default_factory=list)

@@ -55,7 +55,7 @@ def _to_response(prospect) -> ProspectResponse:
         merchant_id=prospect.merchant_id,
         assigned_to_user_id=prospect.assigned_to_user_id,
         status=prospect.status,
-        is_qualified=bool(prospect.is_qualified),
+        is_qualified=prospect.is_qualified,
         first_name=prospect.first_name,
         last_name=prospect.last_name,
         full_name=prospect.full_name,
@@ -77,15 +77,9 @@ def _to_response(prospect) -> ProspectResponse:
 
 
 def _envelope_brief(env) -> ProspectEnvelopeBrief:
-    return ProspectEnvelopeBrief(
-        id=env.id,
-        subject=env.subject,
-        status=env.status,
-        signer_name=env.signer_name,
-        signer_email=env.signer_email,
-        sent_at=env.sent_at,
-        completed_at=env.completed_at,
-    )
+    from app.serializers.prospect_pipeline import envelope_brief
+
+    return envelope_brief(env)
 
 
 def _payment_brief(link) -> ProspectPaymentBrief:

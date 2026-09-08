@@ -347,7 +347,7 @@ class ClientService:
         source: str | None = None,
         merchant_id: int | None = None,
         default_merchant_id: int | None = None,
-        is_qualified: bool = True,
+        is_qualified: bool | None = None,
         commit: bool = True,
     ) -> tuple[Client, str | None]:
         """Crea un cliente.
@@ -400,7 +400,7 @@ class ClientService:
             sede_id=merchant.sede_id,
             registered_by_user_id=actor.id,
             status=ClientStatus.PENDIENTE_DE_REVISION.value,
-            is_qualified=bool(is_qualified),
+            is_qualified=is_qualified,
         )
         self.db.add(client)
         self.db.flush()

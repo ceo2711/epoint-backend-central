@@ -58,7 +58,7 @@ def client_to_response(
     return ClientResponse(
         id=client.id,
         status=client.status,
-        is_qualified=bool(getattr(client, "is_qualified", True)),
+        is_qualified=getattr(client, "is_qualified", None),
         first_name=client.first_name,
         last_name=client.last_name,
         email=client.email,

@@ -23,7 +23,7 @@ class Client(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(String(40), default=ClientStatus.PENDIENTE_DE_REVISION.value, index=True)
-    is_qualified: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_qualified: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
 
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))

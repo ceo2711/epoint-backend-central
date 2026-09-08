@@ -492,17 +492,11 @@ class AuthService:
             client.portal_temp_password_encrypted = encrypt_value(plain_password)
 
     def request_password_reset(self, payload: ForgotPasswordRequest) -> MessageResponse:
-        user = (
-            self.db.execute(
-                select(User)
-                .options(joinedload(User.role))
-                .where(User.email == payload.email.lower())
-            )
-            .unique()
-            .scalar_one_or_none()
-        )
+        user = self.db.execute(
+            select(User).where(User.email == payload.email.lower())
+        ).scalar_one_or_none()
 
-        if user is not None and user.is_active and user.role.code == CLIENT_ROLE_CODE:
+        if user is not None and user.is_active:
             settings = get_settings()
             now = datetime.now(timezone.utc)
             expires_at = now + timedelta(minutes=settings.password_reset_token_expire_minutes)
@@ -567,7 +561,7 @@ class AuthService:
             .unique()
             .scalar_one_or_none()
         )
-        if user is None or not user.is_active or user.role.code != CLIENT_ROLE_CODE:
+        if user is None or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El enlace de restablecimiento es inválido o expiró",

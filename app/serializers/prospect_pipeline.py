@@ -18,6 +18,7 @@ def envelope_brief(env) -> ProspectEnvelopeBrief:
         id=env.id,
         subject=env.subject,
         status=env.status,
+        origin=getattr(env, "origin", None) or "docusign",
         signer_name=env.signer_name,
         signer_email=env.signer_email,
         sent_at=env.sent_at,
@@ -97,7 +98,7 @@ def prospect_pipeline_summary(
     return ProspectPipelineSummary(
         prospect_id=prospect.id,
         status=prospect.status,
-        is_qualified=bool(prospect.is_qualified),
+        is_qualified=prospect.is_qualified,
         history=history,
         calendly_event=calendly,
         docusign_envelopes=envelopes,

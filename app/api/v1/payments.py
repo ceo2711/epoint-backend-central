@@ -10,6 +10,7 @@ from app.schemas.payment import (
     PaymentConfigResponse,
     PaymentLinkCreate,
     PaymentLinkCreateResponse,
+    PaymentLinkRemainderDueUpdate,
     PaymentLinkResponse,
     PaymentRegisterClientRequest,
     PaymentRegisterClientResponse,
@@ -112,6 +113,22 @@ def cancel_payment_link(
     db: DbSession,
 ) -> PaymentLinkResponse:
     return PaymentService(db).cancel_link(current_user, link_id, merchant_id=merchant_id)
+
+
+@router.patch("/links/{link_id}/remainder-due", response_model=PaymentLinkResponse)
+def update_payment_remainder_due(
+    link_id: int,
+    payload: PaymentLinkRemainderDueUpdate,
+    current_user: Annotated[User, Depends(require_permissions("payments:create"))],
+    merchant_id: ActiveMerchantId,
+    db: DbSession,
+) -> PaymentLinkResponse:
+    return PaymentService(db).update_remainder_due_on(
+        current_user,
+        link_id,
+        payload.remainder_due_on,
+        merchant_id=merchant_id,
+    )
 
 
 @router.post("/links/{link_id}/register-client", response_model=PaymentRegisterClientResponse)

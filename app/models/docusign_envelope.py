@@ -21,6 +21,7 @@ class DocusignEnvelope(Base):
     signer_email: Mapped[str] = mapped_column(String(255))
     template_id: Mapped[str] = mapped_column(String(64))
     template_role_name: Mapped[str] = mapped_column(String(120))
+    origin: Mapped[str] = mapped_column(String(20), default="docusign", server_default="docusign")
     subject: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(30), default="sent")
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

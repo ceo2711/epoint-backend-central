@@ -233,7 +233,7 @@ class ProspectService:
         email: str,
         phone: str,
         merchant_id: int,
-        is_qualified: bool = True,
+        is_qualified: bool | None = None,
         source: str | None = None,
         notes: str | None = None,
         assigned_to_user_id: int | None = None,
@@ -331,7 +331,7 @@ class ProspectService:
             sede_id=resolved_sede_id,
             assigned_to_user_id=owner_id,
             status=INITIAL_STATUS,
-            is_qualified=bool(is_qualified),
+            is_qualified=is_qualified,
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             email=normalized_email,
@@ -386,7 +386,7 @@ class ProspectService:
         for key, value in fields.items():
             if not hasattr(prospect, key):
                 continue
-            if key == "influencer_id":
+            if key in {"influencer_id", "is_qualified"}:
                 setattr(prospect, key, value)
             elif value is not None:
                 if isinstance(value, str):

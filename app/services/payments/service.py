@@ -337,6 +337,54 @@ class PaymentService:
         self.db.refresh(link)
         return self._to_response(link)
 
+    def update_remainder_due_on(
+        self,
+        user: User,
+        link_id: int,
+        remainder_due_on: date,
+        *,
+        merchant_id: int,
+    ) -> PaymentLinkResponse:
+        """Actualiza la fecha acordada para completar el saldo (pago parcial)."""
+        self.ensure_access(user)
+        link = self._get_link_for_user(user, link_id, merchant_id=merchant_id)
+        closed = {
+            PaymentLinkStatus.CANCELLED.value,
+            PaymentLinkStatus.EXPIRED.value,
+        }
+        if link.status in closed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se puede cambiar la fecha de un cobro cancelado o vencido",
+            )
+
+        targets = [link]
+        if link.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            prospect_svc = ProspectService(self.db)
+            prospect = prospect_svc._get_prospect_for_user(
+                user, link.prospect_id, merchant_id=merchant_id
+            )
+            prospect_links = prospect_svc.list_linked_payment_links(prospect)
+            if remaining_to_standard(prospect_links) <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Este prospecto ya cubrió el pago inicial de 3000 USD",
+                )
+            targets = [item for item in prospect_links if item.status not in closed] or [link]
+        elif remaining_amount(link) <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este cobro ya está saldado",
+            )
+
+        for item in targets:
+            item.remainder_due_on = remainder_due_on
+        self.db.commit()
+        self.db.refresh(link)
+        return self._to_response(link)
+
     def _send_link_email(self, link: PaymentLink, *, merchant_id: int | None) -> bool:
         leftover = remaining_amount(link)
         payment_url = link.payment_url

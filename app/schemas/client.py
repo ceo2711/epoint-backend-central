@@ -76,7 +76,7 @@ class ClientSignedContractBrief(BaseModel):
 class ClientResponse(ORMBase):
     id: int
     status: str
-    is_qualified: bool = True
+    is_qualified: bool | None = None
     first_name: str
     last_name: str
     email: str

@@ -12,6 +12,10 @@ PaymentLinkStatusLiteral = Literal["pending", "partial", "paid", "expired", "can
 DEFAULT_PAYMENT_AMOUNT = STANDARD_INITIAL_PAYMENT
 
 
+def remainder_due_on_is_past(value: date) -> bool:
+    return value < datetime.now(timezone.utc).date() - timedelta(days=1)
+
+
 class PaymentProviderStatus(BaseModel):
     provider: PaymentProviderLiteral
     configured: bool
@@ -51,7 +55,7 @@ class PaymentLinkCreate(BaseModel):
         if self.allow_partial:
             if self.remainder_due_on is None:
                 raise ValueError("Indicá la fecha acordada para completar el saldo")
-            if self.remainder_due_on < datetime.now(timezone.utc).date() - timedelta(days=1):
+            if remainder_due_on_is_past(self.remainder_due_on):
                 raise ValueError("La fecha para completar el saldo no puede ser anterior a hoy")
         return self
 
@@ -83,6 +87,16 @@ class PaymentLinkResponse(BaseModel):
     created_by_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PaymentLinkRemainderDueUpdate(BaseModel):
+    remainder_due_on: date
+
+    @model_validator(mode="after")
+    def remainder_due_not_past(self):
+        if remainder_due_on_is_past(self.remainder_due_on):
+            raise ValueError("La fecha para completar el saldo no puede ser anterior a hoy")
+        return self
 
 
 class PaymentLinkCreateResponse(BaseModel):

@@ -82,3 +82,35 @@ class TestAuthRoutes:
             json={"email": "not-email", "password": "123"},
         )
         assert response.status_code == 422
+
+    def test_forgot_password_same_message_for_known_and_unknown_email(self, client):
+        generic = "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
+        with patch("app.api.v1.auth.AuthService") as mock_service:
+            mock_service.return_value.request_password_reset.return_value = MessageResponse(
+                message=generic
+            )
+            known = client.post("/api/v1/auth/forgot-password", json={"email": "admin@test.com"})
+            unknown = client.post("/api/v1/auth/forgot-password", json={"email": "nadie@test.com"})
+
+        assert known.status_code == 200
+        assert unknown.status_code == 200
+        assert known.json()["message"] == generic
+        assert unknown.json()["message"] == generic
+        assert mock_service.return_value.request_password_reset.call_count == 2
+
+    def test_reset_password_endpoint_accepts_token_and_new_password(self, client):
+        with patch("app.api.v1.auth.AuthService") as mock_service:
+            mock_service.return_value.reset_password.return_value = MessageResponse(
+                message="Contraseña actualizada correctamente"
+            )
+            response = client.post(
+                "/api/v1/auth/reset-password",
+                json={
+                    "token": "a" * 24,
+                    "new_password": "NuevaClave12",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Contraseña actualizada correctamente"
+        mock_service.return_value.reset_password.assert_called_once()

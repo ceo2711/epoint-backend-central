@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from typing import Annotated
 
 from app.api.deps import ActiveMerchantId, CurrentUser, DbSession
 from app.schemas.docusign import (
@@ -103,6 +104,30 @@ def send_envelope(
     db: DbSession,
 ) -> DocusignSendEnvelopeResponse:
     return DocusignService(db).send_envelope(current_user, payload, merchant_id=merchant_id)
+
+
+@router.post("/envelopes/manual", response_model=DocusignEnvelopeResponse)
+async def upload_manual_contract(
+    current_user: CurrentUser,
+    merchant_id: ActiveMerchantId,
+    db: DbSession,
+    file: Annotated[UploadFile, File()],
+    prospect_id: Annotated[int | None, Form()] = None,
+    client_id: Annotated[int | None, Form()] = None,
+    subject: Annotated[str | None, Form()] = None,
+) -> DocusignEnvelopeResponse:
+    """Carga un contrato físico firmado (PDF o foto) y lo marca como firmado."""
+    file_bytes = await file.read()
+    return DocusignService(db).upload_manual_contract(
+        current_user,
+        file_bytes=file_bytes,
+        filename=file.filename or "contrato.pdf",
+        content_type=file.content_type or "",
+        merchant_id=merchant_id,
+        prospect_id=prospect_id,
+        client_id=client_id,
+        subject=subject,
+    )
 
 
 @router.post("/envelopes/{envelope_id}/resend-reminder", response_model=DocusignResendReminderResponse)

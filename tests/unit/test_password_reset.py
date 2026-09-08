@@ -50,24 +50,41 @@ def db_session():
         client_id=1,
         is_active=True,
     )
-    session.add_all([admin_role, client_role, admin_user, client_user])
+    inactive_user = User(
+        id=3,
+        email="inactive@test.com",
+        password_hash=hash_password("Oldpass12"),
+        first_name="Inactive",
+        last_name="User",
+        role_id=2,
+        is_active=False,
+    )
+    session.add_all([admin_role, client_role, admin_user, client_user, inactive_user])
     session.commit()
     yield session
     session.close()
 
 
-def test_request_password_reset_sends_email_only_for_clients(db_session):
+def test_request_password_reset_hides_whether_email_exists(db_session):
     service = AuthService(db_session)
 
     with patch("app.services.auth.send_password_reset_email", return_value=True) as mock_send:
         admin_result = service.request_password_reset(ForgotPasswordRequest(email="admin@test.com"))
         client_result = service.request_password_reset(ForgotPasswordRequest(email="client@test.com"))
+        inactive = service.request_password_reset(ForgotPasswordRequest(email="inactive@test.com"))
         unknown = service.request_password_reset(ForgotPasswordRequest(email="unknown@test.com"))
 
     assert admin_result.message == PASSWORD_RESET_SENT_MESSAGE
     assert client_result.message == PASSWORD_RESET_SENT_MESSAGE
+    assert inactive.message == PASSWORD_RESET_SENT_MESSAGE
     assert unknown.message == PASSWORD_RESET_SENT_MESSAGE
-    mock_send.assert_called_once()
+    assert mock_send.call_count == 2
+    sent_emails = {call.args[0].recipient_email for call in mock_send.call_args_list}
+    assert sent_emails == {"admin@test.com", "client@test.com"}
+    for call in mock_send.call_args_list:
+        payload = call.args[0]
+        assert "/recuperar-contrasena/confirmar?token=" in payload.reset_url
+        assert len(payload.reset_url.split("token=", 1)[1]) >= 20
 
 
 def test_reset_password_updates_hash_and_marks_token_used(db_session):
@@ -94,7 +111,7 @@ def test_reset_password_updates_hash_and_marks_token_used(db_session):
     assert token_row.used_at is not None
 
 
-def test_reset_password_rejects_staff_user_token(db_session):
+def test_reset_password_updates_staff_user(db_session):
     service = AuthService(db_session)
     raw_token = generate_password_reset_token()
     db_session.add(
@@ -106,11 +123,14 @@ def test_reset_password_rejects_staff_user_token(db_session):
     )
     db_session.commit()
 
-    with pytest.raises(HTTPException) as exc:
-        service.reset_password(
-            ResetPasswordRequest(token=raw_token, new_password="Newpass12")
-        )
-    assert exc.value.status_code == 400
+    result = service.reset_password(
+        ResetPasswordRequest(token=raw_token, new_password="Newpass12")
+    )
+
+    assert result.message == "Contraseña actualizada correctamente"
+    user = db_session.get(User, 1)
+    assert user is not None
+    assert verify_password("Newpass12", user.password_hash)
 
 
 def test_reset_password_rejects_invalid_token(db_session):

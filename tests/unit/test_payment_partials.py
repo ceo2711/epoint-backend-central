@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.models.payment_link import PaymentLinkStatus
-from app.schemas.payment import PaymentLinkCreate
+from app.schemas.payment import PaymentLinkCreate, PaymentLinkRemainderDueUpdate
 from app.services.payment_reminders import run_payment_reminders
 from app.services.payments.amounts import (
     STANDARD_INITIAL_PAYMENT,
@@ -254,6 +254,16 @@ def test_partial_create_requires_remainder_due_on():
         )
 
 
+def test_remainder_due_update_rejects_past_date():
+    with pytest.raises(ValidationError):
+        PaymentLinkRemainderDueUpdate(remainder_due_on=date.today() - timedelta(days=3))
+
+
+def test_remainder_due_update_accepts_today():
+    payload = PaymentLinkRemainderDueUpdate(remainder_due_on=date.today())
+    assert payload.remainder_due_on == date.today()
+
+
 def test_partial_create_rejects_past_remainder_due_on():
     with pytest.raises(ValidationError):
         PaymentLinkCreate(
@@ -266,6 +276,23 @@ def test_partial_create_rejects_past_remainder_due_on():
             allow_partial=True,
             remainder_due_on=date.today() - timedelta(days=3),
         )
+
+
+def test_update_remainder_due_rejects_cancelled_link():
+    svc = PaymentService.__new__(PaymentService)
+    svc.db = MagicMock()
+    svc.ensure_access = MagicMock()
+    svc._get_link_for_user = MagicMock(
+        return_value=_link(status=PaymentLinkStatus.CANCELLED.value, prospect_id=None)
+    )
+    with pytest.raises(HTTPException) as exc:
+        svc.update_remainder_due_on(
+            user=MagicMock(),
+            link_id=1,
+            remainder_due_on=date.today() + timedelta(days=7),
+            merchant_id=1,
+        )
+    assert exc.value.status_code == 400
 
 
 def test_normalize_full_payment_is_always_3000():
