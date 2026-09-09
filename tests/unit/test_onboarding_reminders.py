@@ -12,6 +12,7 @@ from app.workers.inline_scheduler import start_onboarding_reminder_scheduler
 
 
 def _sample_client(**kwargs) -> Client:
+    old = datetime.now(timezone.utc) - timedelta(days=100)
     defaults = {
         "id": 1,
         "first_name": "Ana",
@@ -20,7 +21,8 @@ def _sample_client(**kwargs) -> Client:
         "phone": "+15551234567",
         "status": ClientStatus.EN_CARGA_DATOS.value,
         "registered_by_user_id": 1,
-        "approved_at": datetime.now(timezone.utc),
+        "approved_at": old,
+        "created_at": old,
     }
     defaults.update(kwargs)
     return Client(**defaults)
@@ -147,6 +149,39 @@ def test_run_onboarding_reminders_skips_within_cooldown(db_session, monkeypatch)
     send_email.assert_not_called()
     assert summary["processed"] == 1
     assert summary["sent"] == 0
+    assert summary["skipped"] == 1
+
+
+def test_run_onboarding_reminders_skips_recently_approved_without_prior_send(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+    recent = datetime.now(timezone.utc) - timedelta(hours=2)
+    client = _sample_client(
+        last_onboarding_reminder_at=None,
+        approved_at=recent,
+        created_at=recent,
+    )
+    gaps = MagicMock(
+        needs_reminder=True,
+        all_pending_labels=lambda: ["SSN / Seguro Social"],
+    )
+    settings = MagicMock()
+    settings.portal_login_url = "https://portal.example/login"
+    settings.notifications_dry_run = True
+    settings.onboarding_reminder_cooldown_hours = 2160
+
+    with (
+        patch("app.services.onboarding_reminders.get_settings", return_value=settings),
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, _sample_portal_user(client))],
+        ),
+        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_email") as send_email,
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
+    ):
+        summary = run_onboarding_reminders(db_session)
+
+    send_email.assert_not_called()
     assert summary["skipped"] == 1
 
 

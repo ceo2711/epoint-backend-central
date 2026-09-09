@@ -97,7 +97,11 @@ def run_board_reminders(db: Session) -> dict:
         if not cards:
             skipped += 1
             continue
-        last = client.last_board_reminder_at
+        last = (
+            client.last_board_reminder_at
+            or getattr(client, "approved_at", None)
+            or getattr(client, "created_at", None)
+        )
         if last is not None:
             last_aware = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
             if now - last_aware < cooldown:

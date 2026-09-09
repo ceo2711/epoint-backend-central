@@ -113,8 +113,41 @@ def test_board_reminders_skip_within_cooldown():
     assert summary["skipped"] == 1
 
 
+def test_board_reminders_skip_recently_created_without_prior_send():
+    recent = datetime.now(timezone.utc) - timedelta(hours=2)
+    client = SimpleNamespace(
+        id=1,
+        email="ana@example.com",
+        first_name="Ana",
+        documents=[object()],
+        board=SimpleNamespace(lists=[_list("Client TO DO", [_card("Reporte")])]),
+        last_board_reminder_at=None,
+        approved_at=recent,
+        created_at=recent,
+    )
+    db = MagicMock()
+    db.execute.return_value.unique.return_value.scalars.return_value.all.return_value = [client]
+
+    with (
+        patch("app.services.board_reminders.client_has_board_access", return_value=True),
+        patch("app.services.board_reminders.send_board_reminder_email") as send,
+        patch(
+            "app.services.board_reminders.get_settings",
+            return_value=SimpleNamespace(
+                board_reminder_cooldown_hours=2160,
+                portal_board_url="https://portal.example/tablero",
+                notifications_dry_run=True,
+            ),
+        ),
+    ):
+        summary = run_board_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+
+
 def test_board_reminders_send_when_board_has_pending_tasks():
-    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    old = datetime.now(timezone.utc) - timedelta(days=100)
     client = SimpleNamespace(
         id=4,
         email="ana@example.com",

@@ -52,7 +52,12 @@ def run_onboarding_reminders(db: Session) -> dict:
         if not gaps.needs_reminder:
             skipped += 1
             continue
-        if _within_onboarding_cooldown(client.last_onboarding_reminder_at, cooldown, now):
+        last = (
+            client.last_onboarding_reminder_at
+            or getattr(client, "approved_at", None)
+            or getattr(client, "created_at", None)
+        )
+        if _within_onboarding_cooldown(last, cooldown, now):
             skipped += 1
             continue
 
