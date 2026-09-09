@@ -68,4 +68,4 @@ def test_payment_email_bodies_include_payment_url():
     assert url in initial
     assert "completar tu pago" in initial.lower()
     assert url in reminder
-    assert "completá tu pago" in reminder.lower()
+    assert "completa tu pago" in reminder.lower()

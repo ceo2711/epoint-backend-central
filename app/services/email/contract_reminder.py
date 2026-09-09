@@ -8,7 +8,7 @@ from app.services.email.html_templates import logo_url_for_emails, render_html_t
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import contract_reminder_email_body
 
-CONTRACT_REMINDER_SUBJECT = "Recordatorio: firmá tu contrato en Epoint"
+CONTRACT_REMINDER_SUBJECT = "Recordatorio: firma tu contrato en Epoint"
 
 
 @dataclass(frozen=True, slots=True)

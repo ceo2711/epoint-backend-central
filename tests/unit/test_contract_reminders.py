@@ -38,6 +38,9 @@ def test_contract_reminder_email_mentions_signing():
     assert "Ana" in body
     assert "Contrato de servicios" in body
     assert "firma" in body.lower()
+    assert "revisa" in body.lower()
+    assert "tenés" not in body.lower()
+    assert "firmá" not in body.lower()
 
 
 def test_contract_reminders_skip_within_cooldown():

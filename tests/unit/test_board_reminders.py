@@ -65,6 +65,9 @@ def test_board_reminder_email_mentions_board_and_tasks():
     assert "Cargar credenciales" in body
     assert "tablero" in body.lower()
     assert "https://app.epoint.test/portal/tablero" in body
+    assert "tienes" in body.lower() or "ingresa" in body.lower()
+    assert "tenés" not in body.lower()
+    assert "entrá" not in body.lower()
 
 
 def test_board_reminders_skip_without_board_access():

@@ -14,7 +14,7 @@ from app.services.notifications.templates import onboarding_reminder_email_body
 
 logger = logging.getLogger(__name__)
 
-REMINDER_EMAIL_SUBJECT = "Recordatorio: completá tu onboarding en Epoint"
+REMINDER_EMAIL_SUBJECT = "Recordatorio: completa tu onboarding en Epoint"
 REMINDER_EMAIL_SUBJECT_EN = "Reminder: complete your Epoint onboarding"
 
 

@@ -9,7 +9,7 @@ from app.services.email.payment_link import _description_block, format_payment_a
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import payment_reminder_email_body
 
-PAYMENT_REMINDER_SUBJECT = "Recordatorio: completá tu pago en Epoint"
+PAYMENT_REMINDER_SUBJECT = "Recordatorio: completa tu pago en Epoint"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +49,7 @@ def send_payment_reminder_email(payload: PaymentReminderEmailPayload) -> bool:
     merchant_line = (
         f"Ya recibimos {paid_formatted}. El saldo pendiente es {remaining_formatted}."
         if paid_formatted
-        else f"Todavía tenés un saldo pendiente de {remaining_formatted}."
+        else f"Todavía tienes un saldo pendiente de {remaining_formatted}."
     )
     html_body = render_html_template(
         "payment_link",

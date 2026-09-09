@@ -12,7 +12,7 @@ from app.services.email.html_templates import (
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import board_reminder_email_body
 
-BOARD_REMINDER_SUBJECT = "Recordatorio: tenés tareas pendientes en tu tablero de Epoint"
+BOARD_REMINDER_SUBJECT = "Recordatorio: tienes tareas pendientes en tu tablero de Epoint"
 
 
 @dataclass(frozen=True, slots=True)
