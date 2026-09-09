@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.payment_link import PaymentLink
 from app.models.prospect import Prospect
 from app.schemas.prospect import (
     ProspectCalendlyBrief,
@@ -10,6 +14,7 @@ from app.schemas.prospect import (
     ProspectPaymentBrief,
     ProspectPipelineSummary,
 )
+from app.services.payments.amounts import public_payment_url, remaining_amount
 from app.services.prospects import ProspectService
 
 
@@ -27,8 +32,6 @@ def envelope_brief(env) -> ProspectEnvelopeBrief:
 
 
 def payment_brief(link) -> ProspectPaymentBrief:
-    from app.services.payments.amounts import remaining_amount
-
     return ProspectPaymentBrief(
         id=link.id,
         amount=link.amount,
@@ -37,11 +40,25 @@ def payment_brief(link) -> ProspectPaymentBrief:
         allow_partial=bool(getattr(link, "allow_partial", False)),
         currency=link.currency,
         status=link.status,
-        payment_url=link.payment_url,
+        payment_url=public_payment_url(getattr(link, "payment_url", None)),
         paid_at=link.paid_at,
         remainder_due_on=getattr(link, "remainder_due_on", None),
         created_at=link.created_at,
     )
+
+
+def list_client_payment_briefs(db: Session, client_id: int) -> list[ProspectPaymentBrief]:
+    """Links de pago del cliente, aunque no tenga prospecto de origen (p. ej. migración)."""
+    links = (
+        db.execute(
+            select(PaymentLink)
+            .where(PaymentLink.client_id == client_id)
+            .order_by(PaymentLink.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return [payment_brief(link) for link in links]
 
 
 def prospect_pipeline_summary(

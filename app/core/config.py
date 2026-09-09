@@ -137,6 +137,8 @@ class Settings(BaseSettings):
 
     # Recordatorios automáticos de onboarding incompleto (0 = deshabilitado; corre dentro de la API)
     onboarding_reminder_interval_minutes: int = 0
+    # No reenviar recordatorio de onboarding incompleto antes de N horas
+    onboarding_reminder_cooldown_hours: int = 24
     # No reenviar recordatorio de saldo de pago antes de N horas
     payment_reminder_cooldown_hours: int = 24
     # No reenviar recordatorio de firma de contrato antes de N horas

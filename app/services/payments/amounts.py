@@ -12,6 +12,18 @@ SATISFIED_PAYMENT_STATUSES = frozenset(
 STANDARD_INITIAL_PAYMENT = Decimal("3000.00")
 
 
+def is_shareable_payment_url(raw: str | None) -> bool:
+    """True solo si hay una URL de checkout que se pueda abrir o copiar."""
+    value = (raw or "").strip()
+    return value.startswith("https://") or value.startswith("http://")
+
+
+def public_payment_url(raw: str | None) -> str:
+    """Oculta placeholders de migración u otros valores que no son un link real."""
+    value = (raw or "").strip()
+    return value if is_shareable_payment_url(value) else ""
+
+
 def remaining_amount(link: PaymentLink) -> Decimal:
     paid = Decimal(link.amount_paid or 0)
     leftover = Decimal(link.amount) - paid

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,6 +116,72 @@ def test_run_onboarding_reminders_skips_clients_without_active_portal_user(db_se
         "dry_run": True,
     }
     db_session.commit.assert_called_once()
+
+
+def test_run_onboarding_reminders_skips_within_cooldown(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+    client = _sample_client(
+        last_onboarding_reminder_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    gaps = MagicMock(
+        needs_reminder=True,
+        all_pending_labels=lambda: ["SSN / Seguro Social"],
+    )
+    settings = MagicMock()
+    settings.portal_login_url = "https://portal.example/login"
+    settings.notifications_dry_run = True
+    settings.onboarding_reminder_cooldown_hours = 720
+
+    with (
+        patch("app.services.onboarding_reminders.get_settings", return_value=settings),
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, _sample_portal_user(client))],
+        ),
+        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_email") as send_email,
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
+    ):
+        summary = run_onboarding_reminders(db_session)
+
+    send_email.assert_not_called()
+    assert summary["processed"] == 1
+    assert summary["sent"] == 0
+    assert summary["skipped"] == 1
+
+
+def test_run_onboarding_reminders_sends_after_cooldown(db_session, monkeypatch):
+    monkeypatch.setenv("NOTIFICATIONS_DRY_RUN", "true")
+    client = _sample_client(
+        last_onboarding_reminder_at=datetime.now(timezone.utc) - timedelta(hours=800),
+    )
+    portal_user = _sample_portal_user(client)
+    gaps = MagicMock(
+        needs_reminder=True,
+        all_pending_labels=lambda: ["SSN / Seguro Social"],
+    )
+    settings = MagicMock()
+    settings.portal_login_url = "https://portal.example/login"
+    settings.notifications_dry_run = True
+    settings.onboarding_reminder_cooldown_hours = 720
+
+    with (
+        patch("app.services.onboarding_reminders.get_settings", return_value=settings),
+        patch(
+            "app.services.onboarding_reminders.fetch_clients_with_active_portal_user",
+            return_value=[(client, portal_user)],
+        ),
+        patch("app.services.onboarding_reminders.analyze_onboarding_gaps", return_value=gaps),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_email", return_value=True),
+        patch("app.services.onboarding_reminders.send_onboarding_reminder_whatsapp", return_value=False),
+        patch("app.services.onboarding_reminders.NotificationService"),
+    ):
+        summary = run_onboarding_reminders(db_session)
+
+    assert summary["processed"] == 1
+    assert summary["sent"] == 1
+    assert summary["skipped"] == 0
+    assert client.last_onboarding_reminder_at is not None
 
 
 def test_scheduler_starts_when_onboarding_interval_zero():

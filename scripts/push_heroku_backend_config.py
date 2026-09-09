@@ -51,6 +51,11 @@ PROD_OVERRIDES: dict[str, str] = {
     "PAYPAL_ENV": "sandbox",
     # En prod no redirigir emails a sandbox; dejar vacío / unset
     "EMAIL_DEV_REDIRECT_TO": "",
+    # Recordatorios: 1 vez al mes (720 h) hasta definir la regularidad
+    "PAYMENT_REMINDER_COOLDOWN_HOURS": "720",
+    "CONTRACT_REMINDER_COOLDOWN_HOURS": "720",
+    "BOARD_REMINDER_COOLDOWN_HOURS": "720",
+    "ONBOARDING_REMINDER_COOLDOWN_HOURS": "720",
 }
 
 # Nunca subir desde .env local (Heroku addons o deben ser secretos nuevos de prod).

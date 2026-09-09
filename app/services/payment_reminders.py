@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.payment_link import PaymentLink, PaymentLinkStatus
 from app.services.email.payment_reminder import PaymentReminderEmailPayload, send_payment_reminder_email
-from app.services.payments.amounts import remaining_amount
+from app.services.payments.amounts import is_shareable_payment_url, remaining_amount
 from app.services.payments.service import PROVIDER_LABELS
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,9 @@ def run_payment_reminders(db: Session) -> dict:
         processed += 1
         leftover = remaining_amount(link)
         if leftover <= 0 or not link.customer_email:
+            skipped += 1
+            continue
+        if not is_shareable_payment_url(link.payment_url):
             skipped += 1
             continue
         if is_waiting_on_agreed_remainder(link) and not remainder_due_reached(link, today):

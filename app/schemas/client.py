@@ -4,7 +4,7 @@ import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.common import ORMBase
-from app.schemas.prospect import ProspectPipelineSummary
+from app.schemas.prospect import ProspectPaymentBrief, ProspectPipelineSummary
 
 
 class MerchantBrief(ORMBase):
@@ -119,6 +119,7 @@ class ClientDetailResponse(ClientResponse):
     vehicles: list["VehicleResponse"] = []
     documents: list["DocumentBrief"] = []
     source_prospect: ProspectPipelineSummary | None = None
+    payment_links: list[ProspectPaymentBrief] = Field(default_factory=list)
     onboarding_gaps: OnboardingGapsResponse | None = None
 
 

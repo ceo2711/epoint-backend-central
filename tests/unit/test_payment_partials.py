@@ -131,6 +131,25 @@ def test_payment_reminders_skip_recently_created_link():
     assert summary["sent"] == 0
 
 
+def test_payment_reminders_skip_non_shareable_url():
+    old = datetime.now(timezone.utc) - timedelta(hours=30)
+    link = _remindable_partial(
+        payment_url="migration",
+        last_payment_reminder_at=old,
+        created_at=old,
+        remainder_due_on=date.today() - timedelta(days=1),
+    )
+    db = MagicMock()
+    db.execute.return_value.scalars.return_value.all.return_value = [link]
+
+    with patch("app.services.payment_reminders.send_payment_reminder_email") as send:
+        summary = run_payment_reminders(db)
+
+    send.assert_not_called()
+    assert summary["skipped"] == 1
+    assert summary["sent"] == 0
+
+
 def _remindable_partial(**kwargs):
     old = datetime.now(timezone.utc) - timedelta(hours=30)
     defaults = {

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -26,8 +26,17 @@ from app.services.whatsapp.onboarding_reminder import (
 logger = logging.getLogger(__name__)
 
 
+def _within_onboarding_cooldown(last: datetime | None, cooldown: timedelta, now: datetime) -> bool:
+    if last is None:
+        return False
+    last_aware = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+    return now - last_aware < cooldown
+
+
 def run_onboarding_reminders(db: Session) -> dict:
     settings = get_settings()
+    cooldown = timedelta(hours=max(1, settings.onboarding_reminder_cooldown_hours))
+    now = datetime.now(timezone.utc)
 
     eligible_clients = fetch_clients_with_active_portal_user(db)
 
@@ -41,6 +50,9 @@ def run_onboarding_reminders(db: Session) -> dict:
         processed += 1
         gaps = analyze_onboarding_gaps(db, client)
         if not gaps.needs_reminder:
+            skipped += 1
+            continue
+        if _within_onboarding_cooldown(client.last_onboarding_reminder_at, cooldown, now):
             skipped += 1
             continue
 

@@ -38,6 +38,7 @@ from app.schemas.common import (
 from app.services.email import CustomMessageEmailPayload, send_custom_message_email
 from app.services.email.custom_message import sanitize_message_html
 from app.serializers.client import client_to_response
+from app.serializers.prospect_pipeline import list_client_payment_briefs
 from app.services.client_email_inbox import (
     list_client_thread,
     mark_client_inbound_read,
@@ -279,6 +280,8 @@ def get_client(
         response.source_prospect_status = response.source_prospect.status
     elif response.source_prospect_status is None:
         response.source_prospect_status = _source_prospect_statuses(db, [client.id]).get(client.id)
+    if can_view_onboarding:
+        response.payment_links = list_client_payment_briefs(db, client_id)
     if not can_view_onboarding:
         response.date_of_birth = None
         response.has_ssn = False
