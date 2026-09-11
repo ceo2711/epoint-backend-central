@@ -290,6 +290,34 @@ Equipo Epoint
 """
 
 
+def staff_welcome_email_body(
+    *,
+    first_name: str,
+    email: str,
+    temp_password: str,
+    login_url: str,
+    role_line: str = "",
+) -> str:
+    role_block = f"\n{role_line}\n" if role_line.strip() else ""
+    return f"""Hola {first_name},
+{role_block}
+Tu cuenta de empleado en Epoint ya está lista. Puedes ingresar a la plataforma con las credenciales de abajo.
+
+Credenciales de acceso
+──────────────────────
+Plataforma: {login_url}
+Usuario (email): {email}
+Contraseña temporal: {temp_password}
+
+En tu primer ingreso debes cambiar la contraseña temporal.
+
+Si tienes dudas de la plataforma, visita https://epointsolution.com/ o responde este correo: tu mensaje llega al equipo en Epoint.
+
+Saludos,
+Equipo Epoint
+"""
+
+
 def password_reset_email_body(
     *,
     first_name: str,

@@ -8,6 +8,11 @@ from app.services.email.board_reminder import BoardReminderEmailPayload, send_bo
 from app.services.email.onboarding_reminder import OnboardingReminderEmailPayload, send_onboarding_reminder_email
 from app.services.email.password_reset import PasswordResetEmailPayload, send_password_reset_email
 from app.services.email.payment_link import PaymentLinkEmailPayload, send_payment_link_email
+from app.services.email.staff_welcome import (
+    StaffWelcomeEmailPayload,
+    notify_staff_account_created,
+    send_staff_welcome_email,
+)
 
 __all__ = [
     "ClientWelcomeEmailPayload",
@@ -17,6 +22,8 @@ __all__ = [
     "OnboardingReminderEmailPayload",
     "PasswordResetEmailPayload",
     "PaymentLinkEmailPayload",
+    "StaffWelcomeEmailPayload",
+    "notify_staff_account_created",
     "send_client_conversion_welcome_email",
     "send_client_welcome_email",
     "send_custom_message_email",
@@ -24,4 +31,5 @@ __all__ = [
     "send_onboarding_reminder_email",
     "send_password_reset_email",
     "send_payment_link_email",
+    "send_staff_welcome_email",
 ]

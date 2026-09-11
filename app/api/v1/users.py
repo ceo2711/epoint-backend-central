@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import SubSellerActiveUpdate, UserCreate, UserResponse, UserUpdate
 from app.services.auth import AuthService
+from app.services.email import notify_staff_account_created
 from app.services.role_access import AREA_LEADER_ROLE, is_branch_manager
 from app.services.sede_scope import (
     assert_actor_can_assign_role,
@@ -236,6 +237,7 @@ def create_user(
     db.commit()
     db.refresh(user)
     db.refresh(user, attribute_names=["role", "area", "sede"])
+    notify_staff_account_created(user, payload.password)
     return serialize_user(user)
 
 

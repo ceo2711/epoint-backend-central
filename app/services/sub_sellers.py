@@ -23,6 +23,7 @@ from app.models.client import Client
 from app.models.prospect import Prospect
 from app.models.role import Role
 from app.models.user import User
+from app.services.email import notify_staff_account_created
 from app.services.role_access import (
     SUB_SELLER_ROLE,
     can_own_sub_sellers,
@@ -383,6 +384,7 @@ class SubSellerService:
             .unique()
             .scalar_one()
         )
+        notify_staff_account_created(refreshed, password)
         return refreshed
 
     def set_sub_seller_active(self, actor: User, sub_seller_id: int, *, is_active: bool) -> User:
