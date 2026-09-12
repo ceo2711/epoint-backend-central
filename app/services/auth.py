@@ -116,6 +116,8 @@ class AuthService:
             can_manage_sub_sellers=bool(eligibility.get("can_manage_sub_sellers")),
             is_sub_seller=bool(eligibility.get("is_sub_seller")),
             previous_month_sales=eligibility.get("previous_month_sales"),
+            first_steps_completed_at=user.first_steps_completed_at,
+            needs_first_steps=self._needs_first_steps(user),
         )
 
     def _build_2fa_pending_user(self, user: User) -> UserMeResponse:
@@ -138,6 +140,8 @@ class AuthService:
             can_manage_sub_sellers=False,
             is_sub_seller=bool(user.parent_user_id) or user.role.code == "SUB_SELLER",
             previous_month_sales=None,
+            first_steps_completed_at=user.first_steps_completed_at,
+            needs_first_steps=self._needs_first_steps(user),
         )
 
     @staticmethod
@@ -145,6 +149,15 @@ class AuthService:
         if is_app_review_email(user.email):
             return False
         return bool(user.must_change_password)
+
+    @staticmethod
+    def _needs_first_steps(user: User) -> bool:
+        role_code = getattr(getattr(user, "role", None), "code", None)
+        if role_code != CLIENT_ROLE_CODE:
+            return False
+        if is_app_review_email(user.email):
+            return False
+        return user.first_steps_completed_at is None
 
     def set_active_merchant(self, user: User, merchant_id: int) -> UserMeResponse:
         MerchantContextService(self.db).set_active_merchant(user, merchant_id)
@@ -349,6 +362,22 @@ class AuthService:
 
     def get_me(self, user: User) -> UserMeResponse:
         return self._build_user_me(user)
+
+    def complete_first_steps(self, user: User) -> UserMeResponse:
+        if getattr(getattr(user, "role", None), "code", None) != CLIENT_ROLE_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo los clientes pueden completar los primeros pasos",
+            )
+        if user.first_steps_completed_at is None:
+            user.first_steps_completed_at = datetime.now(timezone.utc)
+            self.db.commit()
+        refreshed = self.db.execute(
+            select(User)
+            .options(joinedload(User.role), joinedload(User.area), joinedload(User.sede))
+            .where(User.id == user.id)
+        ).unique().scalar_one()
+        return self._build_user_me(refreshed)
 
     def update_profile(self, user: User, payload: UserProfileUpdate) -> UserMeResponse:
         from app.models.client import Client

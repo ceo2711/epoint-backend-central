@@ -139,6 +139,11 @@ def get_me(current_user: CurrentUser, db: DbSession) -> UserMeResponse:
     return AuthService(db).get_me(current_user)
 
 
+@router.post("/me/first-steps/complete", response_model=UserMeResponse)
+def complete_first_steps(current_user: CurrentUser, db: DbSession) -> UserMeResponse:
+    return AuthService(db).complete_first_steps(current_user)
+
+
 @router.patch("/me", response_model=UserMeResponse)
 def update_me(
     payload: UserProfileUpdate,

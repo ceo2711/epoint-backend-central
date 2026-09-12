@@ -47,6 +47,9 @@ class User(Base):
     )
 
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_steps_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     totp_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -114,3 +114,23 @@ class TestAuthRoutes:
         assert response.status_code == 200
         assert response.json()["message"] == "Contraseña actualizada correctamente"
         mock_service.return_value.reset_password.assert_called_once()
+
+    def test_complete_first_steps_requires_auth(self, client):
+        response = client.post("/api/v1/auth/me/first-steps/complete")
+        assert response.status_code == 401
+
+    def test_complete_first_steps_endpoint(self, client):
+        from app.api.deps import get_current_user
+        from app.core.database import get_db
+
+        app.dependency_overrides[get_current_user] = lambda: object()
+        app.dependency_overrides[get_db] = lambda: object()
+        try:
+            with patch("app.api.v1.auth.AuthService") as mock_service:
+                mock_service.return_value.complete_first_steps.return_value = _sample_user_me()
+                response = client.post("/api/v1/auth/me/first-steps/complete")
+            assert response.status_code == 200
+            assert response.json()["needs_first_steps"] is False
+            mock_service.return_value.complete_first_steps.assert_called_once()
+        finally:
+            app.dependency_overrides.clear()

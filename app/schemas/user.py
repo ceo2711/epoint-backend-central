@@ -90,6 +90,8 @@ class UserMeResponse(UserResponse):
     can_manage_sub_sellers: bool = False
     is_sub_seller: bool = False
     previous_month_sales: int | None = None
+    first_steps_completed_at: datetime | None = None
+    needs_first_steps: bool = False
 
 
 class SubSellerCreate(BaseModel):

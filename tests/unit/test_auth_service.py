@@ -247,3 +247,118 @@ class TestAuthServiceChangePassword:
             )
 
         assert exc.value.status_code == 400
+
+
+class TestNeedsFirstSteps:
+    def test_new_client_needs_first_steps(self):
+        user = MagicMock()
+        user.role.code = "CLIENT"
+        user.email = "nuevo@test.com"
+        user.first_steps_completed_at = None
+        assert AuthService._needs_first_steps(user) is True
+
+    def test_completed_client_does_not_need_first_steps(self):
+        user = MagicMock()
+        user.role.code = "CLIENT"
+        user.email = "cliente@test.com"
+        user.first_steps_completed_at = datetime.now(timezone.utc)
+        assert AuthService._needs_first_steps(user) is False
+
+    def test_staff_does_not_need_first_steps(self):
+        user = MagicMock()
+        user.role.code = "ADMIN"
+        user.email = "admin@test.com"
+        user.first_steps_completed_at = None
+        assert AuthService._needs_first_steps(user) is False
+
+    def test_app_review_client_skips_first_steps(self):
+        user = MagicMock()
+        user.role.code = "CLIENT"
+        user.email = "appreview@epoint.com"
+        user.first_steps_completed_at = None
+        assert AuthService._needs_first_steps(user) is False
+
+
+class TestCompleteFirstSteps:
+    def _client_user(self):
+        user = MagicMock()
+        user.id = 10
+        user.role.code = "CLIENT"
+        user.email = "nuevo@test.com"
+        user.first_steps_completed_at = None
+        return user
+
+    def test_sets_timestamp_for_client(self):
+        from app.schemas.user import RoleBrief, UserMeResponse
+
+        user = self._client_user()
+        db = MagicMock()
+        refreshed = MagicMock()
+        db.execute.return_value.unique.return_value.scalar_one.return_value = refreshed
+        user_me = UserMeResponse(
+            id=10,
+            email="nuevo@test.com",
+            first_name="Nuevo",
+            last_name="Cliente",
+            phone=None,
+            role=RoleBrief(id=2, code="CLIENT", name="Cliente"),
+            area=None,
+            client_id=20,
+            must_change_password=False,
+            totp_enabled=False,
+            is_active=True,
+            last_login_at=None,
+            created_at=datetime.now(timezone.utc),
+            needs_first_steps=False,
+        )
+
+        with patch.object(AuthService, "_build_user_me", return_value=user_me) as build:
+            result = AuthService(db).complete_first_steps(user)
+
+        assert user.first_steps_completed_at is not None
+        db.commit.assert_called_once()
+        build.assert_called_once_with(refreshed)
+        assert result.needs_first_steps is False
+
+    def test_idempotent_when_already_completed(self):
+        from app.schemas.user import RoleBrief, UserMeResponse
+
+        already = datetime.now(timezone.utc)
+        user = self._client_user()
+        user.first_steps_completed_at = already
+        db = MagicMock()
+        db.execute.return_value.unique.return_value.scalar_one.return_value = user
+        user_me = UserMeResponse(
+            id=10,
+            email="nuevo@test.com",
+            first_name="Nuevo",
+            last_name="Cliente",
+            phone=None,
+            role=RoleBrief(id=2, code="CLIENT", name="Cliente"),
+            area=None,
+            client_id=20,
+            must_change_password=False,
+            totp_enabled=False,
+            is_active=True,
+            last_login_at=None,
+            created_at=datetime.now(timezone.utc),
+            first_steps_completed_at=already,
+            needs_first_steps=False,
+        )
+
+        with patch.object(AuthService, "_build_user_me", return_value=user_me):
+            AuthService(db).complete_first_steps(user)
+
+        assert user.first_steps_completed_at is already
+        db.commit.assert_not_called()
+
+    def test_rejects_staff(self):
+        user = MagicMock()
+        user.role.code = "ADMIN"
+        db = MagicMock()
+
+        with pytest.raises(HTTPException) as exc:
+            AuthService(db).complete_first_steps(user)
+
+        assert exc.value.status_code == 403
+        db.commit.assert_not_called()
