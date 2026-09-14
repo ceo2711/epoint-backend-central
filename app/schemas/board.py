@@ -12,6 +12,11 @@ class CardCommentCreate(BaseModel):
     is_internal: bool = False
 
 
+class CardCommentUpdate(BaseModel):
+    body: str = Field(default="", max_length=10000)
+    is_internal: bool | None = None
+
+
 class BoardMentionableUserResponse(ORMBase):
     id: int
     full_name: str
@@ -24,6 +29,7 @@ class CardCommentResponse(ORMBase):
     is_internal: bool
     author_name: str
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class CardAttachmentResponse(ORMBase):

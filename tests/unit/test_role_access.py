@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services.role_access import (
     can_access_docusign,
+    can_edit_board_comments,
     can_filter_clients_by_sales_rep,
     can_manage_onboarding,
     can_run_onboarding_reminders,
@@ -75,6 +76,16 @@ class TestRoleAccessHelpers:
         assert can_manage_onboarding(_user(role="ADMIN"))
         assert not can_manage_onboarding(_user(role="SALES_REP", area="VENTAS"))
         assert not can_manage_onboarding(_user(role="AREA_LEADER", area="VENTAS"))
+
+    def test_can_edit_board_comments_is_onboarding_staff(self):
+        assert can_edit_board_comments(_user(role="AREA_LEADER", area="ONBOARDING"))
+        assert can_edit_board_comments(_user(role="AREA_LEADER", area="ASESORES"))
+        assert can_edit_board_comments(_user(role="ADVISOR"))
+        assert can_edit_board_comments(_user(role="ADMIN"))
+        assert can_edit_board_comments(_user(role="BRANCH_MANAGER"))
+        assert not can_edit_board_comments(_user(role="CLIENT"))
+        assert not can_edit_board_comments(_user(role="SALES_REP", area="VENTAS"))
+        assert not can_edit_board_comments(_user(role="AREA_LEADER", area="VENTAS"))
 
     def test_advisor_cannot_run_onboarding_reminders(self):
         assert can_run_onboarding_reminders(_user(role="AREA_LEADER", area="ONBOARDING"))

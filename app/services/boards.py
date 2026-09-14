@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -245,6 +246,32 @@ class BoardService:
             self.db.refresh(attachment)
             if attachment.verification_status:
                 self._queue_attachment_verification(attachment)
+        return comment
+
+    def update_comment(
+        self,
+        *,
+        comment: CardComment,
+        actor: User,
+        body: str,
+        is_internal: bool | None = None,
+    ) -> CardComment:
+        from app.utils.comment_mentions import strip_self_mentions
+
+        clean_body = strip_self_mentions(body.strip(), actor.id)
+        if not clean_body:
+            has_files = self.db.execute(
+                select(CardAttachment.id).where(CardAttachment.comment_id == comment.id).limit(1)
+            ).first()
+            if has_files is None:
+                raise ValueError("El comentario no puede quedar vacío")
+
+        comment.body = clean_body
+        if is_internal is not None:
+            comment.is_internal = is_internal
+        comment.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(comment)
         return comment
 
     def _notify_comment(

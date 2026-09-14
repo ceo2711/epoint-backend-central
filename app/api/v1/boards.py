@@ -11,6 +11,7 @@ from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
 from app.models.card_attachment_verification import CardAttachmentVerification
+from app.models.card_comment import CardComment
 from app.models.client import Client
 from app.models.credential_submission import CredentialSubmission
 from app.models.document import Document
@@ -22,6 +23,7 @@ from app.schemas.board import (
     BoardResponse,
     CardAttachmentResponse,
     CardCommentResponse,
+    CardCommentUpdate,
     CardCreate,
     CardLabelUpdate,
     CardMoveUpdate,
@@ -81,6 +83,17 @@ def _require_board_card_delete(user: User) -> None:
     )
 
 
+def _require_comment_editor(user: User) -> None:
+    from app.services.role_access import can_edit_board_comments
+
+    if can_edit_board_comments(user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Solo el equipo de onboarding puede editar comentarios del tablero",
+    )
+
+
 def _require_card_label_editor(user: User, client: Client, db) -> None:
     """Onboarding o un asesor asignado del cliente pueden setear labels."""
     from app.services.role_access import can_manage_onboarding
@@ -93,6 +106,17 @@ def _require_card_label_editor(user: User, client: Client, db) -> None:
     raise HTTPException(
         status_code=403,
         detail="Solo onboarding o un asesor asignado pueden cambiar el label de la card",
+    )
+
+
+def _comment_response(comment: CardComment) -> CardCommentResponse:
+    return CardCommentResponse(
+        id=comment.id,
+        body=comment.body,
+        is_internal=comment.is_internal,
+        author_name=comment.author.full_name if comment.author else "—",
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
     )
 
 
@@ -148,16 +172,7 @@ def _card_response(
     verifications_map: dict[int, CardAttachmentVerification] | None = None,
 ) -> BoardCardResponse:
     verifications_map = verifications_map or {}
-    comments = [
-        CardCommentResponse(
-            id=c.id,
-            body=c.body,
-            is_internal=c.is_internal,
-            author_name=c.author.full_name if c.author else "—",
-            created_at=c.created_at,
-        )
-        for c in card.comments
-    ]
+    comments = [_comment_response(c) for c in card.comments]
     attachments = [
         _attachment_response(
             a,
@@ -236,13 +251,7 @@ def _build_board_response(board, storage, user: User, board_service: BoardServic
         )
         for card in visible_cards:
             comments = [
-                CardCommentResponse(
-                    id=c.id,
-                    body=c.body,
-                    is_internal=c.is_internal,
-                    author_name=c.author.full_name if c.author else "—",
-                    created_at=c.created_at,
-                )
+                _comment_response(c)
                 for c in card.comments
                 if not c.is_internal or user.role.code != "CLIENT"
             ]
@@ -638,13 +647,40 @@ async def add_comment(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return CardCommentResponse(
-        id=comment.id,
-        body=comment.body,
-        is_internal=comment.is_internal,
-        author_name=current_user.full_name,
-        created_at=comment.created_at,
-    )
+    return _comment_response(comment)
+
+
+@router.patch("/cards/{card_id}/comments/{comment_id}", response_model=CardCommentResponse)
+def update_comment(
+    card_id: int,
+    comment_id: int,
+    payload: CardCommentUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> CardCommentResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    _get_card_client(card, current_user, db, merchant_id=merchant_id)
+    _require_comment_editor(current_user)
+
+    comment = db.get(CardComment, comment_id)
+    if comment is None or comment.card_id != card.id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+
+    board_service = BoardService(db)
+    try:
+        comment = board_service.update_comment(
+            comment=comment,
+            actor=current_user,
+            body=payload.body,
+            is_internal=payload.is_internal,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return _comment_response(comment)
 
 
 @router.post("/cards/{card_id}/credentials", response_model=MessageResponse)

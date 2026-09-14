@@ -103,6 +103,11 @@ def can_manage_onboarding(user: User) -> bool:
     )
 
 
+def can_edit_board_comments(user: User) -> bool:
+    """Editar comentarios del tablero de un cliente: equipo de onboarding."""
+    return can_manage_onboarding(user)
+
+
 def can_supervise_sales_reps(user: User) -> bool:
     """Puede ver/filtrar el trabajo de vendedores de su alcance (sede)."""
     return is_sede_admin(user) or is_sales_area_leader(user)
