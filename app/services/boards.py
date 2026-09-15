@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.constants.kanban_columns import is_completed_column, is_funding_sequence_column
+from app.constants.kanban_columns import (
+    canonical_column_title,
+    is_completed_column,
+    is_funding_sequence_column,
+    is_system_kanban_column,
+)
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
@@ -274,6 +279,29 @@ class BoardService:
         self.db.refresh(comment)
         return comment
 
+    def delete_comment(self, *, comment: CardComment) -> None:
+        attachments = (
+            self.db.execute(select(CardAttachment).where(CardAttachment.comment_id == comment.id))
+            .scalars()
+            .all()
+        )
+        storage = get_storage_provider()
+        attachment_ids = [attachment.id for attachment in attachments]
+        for attachment in attachments:
+            try:
+                storage.delete_object(attachment.storage_key)
+            except Exception:
+                logger.warning(
+                    "No se pudo borrar el objeto de storage %s",
+                    attachment.storage_key,
+                    exc_info=True,
+                )
+            self.db.expunge(attachment)
+        if attachment_ids:
+            self.db.execute(delete(CardAttachment).where(CardAttachment.id.in_(attachment_ids)))
+        self.db.delete(comment)
+        self.db.commit()
+
     def _notify_comment(
         self,
         *,
@@ -445,6 +473,97 @@ class BoardService:
         self.db.commit()
         self.db.refresh(new_card)
         return new_card
+
+    def create_list(self, *, board: Board, title: str) -> BoardList:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("El título es obligatorio")
+        if is_system_kanban_column(clean_title):
+            raise ValueError("Ese nombre está reservado para una columna estándar del tablero")
+
+        existing = {
+            canonical_column_title(item.title).casefold()
+            for item in board.lists
+        }
+        if canonical_column_title(clean_title).casefold() in existing:
+            raise ValueError("Ya existe una columna con ese nombre")
+
+        max_position = max((item.position for item in board.lists), default=-1)
+        board_list = BoardList(board_id=board.id, title=clean_title, position=max_position + 1)
+        self.db.add(board_list)
+        self.db.commit()
+        self.db.refresh(board_list)
+        return board_list
+
+    def update_list(self, *, board_list: BoardList, title: str) -> BoardList:
+        if is_system_kanban_column(board_list.title):
+            raise ValueError("No se pueden editar las columnas estándar del tablero")
+
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("El título es obligatorio")
+        if is_system_kanban_column(clean_title):
+            raise ValueError("Ese nombre está reservado para una columna estándar del tablero")
+
+        existing = {
+            canonical_column_title(item.title).casefold()
+            for item in board_list.board.lists
+            if item.id != board_list.id
+        }
+        if canonical_column_title(clean_title).casefold() in existing:
+            raise ValueError("Ya existe una columna con ese nombre")
+
+        board_list.title = clean_title
+        self.db.commit()
+        self.db.refresh(board_list)
+        return board_list
+
+    def delete_list(self, *, board_list: BoardList) -> None:
+        if is_system_kanban_column(board_list.title):
+            raise ValueError("No se pueden eliminar las columnas estándar del tablero")
+
+        board_id = board_list.board_id
+        list_id = board_list.id
+        attachments = (
+            self.db.execute(
+                select(CardAttachment).where(
+                    CardAttachment.card_id.in_(select(BoardCard.id).where(BoardCard.list_id == list_id))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        storage = get_storage_provider()
+        attachment_ids = [attachment.id for attachment in attachments]
+        for attachment in attachments:
+            try:
+                storage.delete_object(attachment.storage_key)
+            except Exception:
+                logger.warning(
+                    "No se pudo borrar el objeto de storage %s",
+                    attachment.storage_key,
+                    exc_info=True,
+                )
+            self.db.expunge(attachment)
+        if attachment_ids:
+            self.db.execute(delete(CardAttachment).where(CardAttachment.id.in_(attachment_ids)))
+
+        self.db.execute(delete(BoardCard).where(BoardCard.list_id == list_id))
+        self.db.execute(delete(BoardList).where(BoardList.id == list_id))
+        self.db.flush()
+
+        remaining = (
+            self.db.execute(
+                select(BoardList)
+                .where(BoardList.board_id == board_id)
+                .order_by(BoardList.position)
+            )
+            .scalars()
+            .all()
+        )
+        for index, item in enumerate(remaining):
+            item.position = index
+        self.db.commit()
 
     def delete_card(self, *, card: BoardCard) -> None:
         board = card.board_list.board

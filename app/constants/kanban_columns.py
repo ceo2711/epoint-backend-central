@@ -61,3 +61,8 @@ def funding_sequence_title_variants() -> frozenset[str]:
 
 def is_completed_column(title: str | None) -> bool:
     return canonical_column_title(title) == COMPLETED_LIST_TITLE
+
+
+def is_system_kanban_column(title: str | None) -> bool:
+    """Columnas del template de onboarding: no se crean ni se borran a mano."""
+    return canonical_column_title(title) in KANBAN_COLUMN_TITLES

@@ -107,3 +107,31 @@ def test_update_comment_strips_self_mentions(db_session):
 
     assert updated.body == "@Onboarding revisá esto"
     assert "(mention:7)" not in updated.body
+
+
+def test_delete_comment_removes_row(db_session, monkeypatch):
+    session, comment = db_session
+    comment_id = comment.id
+    attachment = CardAttachment(
+        card_id=comment.card_id,
+        comment_id=comment.id,
+        type="CLIENT_UPLOAD",
+        storage_key="boards/comments/demo.png",
+        original_filename="demo.png",
+        uploaded_by_user_id=1,
+    )
+    session.add(attachment)
+    session.commit()
+    attachment_id = attachment.id
+    deleted_keys: list[str] = []
+    service = BoardService(session)
+    monkeypatch.setattr(
+        "app.services.boards.get_storage_provider",
+        lambda: SimpleNamespace(delete_object=deleted_keys.append),
+    )
+
+    service.delete_comment(comment=comment)
+
+    assert session.get(CardComment, comment_id) is None
+    assert session.get(CardAttachment, attachment_id) is None
+    assert deleted_keys == ["boards/comments/demo.png"]

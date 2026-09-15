@@ -59,6 +59,14 @@ class CardMoveUpdate(BaseModel):
     position: int = Field(ge=0)
 
 
+class ListCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=150)
+
+
+class ListUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=150)
+
+
 class CardCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     position: int | None = Field(default=None, ge=0)
@@ -99,6 +107,7 @@ class BoardListResponse(ORMBase):
     id: int
     title: str
     position: int
+    is_system: bool = False
     cards: list[BoardCardResponse] = []
 
 

@@ -104,7 +104,17 @@ def can_manage_onboarding(user: User) -> bool:
 
 
 def can_edit_board_comments(user: User) -> bool:
-    """Editar comentarios del tablero de un cliente: equipo de onboarding."""
+    """Editar o eliminar comentarios del tablero de un cliente: onboarding y asesores."""
+    return can_manage_onboarding(user)
+
+
+def can_delete_board_comments(user: User) -> bool:
+    """Eliminar comentarios del tablero de un cliente: onboarding y asesores."""
+    return can_edit_board_comments(user)
+
+
+def can_manage_board_columns(user: User) -> bool:
+    """Crear o eliminar columnas extra del tablero: onboarding y asesores."""
     return can_manage_onboarding(user)
 
 

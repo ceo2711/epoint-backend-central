@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from app.constants.kanban_columns import canonical_column_title, is_funding_sequence_column
+from app.constants.kanban_columns import canonical_column_title, is_funding_sequence_column, is_system_kanban_column
 from app.api.deps import CurrentUser, DbSession, OptionalActiveMerchantId, require_permissions
 from app.core.encryption import encrypt_value
+from app.models.board import Board
 from app.models.board_card import BoardCard
 from app.models.board_list import BoardList
 from app.models.card_attachment import CardAttachment
@@ -31,6 +32,8 @@ from app.schemas.board import (
     CardStatusUpdate,
     CardUpdate,
     CredentialSubmit,
+    ListCreate,
+    ListUpdate,
 )
 from app.schemas.common import MessageResponse
 from app.services.audit import AuditService
@@ -90,7 +93,18 @@ def _require_comment_editor(user: User) -> None:
         return
     raise HTTPException(
         status_code=403,
-        detail="Solo el equipo de onboarding puede editar comentarios del tablero",
+        detail="Solo onboarding y asesores pueden modificar comentarios del tablero",
+    )
+
+
+def _require_column_manager(user: User) -> None:
+    from app.services.role_access import can_manage_board_columns
+
+    if can_manage_board_columns(user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Solo onboarding y asesores pueden gestionar columnas del tablero",
     )
 
 
@@ -287,6 +301,7 @@ def _build_board_response(board, storage, user: User, board_service: BoardServic
                 id=bl.id,
                 title=canonical_column_title(bl.title),
                 position=bl.position,
+                is_system=is_system_kanban_column(bl.title),
                 cards=cards,
             )
         )
@@ -371,6 +386,83 @@ def list_mentionable_users(
         )
         for user in users
     ]
+
+
+@router.post("/{board_id}/lists", response_model=BoardListResponse)
+def create_list(
+    board_id: int,
+    payload: ListCreate,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> BoardListResponse:
+    board = db.get(Board, board_id)
+    if board is None:
+        raise HTTPException(status_code=404, detail="Tablero no encontrado")
+    _require_staff_client_workspace(db, current_user, board.client_id, merchant_id)
+    _require_column_manager(current_user)
+
+    try:
+        board_list = BoardService(db).create_list(board=board, title=payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BoardListResponse(
+        id=board_list.id,
+        title=board_list.title,
+        position=board_list.position,
+        is_system=is_system_kanban_column(board_list.title),
+        cards=[],
+    )
+
+
+@router.patch("/lists/{list_id}", response_model=BoardListResponse)
+def update_list(
+    list_id: int,
+    payload: ListUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> BoardListResponse:
+    board_list = db.get(BoardList, list_id)
+    if board_list is None:
+        raise HTTPException(status_code=404, detail="Columna no encontrada")
+    _require_staff_client_workspace(db, current_user, board_list.board.client_id, merchant_id)
+    _require_column_manager(current_user)
+
+    try:
+        board_list = BoardService(db).update_list(board_list=board_list, title=payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BoardListResponse(
+        id=board_list.id,
+        title=board_list.title,
+        position=board_list.position,
+        is_system=is_system_kanban_column(board_list.title),
+        cards=[],
+    )
+
+
+@router.delete("/lists/{list_id}", response_model=MessageResponse)
+def delete_list(
+    list_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> MessageResponse:
+    board_list = db.get(BoardList, list_id)
+    if board_list is None:
+        raise HTTPException(status_code=404, detail="Columna no encontrada")
+    _require_staff_client_workspace(db, current_user, board_list.board.client_id, merchant_id)
+    _require_column_manager(current_user)
+
+    try:
+        BoardService(db).delete_list(board_list=board_list)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return MessageResponse(message="Columna eliminada")
 
 
 @router.post("/lists/{list_id}/cards", response_model=BoardCardResponse)
@@ -681,6 +773,28 @@ def update_comment(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return _comment_response(comment)
+
+
+@router.delete("/cards/{card_id}/comments/{comment_id}", response_model=MessageResponse)
+def delete_comment(
+    card_id: int,
+    comment_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> MessageResponse:
+    card = db.get(BoardCard, card_id)
+    if card is None:
+        raise HTTPException(status_code=404)
+    _get_card_client(card, current_user, db, merchant_id=merchant_id)
+    _require_comment_editor(current_user)
+
+    comment = db.get(CardComment, comment_id)
+    if comment is None or comment.card_id != card.id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+
+    BoardService(db).delete_comment(comment=comment)
+    return MessageResponse(message="Comentario eliminado")
 
 
 @router.post("/cards/{card_id}/credentials", response_model=MessageResponse)

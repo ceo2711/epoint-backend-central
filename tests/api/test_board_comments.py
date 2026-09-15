@@ -5,8 +5,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1.boards import _require_comment_editor, update_comment
+from app.api.v1.boards import _require_comment_editor, delete_comment, update_comment
 from app.schemas.board import CardCommentUpdate
+from app.schemas.common import MessageResponse
 
 
 def _user(*, role: str, area: str | None = None):
@@ -84,3 +85,35 @@ def test_update_comment_endpoint_404_when_comment_belongs_to_other_card():
                 merchant_id=None,
             )
     assert exc.value.status_code == 404
+
+
+def test_delete_comment_endpoint_delegates_to_service():
+    card = MagicMock()
+    card.id = 10
+    comment = MagicMock()
+    comment.card_id = 10
+    db = MagicMock()
+    db.get.side_effect = lambda model, pk: card if pk == 10 else comment
+    actor = _user(role="ADVISOR", area="ASESORES")
+
+    with (
+        patch("app.api.v1.boards._get_card_client"),
+        patch("app.api.v1.boards.BoardService") as mock_service,
+    ):
+        response = delete_comment(
+            card_id=10,
+            comment_id=22,
+            db=db,
+            current_user=actor,
+            merchant_id=None,
+        )
+
+    mock_service.return_value.delete_comment.assert_called_once_with(comment=comment)
+    assert isinstance(response, MessageResponse)
+    assert response.message == "Comentario eliminado"
+
+
+def test_delete_comment_endpoint_rejects_client():
+    with pytest.raises(HTTPException) as exc:
+        _require_comment_editor(_user(role="CLIENT"))
+    assert exc.value.status_code == 403

@@ -87,6 +87,25 @@ class TestRoleAccessHelpers:
         assert not can_edit_board_comments(_user(role="SALES_REP", area="VENTAS"))
         assert not can_edit_board_comments(_user(role="AREA_LEADER", area="VENTAS"))
 
+    def test_can_delete_board_comments_matches_edit(self):
+        from app.services.role_access import can_delete_board_comments
+
+        assert can_delete_board_comments(_user(role="AREA_LEADER", area="ONBOARDING"))
+        assert can_delete_board_comments(_user(role="ADVISOR"))
+        assert not can_delete_board_comments(_user(role="CLIENT"))
+        assert not can_delete_board_comments(_user(role="SALES_REP", area="VENTAS"))
+
+    def test_can_manage_board_columns_matches_onboarding(self):
+        from app.services.role_access import can_manage_board_columns
+
+        assert can_manage_board_columns(_user(role="AREA_LEADER", area="ONBOARDING"))
+        assert can_manage_board_columns(_user(role="AREA_LEADER", area="ASESORES"))
+        assert can_manage_board_columns(_user(role="ADVISOR"))
+        assert can_manage_board_columns(_user(role="ADMIN"))
+        assert not can_manage_board_columns(_user(role="CLIENT"))
+        assert not can_manage_board_columns(_user(role="SALES_REP", area="VENTAS"))
+        assert not can_manage_board_columns(_user(role="AREA_LEADER", area="VENTAS"))
+
     def test_advisor_cannot_run_onboarding_reminders(self):
         assert can_run_onboarding_reminders(_user(role="AREA_LEADER", area="ONBOARDING"))
         assert can_run_onboarding_reminders(_user(role="ADMIN"))

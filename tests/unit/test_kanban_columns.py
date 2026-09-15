@@ -19,3 +19,12 @@ def test_funding_typo_aliases():
 def test_completed_column_alias():
     assert is_completed_column("Completed") is True
     assert is_completed_column("Client TO DO") is False
+
+
+def test_system_kanban_columns():
+    from app.constants.kanban_columns import is_system_kanban_column
+
+    assert is_system_kanban_column("Experian") is True
+    assert is_system_kanban_column("Completed") is True
+    assert is_system_kanban_column("Pendientes EpointCredints") is True
+    assert is_system_kanban_column("Seguimiento extra") is False

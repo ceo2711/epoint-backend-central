@@ -62,15 +62,18 @@ def sync_board_lists(db: Session, board: Board) -> None:
         title_to_list[title] = match
 
     default_list = title_to_list[KANBAN_COLUMN_TITLES[0]]
+    custom_lists = [item for item in existing_lists if item.title not in target_titles]
     valid_ids = {item.id for item in title_to_list.values()}
+    valid_ids.update(item.id for item in custom_lists)
 
     for card in cards:
         if card.list_id not in valid_ids:
             card.list_id = default_list.id
 
-    for board_list in existing_lists:
-        if board_list.title not in target_titles:
-            db.delete(board_list)
+    next_position = len(KANBAN_COLUMN_TITLES)
+    for board_list in sorted(custom_lists, key=lambda item: item.position):
+        board_list.position = next_position
+        next_position += 1
 
     db.flush()
 
