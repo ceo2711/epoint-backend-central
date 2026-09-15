@@ -42,42 +42,16 @@ def _apply_column_title_aliases(lists: list[BoardList]) -> None:
 
 
 def sync_board_lists(db: Session, board: Board) -> None:
+    """Normaliza aliases y posiciones. No recrea columnas borradas por el staff."""
     existing_lists = list(board.lists)
     _apply_column_title_aliases(existing_lists)
-    cards: list[BoardCard] = []
-    for board_list in existing_lists:
-        cards.extend(list(board_list.cards))
 
-    target_titles = set(KANBAN_COLUMN_TITLES)
-    title_to_list: dict[str, BoardList] = {}
-
-    for position, title in enumerate(KANBAN_COLUMN_TITLES):
-        match = next((item for item in existing_lists if item.title == title), None)
-        if match is None:
-            match = BoardList(board_id=board.id, title=title, position=position)
-            db.add(match)
-            db.flush()
-        else:
-            match.position = position
-        title_to_list[title] = match
-
-    default_list = title_to_list[KANBAN_COLUMN_TITLES[0]]
-    custom_lists = [item for item in existing_lists if item.title not in target_titles]
-    valid_ids = {item.id for item in title_to_list.values()}
-    valid_ids.update(item.id for item in custom_lists)
-
-    for card in cards:
-        if card.list_id not in valid_ids:
-            card.list_id = default_list.id
-
-    next_position = len(KANBAN_COLUMN_TITLES)
-    for board_list in sorted(custom_lists, key=lambda item: item.position):
-        board_list.position = next_position
-        next_position += 1
+    for index, board_list in enumerate(sorted(existing_lists, key=lambda item: item.position)):
+        board_list.position = index
 
     db.flush()
 
-    for board_list in title_to_list.values():
+    for board_list in existing_lists:
         ordered = sorted(board_list.cards, key=lambda item: item.position)
         for index, card in enumerate(ordered):
             card.position = index

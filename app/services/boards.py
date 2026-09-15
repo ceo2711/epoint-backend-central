@@ -10,7 +10,6 @@ from app.constants.kanban_columns import (
     canonical_column_title,
     is_completed_column,
     is_funding_sequence_column,
-    is_system_kanban_column,
 )
 from app.models.board import Board, BoardTemplate, BoardTemplateCard, BoardTemplateList
 from app.models.board_card import BoardCard
@@ -478,8 +477,6 @@ class BoardService:
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("El título es obligatorio")
-        if is_system_kanban_column(clean_title):
-            raise ValueError("Ese nombre está reservado para una columna estándar del tablero")
 
         existing = {
             canonical_column_title(item.title).casefold()
@@ -496,14 +493,9 @@ class BoardService:
         return board_list
 
     def update_list(self, *, board_list: BoardList, title: str) -> BoardList:
-        if is_system_kanban_column(board_list.title):
-            raise ValueError("No se pueden editar las columnas estándar del tablero")
-
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("El título es obligatorio")
-        if is_system_kanban_column(clean_title):
-            raise ValueError("Ese nombre está reservado para una columna estándar del tablero")
 
         existing = {
             canonical_column_title(item.title).casefold()
@@ -518,10 +510,18 @@ class BoardService:
         self.db.refresh(board_list)
         return board_list
 
-    def delete_list(self, *, board_list: BoardList) -> None:
-        if is_system_kanban_column(board_list.title):
-            raise ValueError("No se pueden eliminar las columnas estándar del tablero")
+    def reorder_lists(self, *, board: Board, list_ids: list[int]) -> None:
+        lists_by_id = {item.id: item for item in board.lists}
+        if not list_ids:
+            raise ValueError("Debes indicar al menos una columna")
+        if set(list_ids) != set(lists_by_id.keys()):
+            raise ValueError("El orden debe incluir todas las columnas del tablero")
 
+        for index, list_id in enumerate(list_ids):
+            lists_by_id[list_id].position = index
+        self.db.commit()
+
+    def delete_list(self, *, board_list: BoardList) -> None:
         board_id = board_list.board_id
         list_id = board_list.id
         attachments = (

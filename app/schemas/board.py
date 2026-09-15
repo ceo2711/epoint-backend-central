@@ -67,6 +67,10 @@ class ListUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=150)
 
 
+class ListsReorder(BaseModel):
+    list_ids: list[int] = Field(min_length=1)
+
+
 class CardCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     position: int | None = Field(default=None, ge=0)

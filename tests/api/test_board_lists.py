@@ -118,3 +118,35 @@ def test_delete_list_endpoint_delegates_to_service():
     mock_service.return_value.delete_list.assert_called_once_with(board_list=board_list)
     assert isinstance(response, MessageResponse)
     assert response.message == "Columna eliminada"
+
+
+def test_reorder_lists_endpoint_delegates_to_service():
+    from app.api.v1.boards import reorder_lists
+    from app.schemas.board import ListsReorder
+
+    board = MagicMock()
+    board.id = 5
+    board.client_id = 9
+    db = MagicMock()
+    db.get.return_value = board
+    actor = _user(role="ADVISOR", area="ASESORES")
+    payload = ListsReorder(list_ids=[3, 1, 2])
+
+    with (
+        patch("app.api.v1.boards._require_staff_client_workspace"),
+        patch("app.api.v1.boards.BoardService") as mock_service,
+    ):
+        response = reorder_lists(
+            board_id=5,
+            payload=payload,
+            db=db,
+            current_user=actor,
+            merchant_id=None,
+        )
+
+    mock_service.return_value.reorder_lists.assert_called_once_with(
+        board=board,
+        list_ids=[3, 1, 2],
+    )
+    assert isinstance(response, MessageResponse)
+    assert response.message == "Columnas reordenadas"

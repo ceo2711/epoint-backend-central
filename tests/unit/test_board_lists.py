@@ -66,12 +66,14 @@ def test_create_list_rejects_duplicate_title(db_session):
         service.create_list(board=board, title="client to do")
 
 
-def test_create_list_rejects_reserved_system_title(db_session):
-    session, board, _todo, _done = db_session
+def test_update_list_renames_any_column(db_session):
+    session, _board, todo, _done = db_session
     service = BoardService(session)
 
-    with pytest.raises(ValueError, match="reservado"):
-        service.create_list(board=board, title="Experian")
+    updated = service.update_list(board_list=todo, title="  Inbox cliente  ")
+
+    assert updated.title == "Inbox cliente"
+    assert session.get(BoardList, todo.id).title == "Inbox cliente"
 
 
 def test_update_list_renames_custom_column(db_session):
@@ -85,20 +87,33 @@ def test_update_list_renames_custom_column(db_session):
     assert session.get(BoardList, custom.id).title == "Seguimiento VIP"
 
 
-def test_update_list_rejects_system_column(db_session):
+def test_reorder_lists_updates_positions(db_session):
+    session, board, todo, done = db_session
+    service = BoardService(session)
+    custom = service.create_list(board=board, title="Seguimiento extra")
+
+    service.reorder_lists(board=board, list_ids=[custom.id, done.id, todo.id])
+
+    session.refresh(todo)
+    session.refresh(done)
+    session.refresh(custom)
+    assert custom.position == 0
+    assert done.position == 1
+    assert todo.position == 2
+
+
+def test_delete_list_allows_system_column(db_session, monkeypatch):
     session, _board, todo, _done = db_session
     service = BoardService(session)
+    list_id = todo.id
+    monkeypatch.setattr(
+        "app.services.boards.get_storage_provider",
+        lambda: SimpleNamespace(delete_object=lambda key: None),
+    )
 
-    with pytest.raises(ValueError, match="estándar"):
-        service.update_list(board_list=todo, title="Otro nombre")
+    service.delete_list(board_list=todo)
 
-
-def test_delete_list_rejects_system_column(db_session):
-    session, _board, todo, _done = db_session
-    service = BoardService(session)
-
-    with pytest.raises(ValueError, match="estándar"):
-        service.delete_list(board_list=todo)
+    assert session.get(BoardList, list_id) is None
 
 
 def test_delete_list_removes_custom_column_and_cards(db_session, monkeypatch):
@@ -134,8 +149,8 @@ def test_delete_list_removes_custom_column_and_cards(db_session, monkeypatch):
     assert deleted_keys == ["boards/columns/demo.png"]
 
 
-def test_sync_board_lists_keeps_custom_columns(db_session):
-    session, board, _todo, _done = db_session
+def test_sync_board_lists_keeps_existing_columns_and_order(db_session):
+    session, board, todo, done = db_session
     custom = BoardList(board_id=board.id, title="Seguimiento extra", position=99)
     session.add(custom)
     session.commit()
@@ -144,10 +159,32 @@ def test_sync_board_lists_keeps_custom_columns(db_session):
     sync_board_lists(session, board)
     session.commit()
 
-    titles = {item.title for item in session.execute(select(BoardList).where(BoardList.board_id == board.id)).scalars()}
-    assert "Seguimiento extra" in titles
-    assert "Client TO DO" in titles
-    assert "Completed" in titles
-    custom_row = session.get(BoardList, custom.id)
-    assert custom_row is not None
-    assert custom_row.position >= 12
+    rows = list(
+        session.execute(
+            select(BoardList).where(BoardList.board_id == board.id).order_by(BoardList.position)
+        ).scalars()
+    )
+    assert [row.title for row in rows] == ["Client TO DO", "Completed", "Seguimiento extra"]
+    assert [row.position for row in rows] == [0, 1, 2]
+    assert session.get(BoardList, todo.id) is not None
+    assert session.get(BoardList, done.id) is not None
+    assert session.get(BoardList, custom.id) is not None
+
+
+def test_sync_board_lists_does_not_recreate_deleted_columns(db_session):
+    session, board, todo, done = db_session
+    session.delete(todo)
+    session.commit()
+    session.refresh(board)
+
+    sync_board_lists(session, board)
+    session.commit()
+
+    rows = list(
+        session.execute(
+            select(BoardList).where(BoardList.board_id == board.id).order_by(BoardList.position)
+        ).scalars()
+    )
+    assert [row.title for row in rows] == ["Completed"]
+    assert rows[0].id == done.id
+    assert rows[0].position == 0

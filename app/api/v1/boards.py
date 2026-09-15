@@ -34,6 +34,7 @@ from app.schemas.board import (
     CredentialSubmit,
     ListCreate,
     ListUpdate,
+    ListsReorder,
 )
 from app.schemas.common import MessageResponse
 from app.services.audit import AuditService
@@ -414,6 +415,28 @@ def create_list(
         is_system=is_system_kanban_column(board_list.title),
         cards=[],
     )
+
+
+@router.patch("/{board_id}/lists/reorder", response_model=MessageResponse)
+def reorder_lists(
+    board_id: int,
+    payload: ListsReorder,
+    db: DbSession,
+    current_user: CurrentUser,
+    merchant_id: OptionalActiveMerchantId,
+) -> MessageResponse:
+    board = db.get(Board, board_id)
+    if board is None:
+        raise HTTPException(status_code=404, detail="Tablero no encontrado")
+    _require_staff_client_workspace(db, current_user, board.client_id, merchant_id)
+    _require_column_manager(current_user)
+
+    try:
+        BoardService(db).reorder_lists(board=board, list_ids=payload.list_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return MessageResponse(message="Columnas reordenadas")
 
 
 @router.patch("/lists/{list_id}", response_model=BoardListResponse)
