@@ -18,7 +18,7 @@ def test_expo_push_provider_posts_messages(mock_client_cls):
     ok = ExpoPushProvider().send_to_tokens(
         ["ExponentPushToken[abc]"],
         "Nuevo comentario",
-        "Revisá la tarea",
+        "Revisa la tarea",
         {"client_id": 7, "card_id": 3},
     )
 

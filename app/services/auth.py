@@ -297,7 +297,7 @@ class AuthService:
         if not user.totp_secret_encrypted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Primero debés iniciar la configuración del doble factor",
+                detail="Primero debes iniciar la configuración del doble factor",
             )
 
         secret = decrypt_totp_secret(user.totp_secret_encrypted)
@@ -313,7 +313,7 @@ class AuthService:
         if not user.totp_enabled or not user.totp_secret_encrypted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Activá el doble factor de autenticación para ver este documento",
+                detail="Activa el doble factor de autenticación para ver este documento",
             )
 
         secret = decrypt_totp_secret(user.totp_secret_encrypted)

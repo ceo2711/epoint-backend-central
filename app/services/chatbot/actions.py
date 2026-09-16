@@ -180,7 +180,7 @@ class ChatbotActionHandler:
             if pending_action.action == "reject_all":
                 return ActionResult(
                     handled=True,
-                    reply="Escribí el **motivo del rechazo** para aplicarlo a todos los pendientes.",
+                    reply="Escribe el **motivo del rechazo** para aplicarlo a todos los pendientes.",
                     pending_action=pending_action,
                 )
             if pending_action.action == "upload_document":
@@ -647,7 +647,7 @@ class ChatbotActionHandler:
         if not advisors:
             return t(
                 self.locale,
-                "Por ahora no hay asesores activos. Pedile ayuda a un administrador.",
+                "Por ahora no hay asesores activos. Pídele ayuda a un administrador.",
                 "There are no active advisors. Please contact an administrator.",
             )
         lines = [f"- **{a.first_name} {a.last_name}** ({a.email})" for a in advisors]
@@ -855,7 +855,7 @@ class ChatbotActionHandler:
                 handled=True,
                 reply=t(
                     self.locale,
-                    "No pude leer clientes en ese formato. Usá bloques con *Datos personales*, *Nombre completo*, *Email*, *Teléfono* y *merchant*.",
+                    "No pude leer clientes en ese formato. Usa bloques con *Datos personales*, *Nombre completo*, *Email*, *Teléfono* y *merchant*.",
                     "I couldn't parse clients from that format. Use blocks with *Personal data*, *Full name*, *Email*, *Phone* and *merchant*.",
                 ),
                 pending_action=PendingChatAction(action="register_client", draft={}),
@@ -928,7 +928,7 @@ class ChatbotActionHandler:
                         block.display_name,
                         t(
                             self.locale,
-                            "No pude guardar el cliente. Intentá de nuevo.",
+                            "No pude guardar el cliente. Intenta de nuevo.",
                             "Could not save the client. Please try again.",
                         ),
                     )
@@ -1015,7 +1015,7 @@ class ChatbotActionHandler:
                     self.locale,
                     t(
                         self.locale,
-                        "No pude guardar el cliente. Intentá de nuevo.",
+                        "No pude guardar el cliente. Intenta de nuevo.",
                         "Could not save the client. Please try again.",
                     ),
                 ),
@@ -1030,7 +1030,7 @@ class ChatbotActionHandler:
                     self.locale,
                     t(
                         self.locale,
-                        "El cliente no se guardó correctamente. Intentá de nuevo.",
+                        "El cliente no se guardó correctamente. Intenta de nuevo.",
                         "The client was not saved correctly. Please try again.",
                     ),
                 ),
@@ -1133,7 +1133,7 @@ class ChatbotActionHandler:
         if len(reason) < 5:
             return ActionResult(
                 handled=True,
-                reply="El motivo debe tener al menos **5 caracteres**. Intentá de nuevo o escribí `cancelar`.",
+                reply="El motivo debe tener al menos **5 caracteres**. Intenta de nuevo o escribe `cancelar`.",
                 pending_action=pending,
             )
 
@@ -1263,7 +1263,7 @@ class ChatbotActionHandler:
             handled=True,
             reply=(
                 f"Hay **{len(pending)}** cliente(s) pendientes.\n\n"
-                "Escribí el **motivo del rechazo** para aplicarlo a todos."
+                "Escribe el **motivo del rechazo** para aplicarlo a todos."
             ),
             pending_action=PendingChatAction(
                 action="reject_all",

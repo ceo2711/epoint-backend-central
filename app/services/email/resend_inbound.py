@@ -202,7 +202,7 @@ def _resend_get(url: str, settings: Settings) -> dict[str, Any] | None:
         if response.status_code == 401:
             logger.warning(
                 "RESEND_API_KEY no puede leer Receiving (suele ser 'Sending access'). "
-                "Creá una key Full access en Resend → API keys."
+                "Crea una key Full access en Resend → API keys."
             )
             return None
         if response.status_code >= 400:

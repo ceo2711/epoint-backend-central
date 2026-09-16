@@ -35,7 +35,7 @@ def client_approved_email_body(
         merchant_block = f"\nTu cuenta corresponde a {merchant_name}.\n"
     app_block = ""
     if android_app_store_url or ios_app_store_url:
-        lines = ["\nDescargá la app móvil"]
+        lines = ["\nDescarga la app móvil"]
         if android_app_store_url:
             lines.append(f"Android (Google Play): {android_app_store_url}")
         if ios_app_store_url:
@@ -280,7 +280,7 @@ def client_conversion_welcome_email_body(
 
 Confirmamos que tu pago de {amount_formatted} se procesó exitosamente y que completaste todos los requisitos iniciales.
 
-Tu perfil pasará ahora a revisión por parte de nuestro equipo de Onboarding. Una vez que sea aprobado, nos contactaremos con vos por este mismo medio para informarte los próximos pasos.
+Tu perfil pasará ahora a revisión por parte de nuestro equipo de Onboarding. Una vez que sea aprobado, nos contactaremos contigo por este mismo medio para informarte los próximos pasos.
 
 Gracias por elegirnos.
 
@@ -332,7 +332,7 @@ Para elegir una nueva contraseña, abre el siguiente enlace (válido por {expire
 
 {reset_url}
 
-Si no solicitaste este cambio, ignorá este correo. Tu contraseña actual seguirá siendo la misma.
+Si no solicitaste este cambio, ignora este correo. Tu contraseña actual seguirá siendo la misma.
 
 Saludos,
 Equipo Epoint

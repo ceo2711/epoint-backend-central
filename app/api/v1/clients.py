@@ -382,7 +382,7 @@ def send_client_email(
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo enviar el email. Revisá el mensaje e intentá de nuevo.",
+            detail="No se pudo enviar el email. Revisa el mensaje e intenta de nuevo.",
         )
     db.add(
         SentEmail(

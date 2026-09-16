@@ -406,7 +406,7 @@ def send_prospect_email(
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo enviar el email. Revisá el mensaje e intentá de nuevo.",
+            detail="No se pudo enviar el email. Revisa el mensaje e intenta de nuevo.",
         )
     db.add(
         SentEmail(
@@ -548,7 +548,7 @@ def send_balance_payment(
         message = "Enviamos el link de pago al cliente para completar el saldo hasta 3000 USD."
     else:
         message = (
-            "Link listo. No se pudo enviar el email — compartilo manualmente "
+            "Link listo. No se pudo enviar el email — compártelo manualmente "
             "para que el cliente complete el pago."
         )
     return PaymentLinkCreateResponse(

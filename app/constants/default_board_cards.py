@@ -22,7 +22,7 @@ class DefaultBoardCard:
 EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL = "system@epoint.com"
 
 _CREDENTIALS_FORM_NOTE = (
-    "Al finalizar, escribí el usuario y la contraseña en un **comentario** de esta tarjeta "
+    "Al finalizar, escriba el usuario y la contraseña en un **comentario** de esta tarjeta "
     "para que un asesor pueda tomarlos."
 )
 
@@ -48,15 +48,15 @@ _CLIENT_TODO_REPORTS_DESCRIPTION = """Enviar el reporte descargado en PDF de Exp
 
 * El cliente debe realizar el pago directamente desde su cuenta.
 * Los tres reportes deben estar completos, actualizados y ser legibles.
-* Los reportes deben estar recién generados (máximo 15 días de antigüedad). Si el reporte es más antiguo, será rechazado y deberás descargar uno nuevo."""
+* Los reportes deben estar recién generados (máximo 15 días de antigüedad). Si el reporte es más antiguo, será rechazado y deberá descargar uno nuevo."""
 
-_CLIENT_TODO_ACCOUNTS_DESCRIPTION = """Apertura de cuentas: por favor abrir las siguientes cuentas de burós secundarios. **Nota:** En el caso de Experian Clarity Services no creas un usuario y clave, solamente generas un reporte de crédito que debes adjuntar en su tarjeta.
+_CLIENT_TODO_ACCOUNTS_DESCRIPTION = """Apertura de cuentas: por favor abrir las siguientes cuentas de burós secundarios. **Nota:** En el caso de Experian Clarity Services no cree un usuario y clave, solamente genere un reporte de crédito que debe adjuntar en su tarjeta.
 
 * [ChexSystems](https://www.chexsystems.com)
 * [Innovis Credit Report](https://www.innovis.com/)
 * [Experian Clarity Services](https://consumers.clarityservices.com/reports)
 
-Las claves de ChexSystems e Innovis van en las tarjetas de la columna **Credenciales** (dejálas en un comentario). El reporte de Clarity se adjunta en la tarjeta **Experian Clarity Services**."""
+Las claves de ChexSystems e Innovis van en las tarjetas de la columna **Credenciales** (déjelas en un comentario). El reporte de Clarity se adjunta en la tarjeta **Experian Clarity Services**."""
 
 _CLIENT_TODO_BANKS_DESCRIPTION = """Colocar en los comentarios una lista completa de todos los bancos con los que tiene o ha tenido alguna relación financiera. Incluya:
 
@@ -93,12 +93,12 @@ _CLIENT_TODO_TAXES_DESCRIPTION = """Esta tarjeta **no es obligatoria para comple
 
 El informe de taxes (Tax Return / declaración de impuestos o Tax Transcript del IRS de los últimos 2 años fiscales) se pide **solo cuando una entidad financiera lo requiera** más adelante.
 
-Cuando te lo soliciten:
-- Subí un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe oficial)
+Cuando se lo soliciten:
+- Suba un documento fiscal legible (Form 1040, Tax Return, IRS Transcript u otro informe oficial)
 - Debe verse el nombre del contribuyente
 - Cubre los últimos 2 años fiscales
 
-Si el archivo no es un informe de taxes válido, será rechazado y deberás volver a subirlo."""
+Si el archivo no es un informe de taxes válido, será rechazado y deberá volver a subirlo."""
 
 _PERSONAL_DATA_PLACEHOLDER = """**Descripción**
 
@@ -146,11 +146,11 @@ _CREDENTIALS_CHEXSYSTEMS_DESCRIPTION = f"""## Crear cuenta en ChexSystems
 
 _CREDENTIALS_INNOVIS_DESCRIPTION = f"""## Para abrir la cuenta en Innovis
 
-1. Ingresa a [Sign In | Innovis](https://www.innovis.com/login/index).
-2. Selecciona la opción para solicitar tu **Innovis Credit Report**. Esta solicitud también es el primer paso para crear lo que se conoce como tu **Innovis.com Account** o cuenta personal.
-3. Completa el formulario con tus datos personales: nombre, fecha de nacimiento, Social Security Number (SSN), número de teléfono, dirección, entre otros.
-4. Verifica tu identidad. Innovis puede utilizar la información proporcionada para confirmar tu identidad, incluso mediante tu operador de telefonía móvil.
-5. Si toda la información es correcta, te permitirá crear tu cuenta con usuario y clave.
+1. Ingrese a [Sign In | Innovis](https://www.innovis.com/login/index).
+2. Seleccione la opción para solicitar su **Innovis Credit Report**. Esta solicitud también es el primer paso para crear lo que se conoce como su **Innovis.com Account** o cuenta personal.
+3. Complete el formulario con sus datos personales: nombre, fecha de nacimiento, Social Security Number (SSN), número de teléfono, dirección, entre otros.
+4. Verifique su identidad. Innovis puede utilizar la información proporcionada para confirmar su identidad, incluso mediante su operador de telefonía móvil.
+5. Si toda la información es correcta, le permitirá crear su cuenta con usuario y clave.
 6. {_CREDENTIALS_FORM_NOTE}"""
 
 _CREDENTIALS_CLARITY_DESCRIPTION = """## Obtener el reporte de Experian Clarity Services

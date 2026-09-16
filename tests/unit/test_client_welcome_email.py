@@ -44,4 +44,4 @@ def test_send_client_welcome_email_via_resend(mock_send: MagicMock, monkeypatch)
     assert "Ingresar al portal" in call_args["html"]
     assert "google-play-badge" in call_args["html"]
     assert "app-store-badge" in call_args["html"]
-    assert "Descargá la app móvil" in call_args["html"]
+    assert "Descarga la app móvil" in call_args["html"]

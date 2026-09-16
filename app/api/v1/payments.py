@@ -72,10 +72,10 @@ def create_payment_link(
     elif payload.send_email:
         message = (
             "Link de pago generado. No se pudo enviar el email — "
-            "compartilo manualmente con el cliente."
+            "compártelo manualmente con el cliente."
         )
     else:
-        message = "Link de pago generado. Compartilo con el cliente para que complete el pago."
+        message = "Link de pago generado. Compártelo con el cliente para que complete el pago."
     return PaymentLinkCreateResponse(
         link=result.link,
         message=message,
@@ -95,7 +95,7 @@ def resend_payment_link_email(
         message = "Reenviamos el link de pago al cliente para completar el cobro."
     else:
         message = (
-            "No se pudo enviar el email — compartí el link manualmente con el cliente "
+            "No se pudo enviar el email — comparte el link manualmente con el cliente "
             "para que complete el pago."
         )
     return PaymentLinkCreateResponse(

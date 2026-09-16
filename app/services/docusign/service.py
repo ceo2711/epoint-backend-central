@@ -186,8 +186,8 @@ class DocusignService:
             connect_hmac_configured=hmac_ok,
             instructions=(
                 "DocuSign → Settings → Connect → Add Configuration. "
-                "Pegá esta URL, formato JSON, evento Envelope Completed. "
-                "Copiá el HMAC secret a DOCUSIGN_CONNECT_HMAC_KEY."
+                "Pega esta URL, formato JSON, evento Envelope Completed. "
+                "Copia el HMAC secret a DOCUSIGN_CONNECT_HMAC_KEY."
             ),
         )
 
@@ -1088,7 +1088,7 @@ class DocusignService:
         if prospect_id is None and client_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indicá un prospecto o un cliente para vincular el contrato",
+                detail="Indica un prospecto o un cliente para vincular el contrato",
             )
         if not file_bytes:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío")
@@ -1101,7 +1101,7 @@ class DocusignService:
         if mime_type not in ALLOWED_MIME_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Subí un PDF o una foto (JPG, PNG o WebP)",
+                detail="Sube un PDF o una foto (JPG, PNG o WebP)",
             )
 
         from app.models.prospect import Prospect
@@ -1199,7 +1199,7 @@ class DocusignService:
         if not template_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Seleccioná una plantilla o configurá DOCUSIGN_DEFAULT_TEMPLATE_ID",
+                detail="Selecciona una plantilla o configura DOCUSIGN_DEFAULT_TEMPLATE_ID",
             )
 
         try:

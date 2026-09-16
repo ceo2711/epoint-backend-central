@@ -65,8 +65,8 @@ def friendly_register_continue_prompt(locale: str) -> str:
     return t(
         locale,
         (
-            "\n\n¿Querés registrar **otro cliente**? "
-            "Mandame los datos del siguiente, o pegá varios bloques juntos con el formato "
+            "\n\n¿Quieres registrar **otro cliente**? "
+            "Envíame los datos del siguiente, o pega varios bloques juntos con el formato "
             "*(Datos personales / Nombre completo / Email / Teléfono / merchant)*."
         ),
         (
@@ -89,7 +89,7 @@ def friendly_registration_meta_reply(locale: str) -> str:
             "Email: juan@mail.com\n"
             "Numero de telefono: 1134567890\n"
             "merchant: db-studio\n```\n\n"
-            "Repetí el bloque por cada cliente. Cada uno necesita **email y teléfono únicos**."
+            "Repite el bloque por cada cliente. Cada uno necesita **email y teléfono únicos**."
         ),
         (
             "Yes, you can register **multiple clients in a row** in this chat. "
@@ -208,7 +208,7 @@ def friendly_register_missing(
 
     return t(
         locale,
-        f"Me faltan algunos datos: **{', '.join(missing_labels_es)}**. ¿Me los compartís?{extra}",
+        f"Me faltan algunos datos: **{', '.join(missing_labels_es)}**. ¿Me los compartes?{extra}",
         f"I still need: **{', '.join(missing_labels_en)}**. Could you share them?{extra}",
     )
 
@@ -216,7 +216,7 @@ def friendly_register_missing(
 def friendly_register_error(locale: str, detail: str) -> str:
     return t(
         locale,
-        f"Uy, no pude completar el registro: {detail}. ¿Querés revisar los datos e intentar de nuevo?",
+        f"Uy, no pude completar el registro: {detail}. ¿Quieres revisar los datos e intentar de nuevo?",
         f"I couldn't complete the registration: {detail}. Want to try again?",
     )
 
@@ -389,7 +389,7 @@ def friendly_upload_document_need_type(locale: str) -> str:
 def friendly_upload_document_ready(locale: str, *, document_label: str) -> str:
     return t(
         locale,
-        f"Listo, vamos con **{document_label}**. Tocá el clip 📎 y elige el archivo (PDF o imagen).",
+        f"Listo, vamos con **{document_label}**. Toca el clip 📎 y elige el archivo (PDF o imagen).",
         f"Got it — **{document_label}**. Tap the clip 📎 and choose the file (PDF or image).",
     )
 
@@ -421,6 +421,6 @@ def friendly_upload_board_need_card(locale: str) -> str:
 def friendly_upload_board_ready(locale: str, *, card_title: str) -> str:
     return t(
         locale,
-        f"Perfecto, tarjeta **{card_title}**. Tocá el clip 📎 y elige el archivo.",
+        f"Perfecto, tarjeta **{card_title}**. Toca el clip 📎 y elige el archivo.",
         f"Perfect — card **{card_title}**. Tap the clip 📎 and choose the file.",
     )

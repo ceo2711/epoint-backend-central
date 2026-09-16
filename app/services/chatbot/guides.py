@@ -168,8 +168,8 @@ GUIDES: list[dict[str, Any]] = [
         "pasos": [
             "Desde el chat: pedí registrar un cliente y completa nombre, email, teléfono, fuente y comercio.",
             "También puedes hacerlo desde Clientes → Agregar cliente.",
-            "Si venís de un prospecto, usá la conversión desde el detalle del prospecto o tras un pago.",
-            "Podés registrar varios seguidos en el chat o pegar bloques estructurados en un solo mensaje.",
+            "Si vienes de un prospecto, usa la conversión desde el detalle del prospecto o tras un pago.",
+            "Puedes registrar varios seguidos en el chat o pegar bloques estructurados en un solo mensaje.",
         ],
         "urls": ["/clientes"],
     },
@@ -179,7 +179,7 @@ GUIDES: list[dict[str, Any]] = [
         "roles": {"ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("aprobar", "rechazar", "pendiente", "revisión", "revision", "approve", "reject"),
         "pasos": [
-            "Andá a Clientes y filtrá por estado «Pendiente de revisión».",
+            "Ve a Clientes y filtra por estado «Pendiente de revisión».",
             "Para aprobar solo se necesitan: nombre completo, email, teléfono, fuente y comercio.",
             "Documentos y datos del portal NO bloquean la aprobación inicial.",
             "Desde el chat puedes decir: «aprobar a Juan», «aprobar todos», «rechazar a #123 porque…».",
@@ -197,7 +197,7 @@ GUIDES: list[dict[str, Any]] = [
             "En Mis datos completa SSN, fecha de nacimiento y dirección (con autocompletado). El vehículo es opcional.",
             "En Documentos sube SSN, identidad y comprobante de domicilio.",
             "En Tablero avanza las tareas Client TO DO (con adjuntos si la tarjeta lo pide).",
-            "Podés ver el progreso y regenerar la contraseña del portal desde el detalle del cliente.",
+            "Puedes ver el progreso y regenerar la contraseña del portal desde el detalle del cliente.",
         ],
         "urls": ["/clientes"],
     },
@@ -207,7 +207,7 @@ GUIDES: list[dict[str, Any]] = [
         "roles": None,
         "keywords": ("documento", "documentos", "subir", "adjunt", "clip", "upload", "tablero"),
         "pasos": [
-            "Usá el clip 📎 del chat: elegí si es documento del cliente o adjunto de una tarjeta del tablero.",
+            "Usa el clip 📎 del chat: elige si es documento del cliente o adjunto de una tarjeta del tablero.",
             "También puedes subirlos desde el detalle del cliente (Documentos / Tablero) o desde el portal del cliente.",
             "Los documentos pasan por verificación automática con IA; el estado aparece en el detalle.",
         ],
@@ -229,8 +229,8 @@ GUIDES: list[dict[str, Any]] = [
         "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("prospecto", "prospectos", "lead", "embudo", "pipeline"),
         "pasos": [
-            "Andá a Prospectos para crear y mover leads por el embudo.",
-            "Podés calificar el lead, vincular reuniones de Calendly y generar links de pago.",
+            "Ve a Prospectos para crear y mover leads por el embudo.",
+            "Puedes calificar el lead, vincular reuniones de Calendly y generar links de pago.",
             "Cuando corresponde, convertís el prospecto a cliente (queda pendiente de revisión de onboarding).",
         ],
         "urls": ["/prospectos"],
@@ -241,7 +241,7 @@ GUIDES: list[dict[str, Any]] = [
         "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("calendario", "calendly", "reunión", "reunion", "agendar", "meeting"),
         "pasos": [
-            "Andá a Calendario y conectá tu Personal Access Token de Calendly.",
+            "Ve a Calendario y conecta tu Personal Access Token de Calendly.",
             "Desde ahí ves reuniones, enlace público y vinculación con prospectos.",
             "En el chat puedes pedir «mis reuniones de hoy/semana» y, si está habilitado, agendar/cancelar/reprogramar.",
         ],
@@ -253,7 +253,7 @@ GUIDES: list[dict[str, Any]] = [
         "roles": {SALES_ROLE, SUB_SELLER_ROLE, "ADMIN", "BRANCH_MANAGER", "AREA_LEADER"},
         "keywords": ("pago", "pagos", "link de pago", "paypal", "authorize"),
         "pasos": [
-            "Andá a Pagos → Nuevo link de pago.",
+            "Ve a Pagos → Nuevo link de pago.",
             "Completa datos del cliente, monto y proveedor; opcionalmente vincula un prospecto y envía el email.",
             "El link se copia al portapapeles para compartirlo.",
         ],
@@ -266,9 +266,9 @@ GUIDES: list[dict[str, Any]] = [
         "keywords": ("asesor", "asesores", "asignar asesor", "listo para trabajar"),
         "pasos": [
             "Los asesores ven los clientes asignados en Clientes.",
-            "Desde el detalle revisás datos, documentos y el tablero de onboarding.",
+            "Desde el detalle revisas datos, documentos y el tablero de onboarding.",
             "Onboarding (o la autoasignación al pasar a «Listo para trabajar») puede asignar uno o más asesores.",
-            "Podés agregar o quitar asesores desde el panel del detalle del cliente (según estado).",
+            "Puedes agregar o quitar asesores desde el panel del detalle del cliente (según estado).",
         ],
         "urls": ["/clientes"],
     },
@@ -278,9 +278,9 @@ GUIDES: list[dict[str, Any]] = [
         "roles": None,
         "keywords": ("cuenta", "contraseña", "password", "2fa", "doble factor", "avatar"),
         "pasos": [
-            "Andá a Mi cuenta para actualizar avatar y contraseña.",
+            "Ve a Mi cuenta para actualizar avatar y contraseña.",
             "El doble factor (2FA) es obligatorio para usuarios internos.",
-            "Si perdés acceso al autenticador, pedile ayuda a un administrador.",
+            "Si pierdes acceso al autenticador, pedile ayuda a un administrador.",
         ],
         "urls": ["/cuenta"],
     },
@@ -366,7 +366,7 @@ def build_platform_guide_context(
         "guias_tutoriales": enriched,
         "nota_guia": (
             "Si el usuario pregunta cómo usar la plataforma, dónde encontrar algo o qué hacer, "
-            "respondé con pasos claros y enlaces de `plataforma.secciones` / `plataforma.guias_tutoriales`. "
+            "responde con pasos claros y enlaces de `plataforma.secciones` / `plataforma.guias_tutoriales`. "
             "No inventes pantallas que no estén en el mapa."
         ),
     }

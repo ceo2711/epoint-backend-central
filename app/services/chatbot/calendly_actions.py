@@ -63,7 +63,7 @@ class CalendlyChatActions:
         return t(
             self.locale,
             "Por ahora solo puedes **consultar** reuniones de Calendly desde el CRM. "
-            "Para crear, reprogramar o cancelar, usá Calendly directamente.",
+            "Para crear, reprogramar o cancelar, usa Calendly directamente.",
             "For now you can only **view** Calendly meetings from the CRM. "
             "To create, reschedule or cancel, use Calendly directly.",
         )
@@ -201,7 +201,7 @@ class CalendlyChatActions:
             handled=True,
             reply=t(
                 self.locale,
-                "Elegí el **tipo de reunión** (número o nombre).",
+                "Elige el **tipo de reunión** (número o nombre).",
                 "Choose the **meeting type** (number or name).",
             ),
             pending_action=pending,
@@ -228,13 +228,13 @@ class CalendlyChatActions:
                 calendly_options=self._options(step="events_list", events=formatted),
             )
         panel_hint = (
-            "Usá la lista de abajo para ver tus reuniones."
+            "Usa la lista de abajo para ver tus reuniones."
             if self.locale != "en"
             else "Use the list below to view your meetings."
         )
         if self._can_write():
             panel_hint = (
-                "Usá la lista de abajo para reprogramar o cancelar."
+                "Usa la lista de abajo para reprogramar o cancelar."
                 if self.locale != "en"
                 else "Use the list below to reschedule or cancel."
             )
@@ -254,7 +254,7 @@ class CalendlyChatActions:
         pending = PendingChatAction(action="create_calendly_event", draft={"step": "event_type", "mode": "create"})
         return ActionResult(
             handled=True,
-            reply="Elegí el **tipo de reunión**." if self.locale != "en" else "Choose the **meeting type**.",
+            reply="Elige el **tipo de reunión**." if self.locale != "en" else "Choose the **meeting type**.",
             pending_action=pending,
             calendly_options=self._options(step="event_type", event_types=format_event_types(types, locale=self.locale)),
         )
@@ -295,7 +295,7 @@ class CalendlyChatActions:
             base["step"] = "date"
             return ActionResult(
                 handled=True,
-                reply=f"No hay horarios el {date_value}. Probá otra fecha.",
+                reply=f"No hay horarios el {date_value}. Prueba otra fecha.",
                 pending_action=PendingChatAction(action=action, draft=base),
                 calendly_options=self._options(step="date", draft_summary=base),
             )
@@ -305,7 +305,7 @@ class CalendlyChatActions:
         base["custom_questions"] = [q.model_dump() for q in detail.custom_questions]
         return ActionResult(
             handled=True,
-            reply=f"Fecha **{date_value}**. Elegí un **horario**.",
+            reply=f"Fecha **{date_value}**. Elige un **horario**.",
             pending_action=PendingChatAction(action=action, draft=base),
             calendly_options=self._options(step="slot", slots=slots, draft_summary=base, custom_questions=base["custom_questions"]),
         )
@@ -352,7 +352,7 @@ class CalendlyChatActions:
                 pending.draft["ready_to_confirm"] = True
                 return ActionResult(
                     handled=True,
-                    reply=self._create_summary(pending.draft) + "\n\nEscribí **confirmar** o usá el panel.",
+                    reply=self._create_summary(pending.draft) + "\n\nEscribe **confirmar** o usa el panel.",
                     pending_action=pending,
                     calendly_options=self._options(
                         step="invitee",

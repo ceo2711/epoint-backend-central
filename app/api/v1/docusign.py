@@ -147,7 +147,7 @@ def resend_envelope_signing_reminder(
     else:
         message = (
             "No se pudo enviar el email de recordatorio. "
-            "Pedile al cliente que revise el correo de DocuSign."
+            "Pídele al cliente que revise el correo de DocuSign."
         )
     return DocusignResendReminderResponse(
         envelope=envelope,

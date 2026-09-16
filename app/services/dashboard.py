@@ -125,7 +125,7 @@ class DashboardService:
         if merchant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Seleccioná un comercio activo para ver las métricas",
+                detail="Selecciona un comercio activo para ver las métricas",
             )
 
         merchant = self.db.get(Merchant, merchant_id)

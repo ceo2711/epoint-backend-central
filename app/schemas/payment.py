@@ -54,7 +54,7 @@ class PaymentLinkCreate(BaseModel):
     def remainder_due_required_for_partial(self):
         if self.allow_partial:
             if self.remainder_due_on is None:
-                raise ValueError("Indicá la fecha acordada para completar el saldo")
+                raise ValueError("Indica la fecha acordada para completar el saldo")
             if remainder_due_on_is_past(self.remainder_due_on):
                 raise ValueError("La fecha para completar el saldo no puede ser anterior a hoy")
         return self

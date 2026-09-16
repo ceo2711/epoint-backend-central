@@ -69,7 +69,7 @@ def humanize_validation_error(error: dict) -> str:
         return f"Ingresa {label.lower()}." if label else "Completa los campos obligatorios."
 
     if err_type in {"date_parsing", "datetime_parsing"}:
-        return f"{label}: ingresá una fecha válida."
+        return f"{label}: ingresa una fecha válida."
 
     if err_type == "int_parsing":
         return f"{label}: debe ser un número entero."
@@ -89,12 +89,12 @@ def humanize_validation_error(error: dict) -> str:
     if msg:
         return msg
 
-    return "Revisá los datos ingresados e intentá de nuevo."
+    return "Revisa los datos ingresados e intenta de nuevo."
 
 
 def humanize_validation_errors(errors: list[dict]) -> str:
     if not errors:
-        return "Revisá los datos ingresados e intentá de nuevo."
+        return "Revisa los datos ingresados e intenta de nuevo."
     messages = [humanize_validation_error(err) for err in errors]
     # Quitar duplicados preservando orden
     unique: list[str] = []

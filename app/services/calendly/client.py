@@ -52,7 +52,7 @@ class CalendlyClient:
             detail = response.text.strip()[:400]
             hint = (
                 "Calendly rechazó la operación (403). "
-                "Si el token ya tiene scheduled_events:write, revisá: "
+                "Si el token ya tiene scheduled_events:write, revisa: "
                 "(1) que pegaste el token nuevo en /calendario → Configuración, "
                 "(2) que tu cuenta Calendly sea plan Standard o superior (el plan Free bloquea crear/cancelar por API), "
                 "(3) que el evento pertenezca a la misma cuenta del token."

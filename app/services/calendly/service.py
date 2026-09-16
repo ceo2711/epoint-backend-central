@@ -263,7 +263,7 @@ class CalendlyService:
             if exc.status_code == 400:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="El horario seleccionado no está disponible en Calendly. Elegí otro slot.",
+                    detail="El horario seleccionado no está disponible en Calendly. Elige otro slot.",
                 ) from exc
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

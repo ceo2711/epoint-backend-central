@@ -34,7 +34,7 @@ def assert_sensitive_document_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": STEP_UP_NOT_ENABLED_CODE,
-                "message": "Activá el doble factor de autenticación para ver este documento",
+                "message": "Activa el doble factor de autenticación para ver este documento",
             },
         )
     payload = safe_decode_token(step_up_token or "")
@@ -47,7 +47,7 @@ def assert_sensitive_document_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": STEP_UP_REQUIRED_CODE,
-                "message": "Ingresá el código de doble factor para ver este documento",
+                "message": "Ingresa el código de doble factor para ver este documento",
             },
         )
 

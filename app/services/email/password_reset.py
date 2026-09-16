@@ -7,7 +7,7 @@ from app.services.email.html_templates import logo_url_for_emails, render_html_t
 from app.services.email.resend_delivery import send_resend_text_email
 from app.services.notifications.templates import password_reset_email_body
 
-PASSWORD_RESET_EMAIL_SUBJECT = "Restablecé tu contraseña en Epoint"
+PASSWORD_RESET_EMAIL_SUBJECT = "Restablece tu contraseña en Epoint"
 
 
 @dataclass(frozen=True, slots=True)
