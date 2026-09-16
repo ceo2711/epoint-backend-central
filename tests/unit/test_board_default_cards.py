@@ -58,6 +58,8 @@ def test_client_todo_default_cards():
     assert "Buy your report" in cards[0].description_md
     assert "chexsystems.com" in cards[1].description_md
     assert "1-800-456-1244" not in cards[1].description_md
+    assert "comentario" in cards[1].description_md
+    assert "formulario cifrado" not in cards[1].description_md
     assert "Bancos activos" in cards[2].description_md
     assert cards[3].requires_file_upload is True
     assert "no es obligatoria" in cards[3].description_md
@@ -90,7 +92,9 @@ def test_credenciales_default_cards():
     assert cards[0].requires_credentials is True
     assert cards[1].requires_credentials is True
     assert cards[2].requires_credentials is True
-    assert "formulario cifrado" in cards[0].description_md
+    assert "comentario" in cards[0].description_md
+    assert "formulario cifrado" not in cards[0].description_md
+    assert "No los escribas en comentarios" not in cards[0].description_md
     assert "ACCESS YOUR CLARITY CREDIT REPORT" in cards[-1].description_md
     assert "Datos personales" not in {card.title for card in cards}
 

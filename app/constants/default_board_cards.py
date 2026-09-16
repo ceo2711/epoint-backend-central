@@ -22,8 +22,8 @@ class DefaultBoardCard:
 EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL = "system@epoint.com"
 
 _CREDENTIALS_FORM_NOTE = (
-    "Al finalizar, cargá el usuario y la contraseña con el **formulario cifrado** de esta tarjeta. "
-    "No los escribas en comentarios."
+    "Al finalizar, escribí el usuario y la contraseña en un **comentario** de esta tarjeta "
+    "para que un asesor pueda tomarlos."
 )
 
 _CLIENT_TODO_REPORTS_DESCRIPTION = """Enviar el reporte descargado en PDF de Experian (Experian, Equifax y TransUnion).
@@ -56,7 +56,7 @@ _CLIENT_TODO_ACCOUNTS_DESCRIPTION = """Apertura de cuentas: por favor abrir las 
 * [Innovis Credit Report](https://www.innovis.com/)
 * [Experian Clarity Services](https://consumers.clarityservices.com/reports)
 
-Las claves de ChexSystems e Innovis van en las tarjetas de la columna **Credenciales** (formulario cifrado). El reporte de Clarity se adjunta en la tarjeta **Experian Clarity Services**."""
+Las claves de ChexSystems e Innovis van en las tarjetas de la columna **Credenciales** (dejálas en un comentario). El reporte de Clarity se adjunta en la tarjeta **Experian Clarity Services**."""
 
 _CLIENT_TODO_BANKS_DESCRIPTION = """Colocar en los comentarios una lista completa de todos los bancos con los que tiene o ha tenido alguna relación financiera. Incluya:
 
