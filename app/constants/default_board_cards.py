@@ -98,7 +98,7 @@ Colocar una lista de los bancos con los que tiene alguna relación, bien sea tar
 - Incluso cuentas o bancos cerrados"""
 
 TAXES_CARD_TITLE = "Informe de Taxes"
-TAXES_CARD_COLUMN = "Ideas a realizar"
+TAXES_CARD_COLUMN = "Client TO DO"
 
 _CLIENT_TODO_TAXES_DESCRIPTION = """**Descripción**
 
@@ -266,110 +266,49 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             description_md=_CLIENT_TODO_BANKS_DESCRIPTION,
             position=2,
         ),
-    ),
-    TAXES_CARD_COLUMN: (
         DefaultBoardCard(
             title=TAXES_CARD_TITLE,
             description_md=_CLIENT_TODO_TAXES_DESCRIPTION,
-            position=0,
+            position=3,
             requires_file_upload=True,
         ),
     ),
     "Credenciales": (
         DefaultBoardCard(
-            title="Datos personales",
-            description_md=_PERSONAL_DATA_PLACEHOLDER,
-            position=0,
-            use_client_personal_data=True,
-        ),
-        DefaultBoardCard(
             title="Experian",
             description_md=_CREDENTIALS_EXPERIAN_DESCRIPTION,
-            position=1,
+            position=0,
             requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Equifax",
             description_md=_CREDENTIALS_EQUIFAX_DESCRIPTION,
-            position=2,
+            position=1,
             requires_credentials=True,
         ),
         DefaultBoardCard(
             title="TransUnion",
             description_md=_CREDENTIALS_TRANSUNION_DESCRIPTION,
-            position=3,
+            position=2,
             requires_credentials=True,
         ),
         DefaultBoardCard(
             title="ChexSystems",
             description_md=_CREDENTIALS_CHEXSYSTEMS_DESCRIPTION,
-            position=4,
+            position=3,
             requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Innovis",
             description_md=_CREDENTIALS_INNOVIS_DESCRIPTION,
-            position=5,
+            position=4,
             requires_credentials=True,
         ),
         DefaultBoardCard(
             title="Clarity Services",
             description_md="",
-            position=6,
+            position=5,
             requires_file_upload=True,
-        ),
-    ),
-    "Experian": (
-        DefaultBoardCard(
-            title="Accounts",
-            description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
-            position=0,
-        ),
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_INQUIRIES_DESCRIPTION,
-            position=1,
-        ),
-    ),
-    "Transunion": (
-        DefaultBoardCard(
-            title="Accounts",
-            description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
-            position=0,
-        ),
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_INQUIRIES_DESCRIPTION,
-            position=1,
-        ),
-    ),
-    "Equifax": (
-        DefaultBoardCard(
-            title="Accounts",
-            description_md=_ACCOUNTS_TEMPLATE_DESCRIPTION,
-            position=0,
-        ),
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_INQUIRIES_DESCRIPTION,
-            position=1,
-        ),
-    ),
-    "Completed": (
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_COMPLETED_INQUIRIES_1_DESCRIPTION,
-            position=0,
-        ),
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_COMPLETED_INQUIRIES_2_DESCRIPTION,
-            position=1,
-        ),
-        DefaultBoardCard(
-            title="Inquiries",
-            description_md=_COMPLETED_INQUIRIES_3_DESCRIPTION,
-            position=2,
         ),
     ),
 }

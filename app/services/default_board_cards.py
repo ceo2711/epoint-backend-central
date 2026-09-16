@@ -198,11 +198,14 @@ def _reorder_board_list_cards_by_defaults(db: Session, board_list: BoardList) ->
     db.flush()
 
 
+_UNSET = object()
+
+
 def merge_missing_default_cards_to_board_list(
     db: Session,
     *,
     board_list: BoardList,
-    comment_author: User | None = None,
+    comment_author: User | None | object = _UNSET,
     client: Client | None = None,
 ) -> list[BoardCard]:
     """Inserta tarjetas por defecto que falten (p. ej. template parcial con solo Taxes)."""
@@ -217,7 +220,7 @@ def merge_missing_default_cards_to_board_list(
         ).scalars().all()
     }
 
-    author = comment_author if comment_author is not None else resolve_default_comment_author(db)
+    author = resolve_default_comment_author(db) if comment_author is _UNSET else comment_author
     created: list[BoardCard] = []
     for card_def in sorted(card_defs, key=lambda item: item.position):
         if card_def.title in existing_titles:

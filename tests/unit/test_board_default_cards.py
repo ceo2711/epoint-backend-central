@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from app.constants.kanban_columns import (
     BUSINESS_FUNDING_SEQUENCE,
     BUSINESS_FUNDING_SEQUENCE_2,
+    KANBAN_COLUMN_TITLES,
     PERSONAL_FUNDING_SEQUENCE,
     PERSONAL_FUNDING_SEQUENCE_2,
 )
@@ -24,40 +25,54 @@ from app.services.default_board_cards import (
 )
 
 
+def test_kanban_template_columns_match_new_layout():
+    assert KANBAN_COLUMN_TITLES == (
+        "Client TO DO",
+        "Credenciales",
+        "Ideas a realizar",
+        "Experian",
+        "Equifax",
+        "Transunion",
+        PERSONAL_FUNDING_SEQUENCE,
+        BUSINESS_FUNDING_SEQUENCE,
+    )
+
+
 def test_client_todo_default_cards():
     cards = default_cards_for_column("Client TO DO")
 
-    assert len(cards) == 3
-    assert cards[0].title == "Reportes: Experian, Equifax y TransUnion"
-    assert cards[1].title == "Apertura de Cuentas & Freeze"
-    assert cards[2].title == "Lista de bancos con relacion"
+    assert len(cards) == 4
+    assert [card.title for card in cards] == [
+        "Reportes: Experian, Equifax y TransUnion",
+        "Apertura de Cuentas & Freeze",
+        "Lista de bancos con relacion",
+        TAXES_CARD_TITLE,
+    ]
     assert cards[0].requires_file_upload is True
     assert cards[1].requires_credentials is True
     assert len(cards[1].comments) == 3
     assert "experian.com" in cards[0].description_md
     assert "1-800-456-1244" in cards[1].description_md
-    assert TAXES_CARD_TITLE not in {card.title for card in cards}
-
-
-def test_taxes_card_lives_in_ideas_and_is_optional():
-    cards = default_cards_for_column(TAXES_CARD_COLUMN)
-
-    assert len(cards) == 1
-    assert cards[0].title == TAXES_CARD_TITLE
-    assert cards[0].requires_file_upload is True
-    assert "no es obligatoria" in cards[0].description_md
-    assert "entidad financiera" in cards[0].description_md
+    assert cards[3].requires_file_upload is True
+    assert "no es obligatoria" in cards[3].description_md
+    assert TAXES_CARD_COLUMN == "Client TO DO"
     assert is_optional_onboarding_card(TAXES_CARD_TITLE) is True
     assert is_optional_onboarding_card("Apertura de Cuentas & Freeze") is False
+
+
+def test_ideas_experian_equifax_transunion_start_empty():
+    assert default_cards_for_column("Ideas a realizar") == ()
+    assert default_cards_for_column("Experian") == ()
+    assert default_cards_for_column("Equifax") == ()
+    assert default_cards_for_column("Transunion") == ()
+    assert default_cards_for_column("Completed") == ()
 
 
 def test_credenciales_default_cards():
     cards = default_cards_for_column("Credenciales")
 
-    assert len(cards) == 7
-    assert cards[0].title == "Datos personales"
-    assert cards[0].use_client_personal_data is True
-    assert [card.title for card in cards[1:]] == [
+    assert len(cards) == 6
+    assert [card.title for card in cards] == [
         "Experian",
         "Equifax",
         "TransUnion",
@@ -66,40 +81,11 @@ def test_credenciales_default_cards():
         "Clarity Services",
     ]
     assert cards[-1].requires_file_upload is True
+    assert cards[0].requires_credentials is True
     assert cards[1].requires_credentials is True
     assert cards[2].requires_credentials is True
-    assert cards[3].requires_credentials is True
     assert cards[-1].description_md == ""
-
-
-def test_experian_default_cards():
-    cards = default_cards_for_column("Experian")
-
-    assert len(cards) == 2
-    assert cards[0].title == "Accounts"
-    assert cards[1].title == "Inquiries"
-    assert "Balance:" in cards[0].description_md
-    assert "CAPITAL ONE" not in cards[0].description_md
-
-
-def test_transunion_default_cards():
-    cards = default_cards_for_column("Transunion")
-
-    assert len(cards) == 2
-    assert cards[0].title == "Accounts"
-    assert cards[1].title == "Inquiries"
-    assert cards[0].description_md == default_cards_for_column("Experian")[0].description_md
-    assert "**Envíos**" not in cards[0].description_md
-
-
-def test_equifax_default_cards():
-    cards = default_cards_for_column("Equifax")
-
-    assert len(cards) == 2
-    assert cards[0].title == "Accounts"
-    assert cards[1].title == "Inquiries"
-    assert cards[0].description_md == default_cards_for_column("Experian")[0].description_md
-    assert "**Envíos**" not in cards[0].description_md
+    assert "Datos personales" not in {card.title for card in cards}
 
 
 def test_funding_sequences_have_no_default_cards():
@@ -112,16 +98,6 @@ def test_funding_sequences_have_no_default_cards():
     assert default_cards_for_column("Business Founding Sequence (2)") == ()
     assert len(FUNDER_PERSONAL_SEQUENCE_TITLES) > 0
     assert len(FUNDER_BUSINESS_SEQUENCE_TITLES) > 0
-
-
-def test_completed_default_cards():
-    cards = default_cards_for_column("Completed")
-
-    assert len(cards) == 3
-    assert all(card.title == "Inquiries" for card in cards)
-    assert "THD/CBNA" in cards[0].description_md
-    assert "Auto Financing" in cards[1].description_md
-    assert cards[2].description_md.count("ALLY FINANCIAL") == 1
 
 
 def test_create_board_card_from_default_adds_comments():
@@ -149,8 +125,9 @@ def test_apply_default_cards_to_board_list_uses_column_title():
 
     created = apply_default_cards_to_board_list(db, board_list=board_list)
 
-    assert len(created) == 3
-    assert db.add.call_count == 6
+    assert len(created) == 4
+    # 4 cards + 3 comments on Apertura de Cuentas & Freeze
+    assert db.add.call_count == 7
 
 
 def test_merge_missing_default_cards_skips_existing_titles():
@@ -170,13 +147,13 @@ def test_merge_missing_default_cards_skips_existing_titles():
     ) as create_mock:
         created = merge_missing_default_cards_to_board_list(db, board_list=board_list)
 
-    assert len(created) == 2
+    assert len(created) == 3
     created_titles = {call.kwargs["card_def"].title for call in create_mock.call_args_list}
     assert created_titles == {
         "Apertura de Cuentas & Freeze",
         "Lista de bancos con relacion",
+        TAXES_CARD_TITLE,
     }
-    assert TAXES_CARD_TITLE not in created_titles
 
 
 def test_resolve_default_comment_author_prefers_system_user():

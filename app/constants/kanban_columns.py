@@ -6,22 +6,30 @@ BUSINESS_FUNDING_SEQUENCE = "Business Funding Sequence"
 BUSINESS_FUNDING_SEQUENCE_2 = "Business Funding Sequence (2)"
 COMPLETED_LIST_TITLE = "Completed"
 
+# Columnas del template para tableros nuevos (orden canónico).
 KANBAN_COLUMN_TITLES: tuple[str, ...] = (
     "Client TO DO",
-    "Pendientes EpointCredits",
-    "Ideas a realizar",
     "Credenciales",
+    "Ideas a realizar",
     "Experian",
-    "Transunion",
     "Equifax",
-    "Cuentas de banco",
+    "Transunion",
     PERSONAL_FUNDING_SEQUENCE,
-    PERSONAL_FUNDING_SEQUENCE_2,
     BUSINESS_FUNDING_SEQUENCE,
-    BUSINESS_FUNDING_SEQUENCE_2,
-    COMPLETED_LIST_TITLE,
 )
 
+# Columnas del template viejo que se eliminan al aplicar el layout a tableros existentes.
+LEGACY_COLUMNS_TO_REMOVE: frozenset[str] = frozenset(
+    {
+        "Pendientes EpointCredits",
+        "Cuentas de banco",
+        PERSONAL_FUNDING_SEQUENCE_2,
+        BUSINESS_FUNDING_SEQUENCE_2,
+        COMPLETED_LIST_TITLE,
+    }
+)
+
+# Incluye variantes legacy (2) para ocultarlas al cliente y vaciarlas en sync.
 FUNDING_SEQUENCE_TITLES: frozenset[str] = frozenset(
     {
         PERSONAL_FUNDING_SEQUENCE,
@@ -64,5 +72,9 @@ def is_completed_column(title: str | None) -> bool:
 
 
 def is_system_kanban_column(title: str | None) -> bool:
-    """Columnas del template de onboarding: no se crean ni se borran a mano."""
+    """Columnas del template de onboarding actual."""
     return canonical_column_title(title) in KANBAN_COLUMN_TITLES
+
+
+def is_legacy_column_to_remove(title: str | None) -> bool:
+    return canonical_column_title(title) in LEGACY_COLUMNS_TO_REMOVE
