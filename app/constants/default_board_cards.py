@@ -21,88 +21,75 @@ class DefaultBoardCard:
 
 EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL = "system@epoint.com"
 
-_CLIENT_TODO_REPORTS_DESCRIPTION = """**Descripción**
+_CREDENTIALS_FORM_NOTE = (
+    "Al finalizar, cargá el usuario y la contraseña con el **formulario cifrado** de esta tarjeta. "
+    "No los escribas en comentarios."
+)
 
-Enviar el reporte descargado en PDF de [Experian](https://www.experian.com/) (Experian: Credit Report, FICO® Score & Financial Tools), generar los 3 reportes (Experian, Equifax y TransUnion). VER TUTORIAL ADJUNTADO DE COMO DESCARGAR LOS REPORTES.
+_CLIENT_TODO_REPORTS_DESCRIPTION = """Enviar el reporte descargado en PDF de Experian (Experian, Equifax y TransUnion).
 
-**Importante:** los reportes deben estar recién generados (máximo 15 días de antigüedad). Si el reporte es más antiguo, será rechazado y deberás descargar uno nuevo.
+1. Ingrese a [https://www.experian.com/](https://www.experian.com/) y seleccione Sign In.
+2. Inicie sesión con el correo electrónico y la contraseña de su cuenta de Experian.
+3. Dentro de su cuenta, diríjase a la sección de Credit Reports.
+4. Seleccione la opción para consultar los reportes de los tres burós: Experian, Equifax y TransUnion.
+5. Si su cuenta gratuita solo muestra el reporte de Experian, seleccione la opción para actualizar al plan de pago que incluya los tres reportes. Esta opción puede aparecer como Buy your report.
+6. Una vez realizado el pago, abra por separado los reportes de:
+    * Experian
+    * Equifax
+    * TransUnion
+7. Descargue cada reporte completo en formato PDF. Si no aparece la opción de descarga, seleccione Imprimir y luego Guardar como PDF.
+8. Guarde los archivos con los siguientes nombres:
+    * Nombre y apellido – Experian
+    * Nombre y apellido – Equifax
+    * Nombre y apellido – TransUnion
+9. Adjunte los tres archivos PDF en esta tarjeta.
 
-Registrarse en [Equifax](https://www.equifax.com/) y [TransUnion](https://www.transunion.com/) (dejar usuario y clave de ambas en los comentarios)."""
+**Importante**
 
-_CLIENT_TODO_ACCOUNTS_DESCRIPTION = """**Descripción**
+* El cliente debe realizar el pago directamente desde su cuenta.
+* Los tres reportes deben estar completos, actualizados y ser legibles.
+* Los reportes deben estar recién generados (máximo 15 días de antigüedad). Si el reporte es más antiguo, será rechazado y deberás descargar uno nuevo."""
 
-**1️⃣ Apertura de cuentas**
+_CLIENT_TODO_ACCOUNTS_DESCRIPTION = """Apertura de cuentas: por favor abrir las siguientes cuentas de burós secundarios. **Nota:** En el caso de Experian Clarity Services no creas un usuario y clave, solamente generas un reporte de crédito que debes adjuntar en su tarjeta.
 
-Por favor abrir las siguientes cuentas y enviarnos las credenciales una vez creadas:
+* [ChexSystems](https://www.chexsystems.com)
+* [Innovis Credit Report](https://www.innovis.com/)
+* [Experian Clarity Services](https://consumers.clarityservices.com/reports)
 
-- [ChexSystems](https://www.chexsystems.com)
-- [Innovis Credit Report](https://www.innovis.com)
-- [Experian Clarity Services](https://www.clarityservices.com)
+Las claves de ChexSystems e Innovis van en las tarjetas de la columna **Credenciales** (formulario cifrado). El reporte de Clarity se adjunta en la tarjeta **Experian Clarity Services**."""
 
-**2️⃣ Congelar LexisNexis (obligatorio – debe hacerse vía llamada)**
+_CLIENT_TODO_BANKS_DESCRIPTION = """Colocar en los comentarios una lista completa de todos los bancos con los que tiene o ha tenido alguna relación financiera. Incluya:
 
-Por favor congelar su reporte directamente con LexisNexis.
+* Cuentas personales o de negocio
+* Tarjetas de débito
+* Tarjetas de crédito
+* Cuentas bancarias cerradas
 
-**Instrucciones:**
+Utilice el siguiente formato:
 
-1. Ingrese a la página de LexisNexis: [Security Freeze - LexisNexis Risk Solutions Consumer Disclosure](https://consumer.risk.lexisnexis.com/freeze)
-2. Baje hasta el final de la página donde aparecen las opciones para congelar.
-3. Llame al número indicado para solicitar el Security Freeze: 📞 **1-800-456-1244**
-4. Complete el proceso por teléfono.
+**Bancos activos**
+1. [Nombre del banco] ([tipo de cuenta o tarjeta])
+2. [Nombre del banco] ([tipo de cuenta o tarjeta])
 
-**Credenciales de esta tarjeta**
+**Bancos con cuentas cerradas**
+1. [Nombre del banco] ([tipo de cuenta o tarjeta])
+2. [Nombre del banco] ([tipo de cuenta o tarjeta])
 
-Usa el formulario cifrado de abajo para **ChexSystems, Innovis y Clarity Services**.
-
-Las claves de Experian, Equifax y TransUnion van en las tarjetas de la columna **Credenciales**."""
-
-_CHEXSYSTEMS_COMMENT = """Paso a paso para registrarse en el portal de ChexSystems:
-
-Ve al sitio oficial de [ChexSystems](https://www.chexsystems.com).
-
-Haz clic en "Register" / "Registrarse" — para crear una cuenta como consumidor.
-
-Completa el formulario con tus datos personales: nombre completo, dirección, fecha de nacimiento, número de Seguro Social (SSN) u otro identificador. Esto permite verificar identidad.
-
-Contesta las preguntas de seguridad / verificación de identidad que te presenten (algunas agencias de verificación lo hacen como parte del registro).
-
-Elige un nombre de usuario y una contraseña, acepta los términos del servicio y completa el registro."""
-
-_INNOVIS_COMMENT = """Paso a paso para aperturar cuenta en Innovis:
-
-1. Ingresa a [Sign In](https://www.innovis.com)
-2. Allí selecciona la opción para pedir tu "Innovis Credit Report". Esa solicitud de informe es también el primer paso para generar lo que llaman tu [Innovis.com Account](https://www.innovis.com) (cuenta personal).
-3. Completa el formulario con tus datos personales: nombre, fecha de nacimiento, Social Security Number (SSN), número de teléfono, dirección, etc.
-4. Verifica tu identidad. Innovis puede usar la información que diste para chequear tu identidad, incluso a través de tu operador móvil.
-5. Si todo está correcto, te crearán la cuenta para que puedas ver tu reporte en línea, y desde ahí también podrás hacer otros trámites (bloqueos, alertas de fraude, disputas, etc.)."""
-
-_CLARITY_COMMENT = """En el caso de Experian Clarity Services no creas un usuario y clave como tal, así que te indico los pasos para este caso:
-
-Entra al portal oficial: [Experian's Clarity Services | Clarity Services, Inc.](https://www.clarityservices.com)
-
-Haz clic en: ➡️ **ACCESS YOUR CLARITY CREDIT REPORT**
-
-Completa tu información personal y responde las preguntas de seguridad.
-
-Si el sistema no puede verificarte automáticamente, te pedirá subir documentos (foto de tu ID + factura o estado de cuenta con tu dirección).
-
-Una vez verificado, podrás ver tu reporte completo y enviárnoslo."""
-
-_CLIENT_TODO_BANKS_DESCRIPTION = """**Descripción**
-
-Colocar una lista de los bancos con los que tiene alguna relación, bien sea tarjeta de débito/crédito. Esto incluye:
-
-- Personal
-- Del negocio/negocios
-- Tarjetas de crédito
-- Incluso cuentas o bancos cerrados"""
+Importante: solo necesitamos el nombre del banco y el tipo de producto. No incluya números de cuenta, números de tarjeta, contraseñas ni ninguna otra información confidencial."""
 
 TAXES_CARD_TITLE = "Informe de Taxes"
 TAXES_CARD_COLUMN = "Client TO DO"
+ACCOUNTS_CARD_TITLE = "Apertura de Cuentas (Buros Secundarios)"
+BANKS_CARD_TITLE = "Lista de bancos con relación"
+CLARITY_CARD_TITLE = "Experian Clarity Services"
 
-_CLIENT_TODO_TAXES_DESCRIPTION = """**Descripción**
+CARD_TITLE_ALIASES = {
+    "Apertura de Cuentas & Freeze": ACCOUNTS_CARD_TITLE,
+    "Lista de bancos con relacion": BANKS_CARD_TITLE,
+    "Clarity Services": CLARITY_CARD_TITLE,
+}
 
-Esta tarjeta **no es obligatoria para completar el onboarding**.
+_CLIENT_TODO_TAXES_DESCRIPTION = """Esta tarjeta **no es obligatoria para completar el onboarding**.
 
 El informe de taxes (Tax Return / declaración de impuestos o Tax Transcript del IRS de los últimos 2 años fiscales) se pide **solo cuando una entidad financiera lo requiera** más adelante.
 
@@ -127,25 +114,59 @@ SSN:
 
 Fecha Nacimiento:"""
 
-_CREDENTIALS_EXPERIAN_DESCRIPTION = """**Descripción**
+_CREDENTIALS_EXPERIAN_DESCRIPTION = f"""Crear cuenta en Experian
 
-Carga aquí el usuario y la contraseña de **Experian** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
+1. Ingrese al portal oficial de Experian: [https://www.experian.com/](https://www.experian.com/)
+2. Cree una cuenta nueva siguiendo las instrucciones del portal.
+3. {_CREDENTIALS_FORM_NOTE}"""
 
-_CREDENTIALS_EQUIFAX_DESCRIPTION = """**Descripción**
+_CREDENTIALS_EQUIFAX_DESCRIPTION = f"""Crear cuenta en Equifax
 
-Carga aquí el usuario y la contraseña de **Equifax** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
+1. Ingrese al portal oficial de myEquifax: [https://my.equifax.com/](https://my.equifax.com/)
+2. Cree una cuenta nueva siguiendo las instrucciones del portal.
+3. Si necesita adquirir una suscripción para acceder a la información requerida, puede realizar el pago y cancelarla después de completar el proceso para evitar futuros cargos mensuales.
+4. {_CREDENTIALS_FORM_NOTE}"""
 
-_CREDENTIALS_TRANSUNION_DESCRIPTION = """**Descripción**
+_CREDENTIALS_TRANSUNION_DESCRIPTION = f"""Crear cuenta en TransUnion
 
-Carga aquí el usuario y la contraseña de **TransUnion** con el formulario cifrado de esta tarjeta (no los escribas en comentarios)."""
+1. Ingrese al portal oficial de TransUnion: [https://www.transunion.com/free-credit-report](https://www.transunion.com/free-credit-report)
+2. Cree una cuenta nueva siguiendo las instrucciones del portal.
+3. {_CREDENTIALS_FORM_NOTE}"""
 
-_CREDENTIALS_CHEXSYSTEMS_DESCRIPTION = """**Descripción**
+_CREDENTIALS_CHEXSYSTEMS_DESCRIPTION = f"""## Crear cuenta en ChexSystems
 
-Carga aquí el usuario y la contraseña de **ChexSystems** con el formulario cifrado de esta tarjeta."""
+1. Ingrese al portal oficial de ChexSystems: [https://www.chexsystems.com/request-reports/consumer-disclosure](https://www.chexsystems.com/request-reports/consumer-disclosure)
+2. Seleccione **Register** o **Start Registration**.
+3. Complete el formulario con la información personal solicitada.
+4. Cree el usuario y la contraseña para acceder al Consumer Portal.
+5. Complete el proceso de verificación de identidad. Si anteriormente colocó una alerta o congelamiento de seguridad, el sistema podría solicitarle el PIN o la contraseña correspondiente.
+6. Confirme su correo electrónico o el código de seguridad que reciba.
+7. Inicie sesión para comprobar que puede acceder al Consumer Portal.
+8. {_CREDENTIALS_FORM_NOTE}"""
 
-_CREDENTIALS_INNOVIS_DESCRIPTION = """**Descripción**
+_CREDENTIALS_INNOVIS_DESCRIPTION = f"""## Para abrir la cuenta en Innovis
 
-Carga aquí el usuario y la contraseña de **Innovis** con el formulario cifrado de esta tarjeta."""
+1. Ingresa a [Sign In | Innovis](https://www.innovis.com/login/index).
+2. Selecciona la opción para solicitar tu **Innovis Credit Report**. Esta solicitud también es el primer paso para crear lo que se conoce como tu **Innovis.com Account** o cuenta personal.
+3. Completa el formulario con tus datos personales: nombre, fecha de nacimiento, Social Security Number (SSN), número de teléfono, dirección, entre otros.
+4. Verifica tu identidad. Innovis puede utilizar la información proporcionada para confirmar tu identidad, incluso mediante tu operador de telefonía móvil.
+5. Si toda la información es correcta, te permitirá crear tu cuenta con usuario y clave.
+6. {_CREDENTIALS_FORM_NOTE}"""
+
+_CREDENTIALS_CLARITY_DESCRIPTION = """## Obtener el reporte de Experian Clarity Services
+
+En este portal no es necesario crear un usuario ni una contraseña.
+
+1. Ingrese al portal oficial de Experian Clarity Services: [https://consumers.clarityservices.com/](https://consumers.clarityservices.com/)
+2. Seleccione **ACCESS YOUR CLARITY CREDIT REPORT**.
+3. Complete su información personal y responda las preguntas de seguridad para verificar su identidad.
+4. Si el sistema no puede verificar su identidad automáticamente, deberá subir:
+    * Una foto de su documento de identidad
+    * Una factura o estado de cuenta donde aparezca su nombre y dirección actual
+5. Una vez completada la verificación, podrá acceder a su reporte completo.
+6. Descargue el reporte y adjúntelo en esta tarjeta.
+
+Importante: asegúrese de que el documento esté completo y sea legible."""
 
 _INQUIRIES_DESCRIPTION = """**Descripción**
 
@@ -251,18 +272,12 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             requires_file_upload=True,
         ),
         DefaultBoardCard(
-            title="Apertura de Cuentas & Freeze",
+            title=ACCOUNTS_CARD_TITLE,
             description_md=_CLIENT_TODO_ACCOUNTS_DESCRIPTION,
             position=1,
-            requires_credentials=True,
-            comments=(
-                DefaultBoardCardComment(body=_CHEXSYSTEMS_COMMENT),
-                DefaultBoardCardComment(body=_INNOVIS_COMMENT),
-                DefaultBoardCardComment(body=_CLARITY_COMMENT),
-            ),
         ),
         DefaultBoardCard(
-            title="Lista de bancos con relacion",
+            title=BANKS_CARD_TITLE,
             description_md=_CLIENT_TODO_BANKS_DESCRIPTION,
             position=2,
         ),
@@ -305,8 +320,8 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
             requires_credentials=True,
         ),
         DefaultBoardCard(
-            title="Clarity Services",
-            description_md="",
+            title=CLARITY_CARD_TITLE,
+            description_md=_CREDENTIALS_CLARITY_DESCRIPTION,
             position=5,
             requires_file_upload=True,
         ),
@@ -316,6 +331,11 @@ DEFAULT_BOARD_CARDS_BY_COLUMN: dict[str, tuple[DefaultBoardCard, ...]] = {
 
 def default_cards_for_column(column_title: str) -> tuple[DefaultBoardCard, ...]:
     return DEFAULT_BOARD_CARDS_BY_COLUMN.get(column_title, ())
+
+
+def canonical_default_card_title(title: str | None) -> str:
+    normalized = (title or "").strip()
+    return CARD_TITLE_ALIASES.get(normalized, normalized)
 
 
 def is_taxes_card(title: str | None) -> bool:

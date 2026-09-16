@@ -92,8 +92,8 @@ def test_apply_canonical_layout_rebuilds_legacy_board():
     ]
     assert todo_cards[:4] == [
         "Reportes: Experian, Equifax y TransUnion",
-        "Apertura de Cuentas & Freeze",
-        "Lista de bancos con relacion",
+        "Apertura de Cuentas (Buros Secundarios)",
+        "Lista de bancos con relación",
         "Informe de Taxes",
     ]
 
@@ -109,7 +109,7 @@ def test_apply_canonical_layout_rebuilds_legacy_board():
         "TransUnion",
         "ChexSystems",
         "Innovis",
-        "Clarity Services",
+        "Experian Clarity Services",
     ]
 
     empty_titles = {

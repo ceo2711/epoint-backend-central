@@ -5,7 +5,12 @@ import logging
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.constants.default_board_cards import TAXES_CARD_TITLE, default_cards_for_column, is_taxes_card
+from app.constants.default_board_cards import (
+    TAXES_CARD_TITLE,
+    canonical_default_card_title,
+    default_cards_for_column,
+    is_taxes_card,
+)
 from app.constants.kanban_columns import (
     KANBAN_COLUMN_TITLE_ALIASES,
     KANBAN_COLUMN_TITLES,
@@ -43,6 +48,14 @@ def sync_template_lists(db: Session, template: BoardTemplate) -> None:
         if is_funding_sequence_column(title):
             continue
         seed_default_template_cards_for_list(db, template_list=template_list)
+
+
+def _apply_default_card_title_aliases(lists: list[BoardList]) -> None:
+    for board_list in lists:
+        for card in board_list.cards:
+            renamed = canonical_default_card_title(card.title)
+            if renamed != card.title:
+                card.title = renamed
 
 
 def _apply_column_title_aliases(lists: list[BoardList]) -> None:
@@ -214,6 +227,8 @@ def apply_canonical_layout_to_board(db: Session, board: Board) -> None:
     lists = _load_board_lists(db, board.id)
     _move_taxes_into_client_todo(db, lists)
     lists = _load_board_lists(db, board.id)
+    _apply_default_card_title_aliases(lists)
+    db.flush()
     by_title = {canonical_column_title(item.title): item for item in lists}
 
     for title in KANBAN_COLUMN_TITLES:

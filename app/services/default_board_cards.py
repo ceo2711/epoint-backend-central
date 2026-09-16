@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.constants.default_board_cards import (
     EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL,
     DefaultBoardCard,
+    canonical_default_card_title,
     default_cards_for_column,
 )
 from app.models.address import Address
@@ -214,7 +215,7 @@ def merge_missing_default_cards_to_board_list(
         return []
 
     existing_titles = {
-        title
+        canonical_default_card_title(title)
         for title in db.execute(
             select(BoardCard.title).where(BoardCard.list_id == board_list.id)
         ).scalars().all()

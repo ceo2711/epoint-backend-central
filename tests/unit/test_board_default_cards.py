@@ -8,6 +8,9 @@ from app.constants.kanban_columns import (
     PERSONAL_FUNDING_SEQUENCE_2,
 )
 from app.constants.default_board_cards import (
+    ACCOUNTS_CARD_TITLE,
+    BANKS_CARD_TITLE,
+    CLARITY_CARD_TITLE,
     EPOINT_SYSTEM_COMMENT_AUTHOR_EMAIL,
     FUNDER_BUSINESS_SEQUENCE_TITLES,
     FUNDER_PERSONAL_SEQUENCE_TITLES,
@@ -44,20 +47,23 @@ def test_client_todo_default_cards():
     assert len(cards) == 4
     assert [card.title for card in cards] == [
         "Reportes: Experian, Equifax y TransUnion",
-        "Apertura de Cuentas & Freeze",
-        "Lista de bancos con relacion",
+        ACCOUNTS_CARD_TITLE,
+        BANKS_CARD_TITLE,
         TAXES_CARD_TITLE,
     ]
     assert cards[0].requires_file_upload is True
-    assert cards[1].requires_credentials is True
-    assert len(cards[1].comments) == 3
+    assert cards[1].requires_credentials is False
+    assert cards[1].comments == ()
     assert "experian.com" in cards[0].description_md
-    assert "1-800-456-1244" in cards[1].description_md
+    assert "Buy your report" in cards[0].description_md
+    assert "chexsystems.com" in cards[1].description_md
+    assert "1-800-456-1244" not in cards[1].description_md
+    assert "Bancos activos" in cards[2].description_md
     assert cards[3].requires_file_upload is True
     assert "no es obligatoria" in cards[3].description_md
     assert TAXES_CARD_COLUMN == "Client TO DO"
     assert is_optional_onboarding_card(TAXES_CARD_TITLE) is True
-    assert is_optional_onboarding_card("Apertura de Cuentas & Freeze") is False
+    assert is_optional_onboarding_card(ACCOUNTS_CARD_TITLE) is False
 
 
 def test_ideas_experian_equifax_transunion_start_empty():
@@ -78,13 +84,14 @@ def test_credenciales_default_cards():
         "TransUnion",
         "ChexSystems",
         "Innovis",
-        "Clarity Services",
+        CLARITY_CARD_TITLE,
     ]
     assert cards[-1].requires_file_upload is True
     assert cards[0].requires_credentials is True
     assert cards[1].requires_credentials is True
     assert cards[2].requires_credentials is True
-    assert cards[-1].description_md == ""
+    assert "formulario cifrado" in cards[0].description_md
+    assert "ACCESS YOUR CLARITY CREDIT REPORT" in cards[-1].description_md
     assert "Datos personales" not in {card.title for card in cards}
 
 
@@ -100,7 +107,7 @@ def test_funding_sequences_have_no_default_cards():
     assert len(FUNDER_BUSINESS_SEQUENCE_TITLES) > 0
 
 
-def test_create_board_card_from_default_adds_comments():
+def test_create_board_card_from_default_creates_card():
     db = MagicMock()
     board_list = MagicMock(id=10)
     author = MagicMock(id=7)
@@ -113,7 +120,7 @@ def test_create_board_card_from_default_adds_comments():
         comment_author=author,
     )
 
-    assert db.add.call_count == 4
+    assert db.add.call_count == 1
     assert db.flush.call_count == 2
 
 
@@ -126,8 +133,7 @@ def test_apply_default_cards_to_board_list_uses_column_title():
     created = apply_default_cards_to_board_list(db, board_list=board_list)
 
     assert len(created) == 4
-    # 4 cards + 3 comments on Apertura de Cuentas & Freeze
-    assert db.add.call_count == 7
+    assert db.add.call_count == 4
 
 
 def test_merge_missing_default_cards_skips_existing_titles():
@@ -150,10 +156,35 @@ def test_merge_missing_default_cards_skips_existing_titles():
     assert len(created) == 3
     created_titles = {call.kwargs["card_def"].title for call in create_mock.call_args_list}
     assert created_titles == {
-        "Apertura de Cuentas & Freeze",
-        "Lista de bancos con relacion",
+        ACCOUNTS_CARD_TITLE,
+        BANKS_CARD_TITLE,
         TAXES_CARD_TITLE,
     }
+
+
+def test_merge_missing_default_cards_treats_legacy_titles_as_present():
+    db = MagicMock()
+    board_list = MagicMock(id=10, title="Client TO DO")
+    author = MagicMock(id=7)
+
+    db.execute.return_value.scalars.return_value.all.side_effect = [
+        ["Apertura de Cuentas & Freeze", "Lista de bancos con relacion"],
+        [],
+    ]
+    db.execute.return_value.scalar_one_or_none.return_value = author
+
+    with patch(
+        "app.services.default_board_cards.create_board_card_from_default",
+        side_effect=lambda *args, **kwargs: MagicMock(title=kwargs["card_def"].title),
+    ) as create_mock:
+        created = merge_missing_default_cards_to_board_list(db, board_list=board_list)
+
+    created_titles = {call.kwargs["card_def"].title for call in create_mock.call_args_list}
+    assert ACCOUNTS_CARD_TITLE not in created_titles
+    assert BANKS_CARD_TITLE not in created_titles
+    assert "Reportes: Experian, Equifax y TransUnion" in created_titles
+    assert TAXES_CARD_TITLE in created_titles
+    assert len(created) == 2
 
 
 def test_resolve_default_comment_author_prefers_system_user():
