@@ -21,6 +21,7 @@ from app.schemas.client import (
     ClientPortalPasswordResponse,
     ClientReject,
     ClientResponse,
+    ClientSsnResponse,
     ClientStatsResponse,
     ClientUpdate,
     AdvisorBrief,
@@ -229,6 +230,25 @@ def download_client_signed_contract(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@router.get("/{client_id}/ssn", response_model=ClientSsnResponse)
+def get_client_ssn(
+    client_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_permissions("clients:read"))],
+    merchant_id: ActiveMerchantId,
+) -> ClientSsnResponse:
+    """SSN cifrado: staff con acceso al workspace, sin step-up 2FA."""
+    service = ClientService(db)
+    if not service.user_can_access_client(current_user, client_id, merchant_id=merchant_id):
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if not service.user_can_view_approved_client_workspace(current_user, client_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+    client = db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    return ClientSsnResponse(ssn=service.get_client_ssn(client))
 
 
 @router.get("/{client_id}", response_model=ClientDetailResponse)
