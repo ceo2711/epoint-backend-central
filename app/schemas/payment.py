@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Literal
 
@@ -7,17 +8,25 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 from app.services.payments.amounts import STANDARD_INITIAL_PAYMENT
 
 
-PaymentProviderLiteral = Literal["authorize", "paypal", "stripe"]
+PaymentProviderLiteral = str
 PaymentLinkStatusLiteral = Literal["pending", "partial", "paid", "expired", "cancelled"]
 DEFAULT_PAYMENT_AMOUNT = STANDARD_INITIAL_PAYMENT
 
 
+# Día calendario de quien registra el pago. Ayer no es válido; hoy sí.
+REGISTRATION_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def registration_calendar_today() -> date:
+    return datetime.now(REGISTRATION_TIMEZONE).date()
+
+
 def remainder_due_on_is_past(value: date) -> bool:
-    return value < datetime.now(timezone.utc).date() - timedelta(days=1)
+    return value < registration_calendar_today()
 
 
 class PaymentProviderStatus(BaseModel):
-    provider: PaymentProviderLiteral
+    provider: str = Field(min_length=1, max_length=20)
     configured: bool
     label: str
 
@@ -43,7 +52,7 @@ class PaymentLinkCreate(BaseModel):
     customer_phone: str = Field(min_length=5, max_length=30)
     amount: Decimal = Field(default=DEFAULT_PAYMENT_AMOUNT, gt=0, max_digits=12, decimal_places=2)
     currency: str = Field(default="USD", min_length=3, max_length=3)
-    provider: PaymentProviderLiteral
+    provider: str = Field(min_length=1, max_length=20)
     description: str | None = Field(default=None, max_length=2000)
     prospect_id: int | None = None
     send_email: bool = True
@@ -75,7 +84,8 @@ class PaymentLinkResponse(BaseModel):
     remaining_amount: Decimal | None = None
     allow_partial: bool = False
     currency: str
-    provider: PaymentProviderLiteral
+    provider: str
+    provider_label: str | None = None
     status: PaymentLinkStatusLiteral
     description: str | None
     payment_url: str

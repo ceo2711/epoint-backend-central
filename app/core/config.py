@@ -167,6 +167,8 @@ class Settings(BaseSettings):
     # Pagos — general
     payments_enabled: bool = True
     payments_default_provider: str = "authorize"
+    # codigo:Etiqueta,codigo:Etiqueta — el select del vendedor sale de acá.
+    payment_methods: str = "authorize:Authorize.net,paypal:PayPal"
     # Si True, los links públicos muestran "Pagar" y aprueban sin cobro real.
     payment_test: bool = False
 
@@ -237,11 +239,18 @@ class Settings(BaseSettings):
         return "production" if env in {"production", "prod", "live"} else "sandbox"
 
     @property
+    def payment_method_options(self) -> list:
+        from app.core.payment_methods import parse_payment_methods
+
+        return parse_payment_methods(self.payment_methods)
+
+    @property
     def payments_default_provider_normalized(self) -> str:
         provider = self.payments_default_provider.strip().lower()
-        if provider in ("authorize", "paypal"):
+        codes = [item.code for item in self.payment_method_options]
+        if provider in codes:
             return provider
-        return "authorize"
+        return codes[0] if codes else "authorize"
 
     @property
     def payments_webhook_base_url(self) -> str | None:

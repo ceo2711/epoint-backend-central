@@ -8,7 +8,11 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.models.payment_link import PaymentLinkStatus
-from app.schemas.payment import PaymentLinkCreate, PaymentLinkRemainderDueUpdate
+from app.schemas.payment import (
+    PaymentLinkCreate,
+    PaymentLinkRemainderDueUpdate,
+    registration_calendar_today,
+)
 from app.services.payment_reminders import run_payment_reminders
 from app.services.payments.amounts import (
     STANDARD_INITIAL_PAYMENT,
@@ -274,13 +278,15 @@ def test_partial_create_requires_remainder_due_on():
 
 
 def test_remainder_due_update_rejects_past_date():
+    yesterday = registration_calendar_today() - timedelta(days=1)
     with pytest.raises(ValidationError):
-        PaymentLinkRemainderDueUpdate(remainder_due_on=date.today() - timedelta(days=3))
+        PaymentLinkRemainderDueUpdate(remainder_due_on=yesterday)
 
 
 def test_remainder_due_update_accepts_today():
-    payload = PaymentLinkRemainderDueUpdate(remainder_due_on=date.today())
-    assert payload.remainder_due_on == date.today()
+    today = registration_calendar_today()
+    payload = PaymentLinkRemainderDueUpdate(remainder_due_on=today)
+    assert payload.remainder_due_on == today
 
 
 def test_partial_create_rejects_past_remainder_due_on():
@@ -293,7 +299,7 @@ def test_partial_create_rejects_past_remainder_due_on():
             amount=Decimal("1000.00"),
             provider="authorize",
             allow_partial=True,
-            remainder_due_on=date.today() - timedelta(days=3),
+            remainder_due_on=registration_calendar_today() - timedelta(days=1),
         )
 
 
@@ -339,6 +345,111 @@ def test_remaining_to_standard_after_partial_paid():
         ]
     )
     assert leftover == Decimal("2000.00")
+
+
+def test_record_received_partial_keeps_balance_without_sending_link():
+    from app.schemas.payment import PaymentLinkCreate
+
+    user = SimpleNamespace(id=4, role=SimpleNamespace(code="SALES_REP"))
+    payload = PaymentLinkCreate(
+        customer_first_name="Ana",
+        customer_last_name="Lopez",
+        customer_email="ana@example.com",
+        customer_phone="5551234567",
+        amount=Decimal("1000.00"),
+        provider="paypal",
+        allow_partial=True,
+        remainder_due_on=date.today() + timedelta(days=10),
+        send_email=True,
+    )
+    svc = PaymentService(MagicMock())
+    svc.ensure_access = MagicMock()
+    captured: dict = {}
+
+    def apply(link, charged=None):
+        link.amount_paid = charged
+        link.status = PaymentLinkStatus.PARTIAL.value
+        captured["link"] = link
+        captured["charged"] = charged
+
+    svc._apply_received_payment = apply
+    svc._to_response = lambda link: SimpleNamespace(
+        status=link.status,
+        amount=link.amount,
+        amount_paid=link.amount_paid,
+        remainder_due_on=link.remainder_due_on,
+    )
+
+    with (
+        patch("app.services.payments.service.send_payment_link_email") as send_link,
+        patch("app.services.payments.service.send_payment_reminder_email") as send_reminder,
+        patch.object(PaymentService, "_create_provider_checkout") as checkout,
+    ):
+        result = svc.create_link(user, payload, merchant_id=1)
+
+    send_link.assert_not_called()
+    send_reminder.assert_not_called()
+    checkout.assert_not_called()
+    assert result.email_sent is False
+    assert captured["charged"] == Decimal("1000.00")
+    assert captured["link"].amount == STANDARD_INITIAL_PAYMENT
+    assert captured["link"].provider == "paypal"
+    assert captured["link"].remainder_due_on == payload.remainder_due_on
+    assert captured["link"].payment_url.startswith("http")
+    assert result.link.status == PaymentLinkStatus.PARTIAL.value
+
+
+def test_record_received_full_payment_marks_standard_amount():
+    from app.schemas.payment import PaymentLinkCreate
+
+    user = SimpleNamespace(id=4, role=SimpleNamespace(code="SALES_REP"))
+    payload = PaymentLinkCreate(
+        customer_first_name="Ana",
+        customer_last_name="Lopez",
+        customer_email="ana@example.com",
+        customer_phone="5551234567",
+        amount=Decimal("3000.00"),
+        provider="authorize",
+    )
+    svc = PaymentService(MagicMock())
+    svc.ensure_access = MagicMock()
+    captured: dict = {}
+
+    def apply(link, charged=None):
+        link.amount_paid = charged
+        link.status = PaymentLinkStatus.PAID.value
+        captured["link"] = link
+        captured["charged"] = charged
+
+    svc._apply_received_payment = apply
+    svc._to_response = lambda link: SimpleNamespace(status=link.status, amount=link.amount)
+
+    result = svc.create_link(user, payload, merchant_id=1)
+
+    assert result.email_sent is False
+    assert captured["charged"] == STANDARD_INITIAL_PAYMENT
+    assert captured["link"].amount == STANDARD_INITIAL_PAYMENT
+    assert captured["link"].remainder_due_on is None
+    assert captured["link"].allow_partial is False
+
+
+def test_record_received_rejects_amount_over_standard():
+    from app.schemas.payment import PaymentLinkCreate
+
+    user = SimpleNamespace(id=4, role=SimpleNamespace(code="SALES_REP"))
+    payload = PaymentLinkCreate(
+        customer_first_name="Ana",
+        customer_last_name="Lopez",
+        customer_email="ana@example.com",
+        customer_phone="5551234567",
+        amount=Decimal("3500.00"),
+        provider="authorize",
+    )
+    svc = PaymentService(MagicMock())
+    svc.ensure_access = MagicMock()
+    with pytest.raises(HTTPException) as exc:
+        svc.create_link(user, payload, merchant_id=1)
+    assert exc.value.status_code == 400
 
 
 def test_remaining_to_standard_is_zero_when_covered():

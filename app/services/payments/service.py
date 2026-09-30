@@ -46,12 +46,6 @@ logger = logging.getLogger(__name__)
 
 PAYMENT_ROLES = frozenset({"ADMIN", "BRANCH_MANAGER", "SALES_REP", "SUB_SELLER", "AREA_LEADER"})
 
-PROVIDER_LABELS = {
-    PaymentProvider.AUTHORIZE.value: "Authorize.net",
-    PaymentProvider.PAYPAL.value: "PayPal",
-    PaymentProvider.STRIPE.value: "Stripe",
-}
-
 ACTIVE_PROVIDERS = frozenset({PaymentProvider.AUTHORIZE.value, PaymentProvider.PAYPAL.value})
 
 
@@ -83,26 +77,35 @@ class PaymentService:
             return True
         return not (self.authorize.is_configured or self.paypal.is_configured)
 
+    def _method_is_configured(self, code: str) -> bool:
+        if code == PaymentProvider.AUTHORIZE.value:
+            return self.authorize.is_configured
+        if code == PaymentProvider.PAYPAL.value:
+            return self.paypal.is_configured
+        if code == PaymentProvider.STRIPE.value:
+            return self.settings.stripe_configured
+        return True
+
+    def payment_method_label(self, code: str) -> str:
+        from app.core.payment_methods import label_for_payment_method
+
+        return label_for_payment_method(code, self.settings.payment_method_options)
+
     def get_config(self, user: User) -> PaymentConfigResponse:
         self.ensure_access(user)
+        options = self.settings.payment_method_options
         providers = [
             PaymentProviderStatus(
-                provider="authorize",
-                configured=self.authorize.is_configured,
-                label="Authorize.net",
-            ),
-            PaymentProviderStatus(
-                provider="paypal",
-                configured=self.paypal.is_configured,
-                label="PayPal",
-            ),
+                provider=item.code,
+                configured=self._method_is_configured(item.code),
+                label=item.label,
+            )
+            for item in options
         ]
         default = self.settings.payments_default_provider_normalized
-        if default not in ACTIVE_PROVIDERS:
-            default = PaymentProvider.AUTHORIZE.value
         return PaymentConfigResponse(
             payments_enabled=self.settings.payments_enabled,
-            default_provider=default,  # type: ignore[arg-type]
+            default_provider=default,
             stub_mode=self.stub_mode,
             payment_test=self.settings.payment_test,
             providers=providers,
@@ -128,7 +131,8 @@ class PaymentService:
             remaining_amount=remaining_amount(link),
             allow_partial=bool(link.allow_partial),
             currency=link.currency,
-            provider=link.provider,  # type: ignore[arg-type]
+            provider=link.provider,
+            provider_label=self.payment_method_label(link.provider),
             status=link.status,  # type: ignore[arg-type]
             description=link.description,
             payment_url=link.payment_url,
@@ -198,6 +202,108 @@ class PaymentService:
             )
         return amount
 
+    def _record_received_payment(
+        self,
+        user: User,
+        payload: PaymentLinkCreate,
+        *,
+        merchant_id: int,
+    ) -> PaymentLinkCreateResult:
+        """Registra un pago ya realizado. No crea checkout ni envía el link.
+
+        Si el monto no cubre los 3000 USD, el saldo queda en el mismo registro
+        y los recordatorios esperan `remainder_due_on`.
+        """
+        paid = Decimal(payload.amount).quantize(Decimal("0.01"))
+        if paid <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El monto debe ser mayor a 0")
+
+        prospect = None
+        existing_links: list[PaymentLink] = []
+        if payload.prospect_id is not None:
+            from app.services.prospects import ProspectService
+
+            prospect_svc = ProspectService(self.db)
+            prospect = prospect_svc._get_prospect_for_user(
+                user, payload.prospect_id, merchant_id=merchant_id
+            )
+            existing_links = prospect_svc.list_linked_payment_links(prospect)
+            obligation = remaining_to_standard(existing_links)
+            if obligation <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Este prospecto ya cubrió el pago inicial de 3000 USD",
+                )
+        else:
+            obligation = STANDARD_INITIAL_PAYMENT
+
+        if paid > obligation:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El monto no puede superar USD {obligation:.2f}",
+            )
+
+        incomplete = paid < obligation
+        if incomplete and payload.remainder_due_on is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indica la fecha acordada para completar el saldo",
+            )
+
+        open_link = next((item for item in existing_links if is_open_payment(item)), None)
+        if open_link is not None:
+            already = Decimal(open_link.amount_paid or 0)
+            open_link.amount = (already + obligation).quantize(Decimal("0.01"))
+            open_link.provider = payload.provider
+            open_link.allow_partial = incomplete
+            open_link.remainder_due_on = payload.remainder_due_on if incomplete else None
+            if payload.description:
+                open_link.description = payload.description
+            if not (open_link.payment_url or "").startswith(("http://", "https://")):
+                open_link.payment_url = (
+                    f"{self.settings.portal_base_url}/pagar/{open_link.public_token}"
+                )
+            self._apply_received_payment(open_link, charged=paid)
+            self.db.commit()
+            self.db.refresh(open_link)
+            return PaymentLinkCreateResult(link=self._to_response(open_link), email_sent=False)
+
+        token = uuid.uuid4().hex
+        link = PaymentLink(
+            public_token=token,
+            created_by_user_id=user.id,
+            merchant_id=merchant_id,
+            prospect_id=payload.prospect_id,
+            customer_first_name=payload.customer_first_name.strip(),
+            customer_last_name=payload.customer_last_name.strip(),
+            customer_email=str(payload.customer_email).strip().lower(),
+            customer_phone=payload.customer_phone.strip(),
+            amount=obligation,
+            amount_paid=Decimal("0.00"),
+            allow_partial=incomplete,
+            remainder_due_on=payload.remainder_due_on if incomplete else None,
+            currency=payload.currency.upper(),
+            provider=payload.provider,
+            status=PaymentLinkStatus.PENDING.value,
+            description=payload.description,
+            payment_url=f"{self.settings.portal_base_url}/pagar/{token}",
+        )
+        self.db.add(link)
+        self.db.flush()
+        if prospect is not None:
+            from app.services.prospects import ProspectService
+
+            ProspectService(self.db).attach_payment_link(
+                actor=user,
+                prospect=prospect,
+                link=link,
+                note=f"Pago registrado ({link.currency} {paid:.2f})",
+            )
+        self._apply_received_payment(link, charged=paid)
+        self.db.commit()
+        self.db.refresh(link)
+        return PaymentLinkCreateResult(link=self._to_response(link), email_sent=False)
+
     def create_link(
         self,
         user: User,
@@ -205,15 +311,25 @@ class PaymentService:
         *,
         merchant_id: int,
         standardize_amount: bool = True,
+        record_as_received: bool = True,
     ) -> PaymentLinkCreateResult:
         self.ensure_access(user)
         if not self.settings.payments_enabled:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Los pagos están deshabilitados")
-        if payload.provider not in ACTIVE_PROVIDERS:
+        allowed = {item.code for item in self.settings.payment_method_options}
+        if payload.provider not in allowed:
+            names = ", ".join(item.label for item in self.settings.payment_method_options)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Proveedor no disponible. Usa Authorize.net o PayPal.",
+                detail=f"Medio de pago no disponible. Usa: {names}.",
             )
+        if not record_as_received and payload.provider not in ACTIVE_PROVIDERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ese medio no admite un link de cobro.",
+            )
+        if record_as_received:
+            return self._record_received_payment(user, payload, merchant_id=merchant_id)
 
         amount = (
             self.normalize_create_amount(allow_partial=bool(payload.allow_partial), amount=payload.amount)
@@ -407,7 +523,7 @@ class PaymentService:
                     payment_url=payment_url,
                     payment_link_id=link.id,
                     description=link.description,
-                    provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+                    provider_label=self.payment_method_label(link.provider),
                 )
             )
         return send_payment_link_email(
@@ -417,7 +533,7 @@ class PaymentService:
                 amount=leftover or link.amount,
                 currency=link.currency,
                 payment_url=payment_url,
-                provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+                provider_label=self.payment_method_label(link.provider),
                 payment_link_id=link.id,
                 description=link.description,
                 merchant_name=merchant_name,
@@ -491,7 +607,13 @@ class PaymentService:
             remainder_due_on=remainder_due_on,
             description="Saldo para completar el pago inicial de USD 3000",
         )
-        return self.create_link(user, payload, merchant_id=merchant_id, standardize_amount=False)
+        return self.create_link(
+            user,
+            payload,
+            merchant_id=merchant_id,
+            standardize_amount=False,
+            record_as_received=False,
+        )
 
     def get_public_link(self, token: str) -> PublicPaymentLinkResponse:
         link = self._get_link_by_token(token)
@@ -524,7 +646,7 @@ class PaymentService:
             can_pay=can_pay,
             checkout_url=checkout_url,
             hosted_payment_token=hosted_payment_token,
-            provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+            provider_label=self.payment_method_label(link.provider),
         )
 
     def prepare_public_checkout(
@@ -589,7 +711,7 @@ class PaymentService:
             can_pay=True,
             checkout_url=checkout_url,
             hosted_payment_token=hosted_payment_token,
-            provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+            provider_label=self.payment_method_label(link.provider),
         )
 
     def complete_public_payment(

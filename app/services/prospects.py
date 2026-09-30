@@ -670,7 +670,14 @@ class ProspectService:
         ).scalar_one_or_none()
         return existing is not None
 
-    def attach_payment_link(self, *, actor: User, prospect: Prospect, link: PaymentLink) -> Prospect:
+    def attach_payment_link(
+        self,
+        *,
+        actor: User,
+        prospect: Prospect,
+        link: PaymentLink,
+        note: str | None = None,
+    ) -> Prospect:
         if prospect.converted_client_id is not None:
             return prospect
         prospect.payment_link_id = link.id
@@ -681,7 +688,7 @@ class ProspectService:
             event_type=ProspectHistoryEventType.PAYMENT_LINKED.value,
             from_status=prospect.status,
             to_status=prospect.status,
-            note=f"Link de pago generado ({link.currency} {link.amount})",
+            note=note or f"Link de pago generado ({link.currency} {link.amount})",
         )
         self.db.flush()
         return prospect

@@ -10,10 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.payment_methods import label_for_payment_method
 from app.models.payment_link import PaymentLink, PaymentLinkStatus
 from app.services.email.payment_reminder import PaymentReminderEmailPayload, send_payment_reminder_email
 from app.services.payments.amounts import is_shareable_payment_url, remaining_amount
-from app.services.payments.service import PROVIDER_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,10 @@ def run_payment_reminders(db: Session) -> dict:
                 payment_url=link.payment_url,
                 payment_link_id=link.id,
                 description=link.description,
-                provider_label=PROVIDER_LABELS.get(link.provider, link.provider),
+                provider_label=label_for_payment_method(
+                    link.provider,
+                    get_settings().payment_method_options,
+                ),
             )
         )
         if ok:

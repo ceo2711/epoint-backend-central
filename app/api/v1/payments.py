@@ -67,15 +67,17 @@ def create_payment_link(
     db: DbSession,
 ) -> PaymentLinkCreateResponse:
     result = PaymentService(db).create_link(current_user, payload, merchant_id=merchant_id)
-    if result.email_sent:
-        message = "Link de pago generado y enviado por email al cliente."
-    elif payload.send_email:
+    if result.link.status == "paid":
+        message = "Pago registrado. El cliente cubrió el monto inicial."
+    elif result.link.status == "partial":
         message = (
-            "Link de pago generado. No se pudo enviar el email — "
-            "compártelo manualmente con el cliente."
+            "Pago parcial registrado. Los recordatorios del saldo se enviarán "
+            "a partir de la fecha indicada."
         )
+    elif result.email_sent:
+        message = "Link de pago generado y enviado por email al cliente."
     else:
-        message = "Link de pago generado. Compártelo con el cliente para que complete el pago."
+        message = "Pago registrado."
     return PaymentLinkCreateResponse(
         link=result.link,
         message=message,
